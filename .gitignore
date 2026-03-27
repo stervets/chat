@@ -1,6 +1,7 @@
 # --- JetBrains/WebStorm ---
 .idea/
 *.iml
+chat.zip
 
 # --- Node.js ---
 node_modules/
