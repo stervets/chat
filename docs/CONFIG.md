@@ -1,0 +1,41 @@
+# Config
+
+Проект использует **только JSON-конфиг**, без переменных окружения.
+
+## Frontend
+
+Файл: `frontend/config.json`
+
+Пример:
+```json
+{
+  "mode": "dev",
+  "apiUrl": "http://localhost:8816",
+  "wsUrl": "ws://localhost:8816/ws"
+}
+```
+
+## Backend
+
+Файл: `backend/config.json`
+
+Пример:
+```json
+{
+  "host": "0.0.0.0",
+  "port": 8816,
+  "wsPath": "/ws",
+  "messagesTtlDays": 7,
+  "corsOrigins": [
+    "http://localhost:8815",
+    "http://127.0.0.1:8815"
+  ],
+  "db": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "user": "marx",
+    "password": "marx",
+    "database": "marx_chat"
+  }
+}
+```

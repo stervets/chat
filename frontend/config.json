@@ -1,0 +1,5 @@
+{
+  "mode": "dev",
+  "apiUrl": "http://localhost:8816",
+  "wsUrl": "ws://localhost:8816/ws"
+}
