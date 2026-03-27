@@ -1,4 +1,4 @@
--- Minimal schema for Marx Chat
+-- Minimal schema for MARX
 
 create extension if not exists pgcrypto;
 

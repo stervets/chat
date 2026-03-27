@@ -36,6 +36,16 @@ Auth required.
 }
 ```
 
+### POST `/api/auth/logout`
+Auth required.
+
+Ответ:
+```json
+{
+  "ok": true
+}
+```
+
 ## Users
 
 ### GET `/api/users`

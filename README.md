@@ -1,4 +1,4 @@
-# Marx Chat
+# MARX
 
 Закрытый чат для аварийной связи. Регистрация только по invite-кодам, логин по `nickname + password`, общий чат и приватные диалоги. Минимальный каркас без лишних фич.
 
@@ -8,7 +8,14 @@
 
 ## Локальный запуск (dev)
 
-Frontend:
+Из корня проекта:
+
+```bash
+yarn run frontend:dev
+yarn run backend:dev
+```
+
+Frontend напрямую:
 
 ```bash
 cd frontend
@@ -16,13 +23,26 @@ yarn install
 yarn run dev
 ```
 
-Backend:
+Backend напрямую:
 
 ```bash
 cd backend
 yarn install
 yarn run dev
 ```
+
+## Invite CLI (из корня)
+
+```bash
+yarn run invite:create
+yarn run invite:create -- --count 5
+```
+
+## Базовый flow
+
+1. Сгенерируй инвайт через CLI.
+2. Открой `http://localhost:8815/invite/<code>` и зарегистрируйся.
+3. Перейди в `/chat`.
 
 ## Порты
 

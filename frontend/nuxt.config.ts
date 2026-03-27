@@ -1,10 +1,10 @@
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 const isDevelopmentMode = process.argv.some((arg) => arg.includes('dev'));
-const config = JSON.parse(
-  readFileSync(resolve(process.cwd(), 'config.json'), 'utf-8')
-);
+const rootDir = fileURLToPath(new URL('.', import.meta.url));
+const config = JSON.parse(readFileSync(resolve(rootDir, 'config.json'), 'utf-8'));
 
 export default defineNuxtConfig({
   modules: [
@@ -36,6 +36,14 @@ export default defineNuxtConfig({
     port: 8815
   },
 
+  vite: {
+    server: {
+      host: '0.0.0.0',
+      port: 8815,
+      strictPort: true
+    }
+  },
+
   tailwindcss: {
     exposeConfig: true,
     viewer: true,
@@ -49,7 +57,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'Marx Chat',
+      title: 'MARX',
       meta: [
         {
           name: 'viewport',

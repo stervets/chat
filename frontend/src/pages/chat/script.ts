@@ -7,7 +7,6 @@ export default {
     const router = useRouter();
     const config = useRuntimeConfig();
 
-    const me = ref<User | null>(null);
     const users = ref<User[]>([]);
     const generalDialog = ref<Dialog | null>(null);
     const activeDialog = ref<Dialog | null>(null);
@@ -20,17 +19,17 @@ export default {
     const ws = ref<WebSocket | null>(null);
     const wsReady = ref(false);
 
-    const fetchMe = async () => {
+    const ensureAuth = async () => {
       const response = await fetch(`${config.public.apiUrl}/api/me`, {
         credentials: 'include'
       });
 
       if (!response.ok) {
         await router.push('/login');
-        return null;
+        return false;
       }
 
-      return await response.json();
+      return true;
     };
 
     const fetchUsers = async () => {
@@ -176,14 +175,32 @@ export default {
       messageText.value = '';
     };
 
+    const onLogout = async () => {
+      error.value = '';
+      try {
+        await fetch(`${config.public.apiUrl}/api/auth/logout`, {
+          method: 'POST',
+          credentials: 'include'
+        });
+      } catch (e) {
+        // ignore
+      } finally {
+        if (ws.value) {
+          ws.value.close();
+          ws.value = null;
+        }
+        await router.push('/login');
+      }
+    };
+
     const scrollToBottom = () => {
       if (!messagesEl.value) return;
       messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
     };
 
     onMounted(async () => {
-      me.value = await fetchMe();
-      if (!me.value) return;
+      const ok = await ensureAuth();
+      if (!ok) return;
 
       generalDialog.value = await fetchGeneralDialog();
       await fetchUsers();
@@ -196,7 +213,6 @@ export default {
     });
 
     return {
-      me,
       users,
       generalDialog,
       activeDialog,
@@ -208,6 +224,7 @@ export default {
       selectGeneral,
       selectPrivate,
       onSend,
+      onLogout,
       linkify
     };
   }

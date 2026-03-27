@@ -78,6 +78,11 @@ export async function registerAuthModule(app: FastifyInstance) {
   });
 
   app.post(`${API_PREFIX}/auth/logout`, async (request, reply) => {
+    if (!request.user) {
+      reply.code(401);
+      return {ok: false, error: 'unauthorized'};
+    }
+
     const token = request.cookies?.[SESSION_COOKIE_NAME];
     if (token) {
       await pool.query('delete from sessions where token = $1', [token]);

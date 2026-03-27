@@ -1,4 +1,4 @@
-export const APP_TITLE = 'Marx Chat';
+export const APP_TITLE = 'MARX';
 export const API_PREFIX = '/api';
 export const WS_PATH = '/ws';
 

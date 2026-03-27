@@ -1,0 +1,10 @@
+{
+  "name": "MARX",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "invite:create": "cd backend && yarn run invite:create",
+    "frontend:dev": "cd frontend && yarn run dev",
+    "backend:dev": "cd backend && yarn run dev"
+  }
+}

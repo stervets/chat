@@ -1,10 +1,5 @@
 <template>
-  <div class="page page-index">
-    <div class="content">
-      <h1>Marx Chat</h1>
-      <p>Скелет закрытого чата для аварийной связи.</p>
-    </div>
-  </div>
+  <div class="page page-index" />
 </template>
 
 <script src="./script.ts" lang="ts"/>

@@ -28,12 +28,15 @@
 
       <main class="chat-main">
         <header class="chat-header">
-          <div class="title">
-            {{ activeDialog?.title || 'Чат' }}
+          <div>
+            <div class="title">
+              {{ activeDialog?.title || 'Чат' }}
+            </div>
+            <div class="subtitle" v-if="activeDialog?.kind === 'private'">
+              private message
+            </div>
           </div>
-          <div class="subtitle" v-if="activeDialog?.kind === 'private'">
-            private message
-          </div>
+          <button class="logout" @click="onLogout">Выйти</button>
         </header>
 
         <div class="chat-body" ref="messagesEl">

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nuxt dev --host 0.0.0.0 --port 8815",
     "build": "nuxt build",
-    "preview": "nuxt preview --host 0.0.0.0 --port 8815"
+    "preview": "nuxt preview"
   },
   "dependencies": {
     "@element-plus/nuxt": "^1.1.0",
