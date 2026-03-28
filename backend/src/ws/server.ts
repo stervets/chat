@@ -51,7 +51,7 @@ export function createWsServer(server: Server) {
       (socket as any).user = result.rows[0];
 
       socket.on('message', (data) => {
-        wsHandlers.handleMessage(socket as any, data.toString());
+        void wsHandlers.handleMessage(socket as any, data.toString()).catch(() => {});
       });
 
       socket.on('close', () => {

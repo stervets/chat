@@ -19,7 +19,7 @@ export async function registerInvitesModule(app: FastifyInstance) {
          i.used_at as "usedAt",
          i.used_by as "usedById",
          u.nickname as "usedByNickname",
-         (i.used_at is not null or i.uses >= i.max_uses) as "isUsed"
+         (i.used_at is not null) as "isUsed"
        from invites i
        left join users u on u.id = i.used_by
        where i.created_by = $1
@@ -81,7 +81,7 @@ export async function registerInvitesModule(app: FastifyInstance) {
 
       const row = invite.rows[0];
       const isExpired = row.expires_at && new Date(row.expires_at) < new Date();
-      const isUsedUp = row.uses >= row.max_uses || row.used_at;
+      const isUsedUp = row.used_at;
 
       if (isExpired || isUsedUp) {
         await client.query('rollback');
@@ -109,7 +109,7 @@ export async function registerInvitesModule(app: FastifyInstance) {
       const userId = userResult.rows[0].id as number;
 
       await client.query(
-        'update invites set used_by = $1, used_at = now(), uses = uses + 1 where id = $2',
+        'update invites set used_by = $1, used_at = now() where id = $2',
         [userId, row.id]
       );
 

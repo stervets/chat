@@ -1,4 +1,4 @@
-import type {WebSocket} from 'ws';
+import {WebSocket} from 'ws';
 import type {WsEnvelope} from './types.js';
 import {pool} from '../db.js';
 import {getDialogById, userCanAccessDialog} from '../common/dialogs.js';
@@ -20,14 +20,19 @@ export function registerWsHandlers() {
   const subscriptions = new Map<number, Set<WsSocket>>();
 
   const send = (socket: WsSocket, type: string, payload?: any) => {
-    if (socket.readyState !== socket.OPEN) return;
+    if (socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({type, payload}));
   };
 
   const subscribe = (socket: WsSocket, dialogId: number) => {
     if (socket.dialogId) {
       const oldSet = subscriptions.get(socket.dialogId);
-      oldSet && oldSet.delete(socket);
+      if (oldSet) {
+        oldSet.delete(socket);
+        if (oldSet.size === 0) {
+          subscriptions.delete(socket.dialogId);
+        }
+      }
     }
 
     let set = subscriptions.get(dialogId);
@@ -111,21 +116,33 @@ export function registerWsHandlers() {
     broadcast(dialogId, message);
   };
 
-  const handleMessage = (socket: WsSocket, data: string) => {
+  const handleMessage = async (socket: WsSocket, data: string) => {
     let event: WsEnvelope | null = null;
     try {
       event = JSON.parse(data);
     } catch (e) {
       return;
     }
+
     const handler = event && handlers[event.type];
-    handler && handler(event.payload, socket);
+    if (!handler) return;
+
+    try {
+      await handler(event.payload, socket);
+    } catch (err) {
+      send(socket, 'chat:error', {message: 'server_error'});
+    }
   };
 
   const onClose = (socket: WsSocket) => {
     if (socket.dialogId) {
       const set = subscriptions.get(socket.dialogId);
-      set && set.delete(socket);
+      if (set) {
+        set.delete(socket);
+        if (set.size === 0) {
+          subscriptions.delete(socket.dialogId);
+        }
+      }
     }
   };
 

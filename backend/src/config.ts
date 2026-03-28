@@ -23,7 +23,6 @@ const loadConfig = (): ConfigFile => {
 };
 
 const fileConfig = loadConfig();
-const dbConfig = fileConfig.db || (fileConfig as any).database || {};
 
 export const config = {
   env: 'development',
@@ -33,10 +32,10 @@ export const config = {
   messagesTtlDays: fileConfig.messagesTtlDays || MESSAGES_TTL_DAYS,
   corsOrigins: fileConfig.corsOrigins || ['http://localhost:8815', 'http://127.0.0.1:8815'],
   db: {
-    host: dbConfig.host || '127.0.0.1',
-    port: dbConfig.port || 5432,
-    user: dbConfig.user || 'marx',
-    password: dbConfig.password || 'marx',
-    database: dbConfig.database || 'marx_chat',
+    host: fileConfig.db?.host || '127.0.0.1',
+    port: fileConfig.db?.port || 5432,
+    user: fileConfig.db?.user || 'marx',
+    password: fileConfig.db?.password || 'marx',
+    database: fileConfig.db?.database || 'marx_chat',
   }
 };

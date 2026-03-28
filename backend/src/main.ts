@@ -4,7 +4,7 @@ import cors from '@fastify/cors';
 import {config} from './config.js';
 import {checkDb, closeDb, pool} from './db.js';
 import {createWsServer} from './ws/server.js';
-import {registerCleanupJob} from './jobs/cleanup.js';
+import {registerCleanupJob, runMessagesCleanup} from './jobs/cleanup.js';
 import {registerAuthModule} from './modules/auth/index.js';
 import {registerInvitesModule} from './modules/invites/index.js';
 import {registerUsersModule} from './modules/users/index.js';
@@ -65,6 +65,8 @@ async function bootstrap() {
     process.exit(1);
     return;
   }
+
+  await runMessagesCleanup(pool, app.log);
 
   await app.listen({
     port: config.port,
