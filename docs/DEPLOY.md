@@ -24,4 +24,5 @@ Caddy завершает HTTPS и проксирует:
 
 ## Конфиг
 
-Перед сборкой/деплоем отредактируй `frontend/config.json` и `backend/config.json` под прод.
+Скопируй `frontend/config.example.json` → `frontend/config.json` и
+`backend/config.example.json` → `backend/config.json`, затем отредактируй под прод.

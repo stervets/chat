@@ -60,14 +60,32 @@ Auth required.
 
 ## Invites
 
+### GET `/api/invites`
+Auth required.
+
+Ответ:
+```json
+[
+  {
+    "id": 10,
+    "code": "abcd1234",
+    "createdAt": "2026-03-27T10:00:00.000Z",
+    "usedAt": null,
+    "usedBy": null,
+    "isUsed": false
+  }
+]
+```
+
 ### POST `/api/invites/create`
 Auth required.
 
 Ответ:
 ```json
 {
-  "ok": true,
-  "code": "abcd1234"
+  "id": 10,
+  "code": "abcd1234",
+  "createdAt": "2026-03-27T10:00:00.000Z"
 }
 ```
 

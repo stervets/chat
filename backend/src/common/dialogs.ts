@@ -57,12 +57,24 @@ export async function getOrCreatePrivateDialog(userId: number, otherId: number):
     return existing.rows[0];
   }
 
-  const created = await pool.query(
-    "insert into dialogs (kind, member_a, member_b) values ('private', $1, $2) returning id, kind, member_a, member_b",
-    [a, b]
-  );
-
-  return created.rows[0];
+  try {
+    const created = await pool.query(
+      "insert into dialogs (kind, member_a, member_b) values ('private', $1, $2) returning id, kind, member_a, member_b",
+      [a, b]
+    );
+    return created.rows[0];
+  } catch (err: any) {
+    if (err && err.code === '23505') {
+      const retry = await pool.query(
+        "select id, kind, member_a, member_b from dialogs where kind = 'private' and member_a = $1 and member_b = $2",
+        [a, b]
+      );
+      if (retry.rowCount) {
+        return retry.rows[0];
+      }
+    }
+    throw err;
+  }
 }
 
 export function userCanAccessDialog(userId: number, dialog: DialogRow) {

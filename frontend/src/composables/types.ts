@@ -10,6 +10,8 @@ export type Invite = {
   code: string;
   createdAt: string;
   usedAt?: string | null;
+  usedBy?: User | null;
+  isUsed: boolean;
 };
 
 export type DialogKind = 'general' | 'private';

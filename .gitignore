@@ -33,9 +33,10 @@ backend/.cache/
 backend/logs/
 
 # --- Local config ---
-config.json
-!frontend/config.json
-!backend/config.json
+frontend/config.json
+backend/config.json
+!frontend/config.example.json
+!backend/config.example.json
 
 # --- Postgres data (local) ---
 deploy/data/postgres/

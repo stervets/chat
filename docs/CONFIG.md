@@ -4,20 +4,30 @@
 
 ## Frontend
 
-Файл: `frontend/config.json`
+Файлы:
+- `frontend/config.example.json` — пример
+- `frontend/config.json` — локальный (не в git)
+
+Скопируй пример и отредактируй под себя.
 
 Пример:
 ```json
 {
   "mode": "dev",
   "apiUrl": "http://localhost:8816",
-  "wsUrl": "ws://localhost:8816/ws"
+  "wsPath": "/ws"
 }
 ```
 
+`wsUrl` вычисляется из `apiUrl + wsPath` автоматически. При необходимости можно задать `wsUrl` явно.
+
 ## Backend
 
-Файл: `backend/config.json`
+Файлы:
+- `backend/config.example.json` — пример
+- `backend/config.json` — локальный (не в git)
+
+Скопируй пример и отредактируй под себя.
 
 Пример:
 ```json
@@ -39,3 +49,6 @@
   }
 }
 ```
+
+Если открываешь фронт через LAN IP, добавь `http://<LAN_IP>:8815` в `corsOrigins`,
+а в `frontend/config.json` укажи `apiUrl` с тем же IP.

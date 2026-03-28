@@ -36,7 +36,10 @@
               private message
             </div>
           </div>
-          <button class="logout" @click="onLogout">Выйти</button>
+          <div class="actions">
+            <NuxtLink class="nav-link" to="/invites">Инвайты</NuxtLink>
+            <button class="logout" @click="onLogout">Выйти</button>
+          </div>
         </header>
 
         <div class="chat-body" ref="messagesEl">

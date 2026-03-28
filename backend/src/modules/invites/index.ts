@@ -5,6 +5,38 @@ import {pool} from '../../db.js';
 import {createSession, hashPassword} from '../../common/auth.js';
 
 export async function registerInvitesModule(app: FastifyInstance) {
+  app.get(`${API_PREFIX}/invites`, async (request, reply) => {
+    if (!request.user) {
+      reply.code(401);
+      return {ok: false, error: 'unauthorized'};
+    }
+
+    const result = await pool.query(
+      `select
+         i.id,
+         i.code,
+         i.created_at as "createdAt",
+         i.used_at as "usedAt",
+         i.used_by as "usedById",
+         u.nickname as "usedByNickname",
+         (i.used_at is not null or i.uses >= i.max_uses) as "isUsed"
+       from invites i
+       left join users u on u.id = i.used_by
+       where i.created_by = $1
+       order by i.created_at desc`,
+      [request.user.id]
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      createdAt: row.createdAt,
+      usedAt: row.usedAt,
+      usedBy: row.usedById ? {id: row.usedById, nickname: row.usedByNickname} : null,
+      isUsed: row.isUsed
+    }));
+  });
+
   app.post(`${API_PREFIX}/invites/create`, async (request, reply) => {
     if (!request.user) {
       reply.code(401);
@@ -12,12 +44,12 @@ export async function registerInvitesModule(app: FastifyInstance) {
     }
 
     const code = randomBytes(8).toString('hex');
-    await pool.query(
-      'insert into invites (code, created_by) values ($1, $2)',
+    const created = await pool.query(
+      'insert into invites (code, created_by) values ($1, $2) returning id, code, created_at as "createdAt"',
       [code, request.user.id]
     );
 
-    return {ok: true, code};
+    return created.rows[0];
   });
 
   app.post(`${API_PREFIX}/invites/redeem`, async (request, reply) => {

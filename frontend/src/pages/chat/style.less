@@ -87,6 +87,26 @@
     cursor: pointer;
   }
 
+  .actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .nav-link {
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-decoration: none;
+  }
+
+  .nav-link:hover {
+    color: var(--text);
+    border-color: var(--accent-strong);
+  }
+
   .logout:hover {
     color: var(--text);
     border-color: var(--accent-strong);
@@ -203,6 +223,11 @@
     .logout {
       padding: 6px 10px;
       font-size: 12px;
+    }
+
+    .actions {
+      width: 100%;
+      justify-content: space-between;
     }
   }
 }

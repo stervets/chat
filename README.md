@@ -4,7 +4,8 @@
 
 ## Конфигурация
 
-Проект использует JSON-конфиги, см. `docs/CONFIG.md`.
+Проект использует JSON-конфиги. Примеры — `frontend/config.example.json` и `backend/config.example.json`.
+Локальные рабочие файлы: `frontend/config.json`, `backend/config.json`. Подробности в `docs/CONFIG.md`.
 
 ## Локальный запуск (dev)
 
@@ -38,11 +39,13 @@ yarn run invite:create
 yarn run invite:create -- --count 5
 ```
 
+Через UI: страница `/invites`, кнопка `Создать инвайт`.
+
 ## Базовый flow
 
 1. Сгенерируй инвайт через CLI.
 2. Открой `http://localhost:8815/invite/<code>` и зарегистрируйся.
-3. Перейди в `/chat`.
+3. Перейди в `/chat` или `/invites`.
 
 ## Порты
 
@@ -50,4 +53,4 @@ yarn run invite:create -- --count 5
 - Backend: `8816`
 - PostgreSQL: `5432` (локально или через `deploy/compose.yml`)
 
-Backend использует настройки из `backend/config.json`. Если PostgreSQL не запущен, сервер всё равно стартует, но выдаст ошибку подключения в логах.
+Backend использует настройки из `backend/config.json` и **не стартует**, если PostgreSQL недоступен (fail-fast).

@@ -5,7 +5,8 @@
 - `frontend/` — Nuxt 3 SPA, мобильный first, Element Plus + Tailwind + Less
 - `backend/` — простой HTTP + WebSocket сервер на Fastify, PostgreSQL
 
-Конфигурация хранится в JSON (`frontend/config.json`, `backend/config.json`).
+Конфигурация хранится в JSON (`frontend/config.json`, `backend/config.json`),
+примеры — `frontend/config.example.json`, `backend/config.example.json`.
 
 ## Backend
 
@@ -14,6 +15,7 @@
 - `src/db.ts` — pg pool
 - `src/modules/*` — модули домена
 - `src/ws/*` — скелет событий WebSocket
+- при старте backend проверяет БД и завершает процесс, если соединение не установлено
 
 ### Доменные ограничения
 
@@ -21,7 +23,7 @@
 - логин по `nickname + password`
 - общий чат и приватные диалоги
 - сообщения — plain text, без HTML
-- хранение сообщений максимум 7 дней (cleanup job заготовлен)
+- хранение сообщений максимум N дней (`messagesTtlDays` в конфиге; cleanup job раз в час + запуск при старте)
 - сессии на cookie, без JWT
 
 ## Dialogs & Messages

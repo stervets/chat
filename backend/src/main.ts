@@ -9,7 +9,6 @@ import {registerAuthModule} from './modules/auth/index.js';
 import {registerInvitesModule} from './modules/invites/index.js';
 import {registerUsersModule} from './modules/users/index.js';
 import {registerDialogsModule} from './modules/dialogs/index.js';
-import {registerMessagesModule} from './modules/messages/index.js';
 import {SESSION_COOKIE_NAME} from './common/const.js';
 
 async function bootstrap() {
@@ -52,7 +51,6 @@ async function bootstrap() {
   await registerInvitesModule(app);
   await registerUsersModule(app);
   await registerDialogsModule(app);
-  await registerMessagesModule(app);
 
   app.addHook('onClose', async () => {
     await closeDb();
@@ -63,6 +61,9 @@ async function bootstrap() {
     app.log.info('PostgreSQL connection OK');
   } catch (err) {
     app.log.error({err}, 'PostgreSQL connection failed');
+    await closeDb();
+    process.exit(1);
+    return;
   }
 
   await app.listen({
@@ -71,7 +72,7 @@ async function bootstrap() {
   });
 
   createWsServer(app.server);
-  registerCleanupJob(pool);
+  registerCleanupJob(pool, app.log);
 
   app.log.info(`HTTP server listening on ${config.host}:${config.port}`);
 }

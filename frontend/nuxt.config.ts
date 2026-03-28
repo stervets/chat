@@ -4,7 +4,22 @@ import {fileURLToPath} from 'node:url';
 
 const isDevelopmentMode = process.argv.some((arg) => arg.includes('dev'));
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
-const config = JSON.parse(readFileSync(resolve(rootDir, 'config.json'), 'utf-8'));
+const fileConfig = JSON.parse(readFileSync(resolve(rootDir, 'config.json'), 'utf-8'));
+const apiUrl = fileConfig.apiUrl;
+const wsPath = fileConfig.wsPath || '/ws';
+const wsUrl = fileConfig.wsUrl || (() => {
+  const api = new URL(apiUrl);
+  api.protocol = api.protocol === 'https:' ? 'wss:' : 'ws:';
+  api.pathname = wsPath.startsWith('/') ? wsPath : `/${wsPath}`;
+  api.search = '';
+  api.hash = '';
+  return api.toString();
+})();
+const config = {
+  ...fileConfig,
+  wsPath,
+  wsUrl
+};
 
 export default defineNuxtConfig({
   modules: [
