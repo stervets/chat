@@ -1,4 +1,4 @@
-import {pool} from '../db.js';
+import {db} from '../db.js';
 
 export type DialogRow = {
   id: number;
@@ -8,36 +8,41 @@ export type DialogRow = {
 };
 
 export async function getOrCreateGeneralDialog(): Promise<DialogRow> {
-  const existing = await pool.query(
+  const existing = db.prepare(
     "select id, kind, member_a, member_b from dialogs where kind = 'general' limit 1"
-  );
+  ).get();
 
-  if (existing.rowCount) {
-    return existing.rows[0];
+  if (existing) {
+    return existing as DialogRow;
   }
 
   try {
-    const created = await pool.query(
-      "insert into dialogs (kind) values ('general') returning id, kind, member_a, member_b"
-    );
-    return created.rows[0];
+    const insert = db.prepare(
+      "insert into dialogs (kind) values ('general')"
+    ).run();
+    const created = db.prepare(
+      'select id, kind, member_a, member_b from dialogs where id = ?'
+    ).get(Number(insert.lastInsertRowid));
+    if (created) {
+      return created as DialogRow;
+    }
+    throw new Error('failed_to_create_general_dialog');
   } catch (err) {
-    const retry = await pool.query(
+    const retry = db.prepare(
       "select id, kind, member_a, member_b from dialogs where kind = 'general' limit 1"
-    );
-    if (retry.rowCount) {
-      return retry.rows[0];
+    ).get();
+    if (retry) {
+      return retry as DialogRow;
     }
     throw err;
   }
 }
 
 export async function getDialogById(dialogId: number): Promise<DialogRow | null> {
-  const result = await pool.query(
-    'select id, kind, member_a, member_b from dialogs where id = $1',
-    [dialogId]
-  );
-  return result.rowCount ? result.rows[0] : null;
+  const result = db.prepare(
+    'select id, kind, member_a, member_b from dialogs where id = ?'
+  ).get(dialogId);
+  return result ? (result as DialogRow) : null;
 }
 
 export function normalizePair(userId: number, otherId: number) {
@@ -48,29 +53,33 @@ export function normalizePair(userId: number, otherId: number) {
 
 export async function getOrCreatePrivateDialog(userId: number, otherId: number): Promise<DialogRow> {
   const {a, b} = normalizePair(userId, otherId);
-  const existing = await pool.query(
-    "select id, kind, member_a, member_b from dialogs where kind = 'private' and member_a = $1 and member_b = $2",
-    [a, b]
-  );
+  const existing = db.prepare(
+    "select id, kind, member_a, member_b from dialogs where kind = 'private' and member_a = ? and member_b = ?"
+  ).get(a, b);
 
-  if (existing.rowCount) {
-    return existing.rows[0];
+  if (existing) {
+    return existing as DialogRow;
   }
 
   try {
-    const created = await pool.query(
-      "insert into dialogs (kind, member_a, member_b) values ('private', $1, $2) returning id, kind, member_a, member_b",
-      [a, b]
-    );
-    return created.rows[0];
+    const insert = db.prepare(
+      "insert into dialogs (kind, member_a, member_b) values ('private', ?, ?)"
+    ).run(a, b);
+    const created = db.prepare(
+      'select id, kind, member_a, member_b from dialogs where id = ?'
+    ).get(Number(insert.lastInsertRowid));
+    if (created) {
+      return created as DialogRow;
+    }
+    throw new Error('failed_to_create_private_dialog');
   } catch (err: any) {
-    if (err && err.code === '23505') {
-      const retry = await pool.query(
-        "select id, kind, member_a, member_b from dialogs where kind = 'private' and member_a = $1 and member_b = $2",
-        [a, b]
-      );
-      if (retry.rowCount) {
-        return retry.rows[0];
+    const code = err?.code;
+    if (code === 'SQLITE_CONSTRAINT' || code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      const retry = db.prepare(
+        "select id, kind, member_a, member_b from dialogs where kind = 'private' and member_a = ? and member_b = ?"
+      ).get(a, b);
+      if (retry) {
+        return retry as DialogRow;
       }
     }
     throw err;

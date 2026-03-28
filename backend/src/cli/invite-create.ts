@@ -1,6 +1,5 @@
 import {randomBytes} from 'node:crypto';
-import {Pool} from 'pg';
-import {config} from '../config.js';
+import {db, closeDb} from '../db.js';
 
 const parseCount = (args: string[]) => {
   const direct = args.find((arg) => arg.startsWith('--count='));
@@ -16,22 +15,15 @@ const parseCount = (args: string[]) => {
   return 1;
 };
 
-const pool = new Pool({
-  host: config.db.host,
-  port: config.db.port,
-  user: config.db.user,
-  password: config.db.password,
-  database: config.db.database,
-});
-
 const createInvite = async () => {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = randomBytes(8).toString('hex');
     try {
-      await pool.query('insert into invites (code) values ($1)', [code]);
+      db.prepare('insert into invites (code) values (?)').run(code);
       return code;
     } catch (err: any) {
-      if (err && err.code === '23505') {
+      const code = err?.code;
+      if (code === 'SQLITE_CONSTRAINT' || code === 'SQLITE_CONSTRAINT_UNIQUE') {
         continue;
       }
       throw err;
@@ -53,10 +45,14 @@ const run = async () => {
     process.stdout.write(`${code}\n`);
   }
 
-  await pool.end();
+  closeDb();
 };
 
 run().catch((err) => {
   console.error(err);
-  pool.end().finally(() => process.exit(1));
+  try {
+    closeDb();
+  } finally {
+    process.exit(1);
+  }
 });

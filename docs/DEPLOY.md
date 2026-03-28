@@ -14,7 +14,6 @@ podman compose up -d
 - `caddy` — внешний reverse proxy и TLS
 - `frontend` — Nuxt SPA на `8815`
 - `backend` — API + WS на `8816`
-- `postgres` — база
 
 Caddy завершает HTTPS и проксирует:
 
@@ -26,3 +25,5 @@ Caddy завершает HTTPS и проксирует:
 
 Скопируй `frontend/config.example.json` → `frontend/config.json` и
 `backend/config.example.json` → `backend/config.json`, затем отредактируй под прод.
+
+SQLite файл хранится в `backend/data/` (по умолчанию `backend/data/marx.sqlite`).

@@ -1,6 +1,6 @@
 import type {FastifyInstance} from 'fastify';
 import {API_PREFIX} from '../../common/const.js';
-import {pool} from '../../db.js';
+import {db} from '../../db.js';
 import {
   getDialogById,
   getOrCreateGeneralDialog,
@@ -40,12 +40,11 @@ export async function registerDialogsModule(app: FastifyInstance) {
       return {ok: false, error: 'self_dialog'};
     }
 
-    const targetResult = await pool.query(
-      'select id, nickname from users where id = $1',
-      [userId]
-    );
+    const targetUser = db.prepare(
+      'select id, nickname from users where id = ?'
+    ).get(userId) as {id: number; nickname: string} | undefined;
 
-    if (!targetResult.rowCount) {
+    if (!targetUser) {
       reply.code(404);
       return {ok: false, error: 'user_not_found'};
     }
@@ -55,7 +54,7 @@ export async function registerDialogsModule(app: FastifyInstance) {
     return {
       dialogId: dialog.id,
       type: 'private',
-      targetUser: targetResult.rows[0]
+      targetUser
     };
   });
 
@@ -86,7 +85,7 @@ export async function registerDialogsModule(app: FastifyInstance) {
     const limitParsed = Number.parseInt(limitRaw, 10);
     const limit = Number.isFinite(limitParsed) ? Math.min(Math.max(limitParsed, 1), 200) : 100;
 
-    const result = await pool.query(
+    const result = db.prepare(
       `select * from (
          select
            m.id,
@@ -97,14 +96,13 @@ export async function registerDialogsModule(app: FastifyInstance) {
            m.created_at as "createdAt"
          from messages m
          left join users u on u.id = m.sender_id
-         where m.dialog_id = $1
+         where m.dialog_id = ?
          order by m.created_at desc
-         limit $2
+         limit ?
        ) t
        order by t."createdAt" asc`,
-      [dialogId, limit]
-    );
+    ).all(dialogId, limit);
 
-    return result.rows;
+    return result;
   });
 }

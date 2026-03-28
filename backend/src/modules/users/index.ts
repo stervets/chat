@@ -1,6 +1,6 @@
 import type {FastifyInstance} from 'fastify';
 import {API_PREFIX} from '../../common/const.js';
-import {pool} from '../../db.js';
+import {db} from '../../db.js';
 
 export async function registerUsersModule(app: FastifyInstance) {
   app.get(`${API_PREFIX}/me`, async (request, reply) => {
@@ -21,11 +21,10 @@ export async function registerUsersModule(app: FastifyInstance) {
       return {ok: false, error: 'unauthorized'};
     }
 
-    const result = await pool.query(
-      'select id, nickname from users where id <> $1 order by nickname asc',
-      [request.user.id]
-    );
+    const result = db.prepare(
+      'select id, nickname from users where id <> ? order by nickname asc'
+    ).all(request.user.id);
 
-    return result.rows;
+    return result;
   });
 }

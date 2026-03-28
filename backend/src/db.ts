@@ -1,18 +1,29 @@
-import {Pool} from 'pg';
+import {readFileSync, mkdirSync} from 'node:fs';
+import {dirname, resolve} from 'node:path';
+import Database from 'better-sqlite3';
 import {config} from './config.js';
 
-export const pool = new Pool({
-  host: config.db.host,
-  port: config.db.port,
-  user: config.db.user,
-  password: config.db.password,
-  database: config.db.database,
-});
+const schemaPath = resolve(process.cwd(), 'sql/001_init.sql');
+const dbPath = resolve(process.cwd(), config.db.path);
 
-export async function checkDb() {
-  await pool.query('select 1 as ok');
+let db: Database;
+try {
+  mkdirSync(dirname(dbPath), {recursive: true});
+  db = new Database(dbPath);
+  db.pragma('foreign_keys = ON');
+  const schema = readFileSync(schemaPath, 'utf-8');
+  db.exec(schema);
+} catch (err) {
+  const message = err instanceof Error ? err.message : String(err);
+  throw new Error(`SQLite init failed: ${message}`);
 }
 
-export async function closeDb() {
-  await pool.end();
+export {db};
+
+export function checkDb() {
+  db.prepare('select 1 as ok').get();
+}
+
+export function closeDb() {
+  db.close();
 }

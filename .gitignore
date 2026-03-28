@@ -38,10 +38,9 @@ backend/config.json
 !frontend/config.example.json
 !backend/config.example.json
 
-# --- Postgres data (local) ---
-deploy/data/postgres/
-postgres-data/
-.pgdata/
+# --- SQLite data (local) ---
+backend/data/
+*.sqlite
 
 # --- OS / Misc ---
 .DS_Store

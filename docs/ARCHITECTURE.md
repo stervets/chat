@@ -3,7 +3,7 @@
 Проект разделён на два независимых приложения:
 
 - `frontend/` — Nuxt 3 SPA, мобильный first, Element Plus + Tailwind + Less
-- `backend/` — простой HTTP + WebSocket сервер на Fastify, PostgreSQL
+- `backend/` — простой HTTP + WebSocket сервер на Fastify, SQLite
 
 Конфигурация хранится в JSON (`frontend/config.json`, `backend/config.json`),
 примеры — `frontend/config.example.json`, `backend/config.example.json`.
@@ -12,10 +12,10 @@
 
 - `src/main.ts` — запуск HTTP + WS
 - `src/config.ts` — конфигурация и env
-- `src/db.ts` — pg pool
+- `src/db.ts` — SQLite connection + init schema
 - `src/modules/*` — модули домена
 - `src/ws/*` — скелет событий WebSocket
-- при старте backend проверяет БД и завершает процесс, если соединение не установлено
+- при старте backend проверяет SQLite и завершает процесс, если база не открылась/не проинициализировалась
 
 ### Доменные ограничения
 
@@ -41,3 +41,5 @@
 - `dialogs` (global/direct)
 - `messages` (TTL 7 дней)
 - `sessions`
+
+SQLite файл задаётся в `backend/config.json` (`db.path`) и создаётся при старте.

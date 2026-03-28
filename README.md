@@ -51,6 +51,6 @@ yarn run invite:create -- --count 5
 
 - Frontend: `8815`
 - Backend: `8816`
-- PostgreSQL: `5432` (локально или через `deploy/compose.yml`)
 
-Backend использует настройки из `backend/config.json` и **не стартует**, если PostgreSQL недоступен (fail-fast).
+SQLite файл по умолчанию: `backend/data/marx.sqlite` (см. `backend/config.json`).
+Backend использует настройки из `backend/config.json` и **не стартует**, если SQLite не удалось открыть/инициализировать (fail-fast).

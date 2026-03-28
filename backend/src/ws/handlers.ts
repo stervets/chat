@@ -1,6 +1,6 @@
 import {WebSocket} from 'ws';
 import type {WsEnvelope} from './types.js';
-import {pool} from '../db.js';
+import {db} from '../db.js';
 import {getDialogById, userCanAccessDialog} from '../common/dialogs.js';
 
 type WsUser = {
@@ -99,18 +99,18 @@ export function registerWsHandlers() {
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
 
-    const result = await pool.query(
-      'insert into messages (dialog_id, sender_id, body) values ($1, $2, $3) returning id, created_at',
-      [dialogId, socket.user.id, body]
-    );
+    const createdAt = new Date().toISOString();
+    const result = db.prepare(
+      'insert into messages (dialog_id, sender_id, body, created_at) values (?, ?, ?, ?)'
+    ).run(dialogId, socket.user.id, body, createdAt);
 
     const message = {
-      id: result.rows[0].id,
+      id: Number(result.lastInsertRowid),
       dialogId,
       authorId: socket.user.id,
       authorNickname: socket.user.nickname,
       body,
-      createdAt: result.rows[0].created_at,
+      createdAt,
     };
 
     broadcast(dialogId, message);
@@ -130,6 +130,7 @@ export function registerWsHandlers() {
     try {
       await handler(event.payload, socket);
     } catch (err) {
+      console.error(err);
       send(socket, 'chat:error', {message: 'server_error'});
     }
   };

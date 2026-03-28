@@ -41,14 +41,13 @@
     "http://127.0.0.1:8815"
   ],
   "db": {
-    "host": "127.0.0.1",
-    "port": 5432,
-    "user": "marx",
-    "password": "marx",
-    "database": "marx_chat"
+    "path": "./data/marx.sqlite"
   }
 }
 ```
+
+SQLite файл создаётся автоматически при старте, если его ещё нет.
+`db.path` указывается относительно папки `backend/`.
 
 Если открываешь фронт через LAN IP, добавь `http://<LAN_IP>:8815` в `corsOrigins`,
 а в `frontend/config.json` укажи `apiUrl` с тем же IP.

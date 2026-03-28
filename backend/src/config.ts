@@ -9,17 +9,23 @@ type ConfigFile = {
   messagesTtlDays?: number;
   corsOrigins?: string[];
   db?: {
-    host?: string;
-    port?: number;
-    user?: string;
-    password?: string;
-    database?: string;
+    path?: string;
   };
 };
 
 const loadConfig = (): ConfigFile => {
-  const raw = readFileSync(resolve(process.cwd(), 'config.json'), 'utf-8');
-  return JSON.parse(raw);
+  try {
+    const raw = readFileSync(resolve(process.cwd(), 'config.json'), 'utf-8');
+    return JSON.parse(raw);
+  } catch (err: any) {
+    if (err && err.code === 'ENOENT') {
+      throw new Error('config.json not found. Create backend/config.json from backend/config.example.json.');
+    }
+    if (err instanceof SyntaxError) {
+      throw new Error('config.json is invalid JSON. Fix formatting.');
+    }
+    throw err;
+  }
 };
 
 const fileConfig = loadConfig();
@@ -32,10 +38,6 @@ export const config = {
   messagesTtlDays: fileConfig.messagesTtlDays || MESSAGES_TTL_DAYS,
   corsOrigins: fileConfig.corsOrigins || ['http://localhost:8815', 'http://127.0.0.1:8815'],
   db: {
-    host: fileConfig.db?.host || '127.0.0.1',
-    port: fileConfig.db?.port || 5432,
-    user: fileConfig.db?.user || 'marx',
-    password: fileConfig.db?.password || 'marx',
-    database: fileConfig.db?.database || 'marx_chat',
+    path: fileConfig.db?.path || './data/marx.sqlite',
   }
 };

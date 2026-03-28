@@ -1,6 +1,6 @@
 import type {FastifyInstance} from 'fastify';
 import {API_PREFIX, SESSION_COOKIE_NAME} from '../../common/const.js';
-import {pool} from '../../db.js';
+import {db} from '../../db.js';
 import {createSession, hashPassword, verifyPassword} from '../../common/auth.js';
 
 export async function registerAuthModule(app: FastifyInstance) {
@@ -15,17 +15,15 @@ export async function registerAuthModule(app: FastifyInstance) {
       return {ok: false, error: 'invalid_input'};
     }
 
-    const result = await pool.query(
-      'select id, nickname, password_hash from users where nickname = $1',
-      [nickname]
-    );
+    const user = db.prepare(
+      'select id, nickname, password_hash from users where nickname = ?'
+    ).get(nickname) as {id: number; nickname: string; password_hash: string} | undefined;
 
-    if (!result.rowCount) {
+    if (!user) {
       reply.code(401);
       return {ok: false, error: 'invalid_credentials'};
     }
 
-    const user = result.rows[0];
     const valid = await verifyPassword(user.password_hash, password);
     if (!valid) {
       reply.code(401);
@@ -52,27 +50,26 @@ export async function registerAuthModule(app: FastifyInstance) {
       return {ok: false, error: 'invalid_input'};
     }
 
-    const current = await pool.query(
-      'select password_hash from users where id = $1',
-      [request.user.id]
-    );
+    const current = db.prepare(
+      'select password_hash from users where id = ?'
+    ).get(request.user.id) as {password_hash: string} | undefined;
 
-    if (!current.rowCount) {
+    if (!current) {
       reply.code(404);
       return {ok: false, error: 'not_found'};
     }
 
-    const valid = await verifyPassword(current.rows[0].password_hash, oldPassword);
+    const valid = await verifyPassword(current.password_hash, oldPassword);
     if (!valid) {
       reply.code(403);
       return {ok: false, error: 'invalid_credentials'};
     }
 
     const hash = await hashPassword(newPassword);
-    await pool.query(
-      'update users set password_hash = $1, updated_at = now() where id = $2',
-      [hash, request.user.id]
-    );
+    const updatedAt = new Date().toISOString();
+    db.prepare(
+      'update users set password_hash = ?, updated_at = ? where id = ?'
+    ).run(hash, updatedAt, request.user.id);
 
     return {ok: true};
   });
@@ -85,7 +82,7 @@ export async function registerAuthModule(app: FastifyInstance) {
 
     const token = request.cookies?.[SESSION_COOKIE_NAME];
     if (token) {
-      await pool.query('delete from sessions where token = $1', [token]);
+      db.prepare('delete from sessions where token = ?').run(token);
       reply.clearCookie(SESSION_COOKIE_NAME, {path: '/'});
     }
     return {ok: true};

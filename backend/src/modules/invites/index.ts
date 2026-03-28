@@ -1,7 +1,7 @@
 import type {FastifyInstance} from 'fastify';
 import {randomBytes} from 'node:crypto';
 import {API_PREFIX} from '../../common/const.js';
-import {pool} from '../../db.js';
+import {db} from '../../db.js';
 import {createSession, hashPassword} from '../../common/auth.js';
 
 export async function registerInvitesModule(app: FastifyInstance) {
@@ -11,7 +11,7 @@ export async function registerInvitesModule(app: FastifyInstance) {
       return {ok: false, error: 'unauthorized'};
     }
 
-    const result = await pool.query(
+    const result = db.prepare(
       `select
          i.id,
          i.code,
@@ -22,12 +22,11 @@ export async function registerInvitesModule(app: FastifyInstance) {
          (i.used_at is not null) as "isUsed"
        from invites i
        left join users u on u.id = i.used_by
-       where i.created_by = $1
-       order by i.created_at desc`,
-      [request.user.id]
-    );
+       where i.created_by = ?
+       order by i.created_at desc`
+    ).all(request.user.id);
 
-    return result.rows.map((row) => ({
+    return result.map((row: any) => ({
       id: row.id,
       code: row.code,
       createdAt: row.createdAt,
@@ -44,12 +43,14 @@ export async function registerInvitesModule(app: FastifyInstance) {
     }
 
     const code = randomBytes(8).toString('hex');
-    const created = await pool.query(
-      'insert into invites (code, created_by) values ($1, $2) returning id, code, created_at as "createdAt"',
-      [code, request.user.id]
-    );
+    const insert = db.prepare(
+      'insert into invites (code, created_by) values (?, ?)'
+    ).run(code, request.user.id);
+    const created = db.prepare(
+      'select id, code, created_at as "createdAt" from invites where id = ?'
+    ).get(Number(insert.lastInsertRowid));
 
-    return created.rows[0];
+    return created;
   });
 
   app.post(`${API_PREFIX}/invites/redeem`, async (request, reply) => {
@@ -64,64 +65,60 @@ export async function registerInvitesModule(app: FastifyInstance) {
       return {ok: false, error: 'invalid_input'};
     }
 
-    const client = await pool.connect();
     try {
-      await client.query('begin');
+      db.exec('begin immediate');
 
-      const invite = await client.query(
-        'select * from invites where code = $1 for update',
-        [code]
-      );
+      const invite = db.prepare(
+        'select * from invites where code = ?'
+      ).get(code) as any;
 
-      if (!invite.rowCount) {
-        await client.query('rollback');
+      if (!invite) {
+        db.exec('rollback');
         reply.code(404);
         return {ok: false, error: 'invite_not_found'};
       }
 
-      const row = invite.rows[0];
-      const isExpired = row.expires_at && new Date(row.expires_at) < new Date();
-      const isUsedUp = row.used_at;
+      const isExpired = invite.expires_at && new Date(invite.expires_at) < new Date();
+      const isUsedUp = invite.used_at;
 
       if (isExpired || isUsedUp) {
-        await client.query('rollback');
+        db.exec('rollback');
         reply.code(400);
         return {ok: false, error: 'invite_invalid'};
       }
 
-      const existingUser = await client.query(
-        'select id from users where nickname = $1',
-        [nickname]
-      );
+      const existingUser = db.prepare(
+        'select id from users where nickname = ?'
+      ).get(nickname);
 
-      if (existingUser.rowCount) {
-        await client.query('rollback');
+      if (existingUser) {
+        db.exec('rollback');
         reply.code(409);
         return {ok: false, error: 'nickname_taken'};
       }
 
       const passwordHash = await hashPassword(password);
-      const userResult = await client.query(
-        'insert into users (nickname, password_hash) values ($1, $2) returning id',
-        [nickname, passwordHash]
-      );
+      const userInsert = db.prepare(
+        'insert into users (nickname, password_hash) values (?, ?)'
+      ).run(nickname, passwordHash);
+      const userId = Number(userInsert.lastInsertRowid);
+      const usedAt = new Date().toISOString();
 
-      const userId = userResult.rows[0].id as number;
+      db.prepare(
+        'update invites set used_by = ?, used_at = ? where id = ?'
+      ).run(userId, usedAt, invite.id);
 
-      await client.query(
-        'update invites set used_by = $1, used_at = now() where id = $2',
-        [userId, row.id]
-      );
-
-      await client.query('commit');
+      db.exec('commit');
 
       await createSession(userId, request, reply);
       return {ok: true};
     } catch (err) {
-      await client.query('rollback');
+      try {
+        db.exec('rollback');
+      } catch {
+        // ignore rollback errors
+      }
       throw err;
-    } finally {
-      client.release();
     }
   });
 }

@@ -2,7 +2,7 @@ import type {Server} from 'http';
 import {WebSocketServer} from 'ws';
 import {config} from '../config.js';
 import {registerWsHandlers} from './handlers.js';
-import {pool} from '../db.js';
+import {db} from '../db.js';
 import {SESSION_COOKIE_NAME} from '../common/const.js';
 
 const parseCookies = (header?: string) => {
@@ -34,24 +34,24 @@ export function createWsServer(server: Server) {
         return;
       }
 
-      const result = await pool.query(
+      const nowIso = new Date().toISOString();
+      const result = db.prepare(
         `select u.id, u.nickname
          from sessions s
          join users u on u.id = s.user_id
-         where s.token = $1 and s.expires_at > now()
-         limit 1`,
-        [token]
-      );
+         where s.token = ? and s.expires_at > ?
+         limit 1`
+      ).get(token, nowIso);
 
-      if (!result.rowCount) {
+      if (!result) {
         socket.close(4401, 'unauthorized');
         return;
       }
 
-      (socket as any).user = result.rows[0];
+      (socket as any).user = result;
 
       socket.on('message', (data) => {
-        void wsHandlers.handleMessage(socket as any, data.toString()).catch(() => {});
+        void wsHandlers.handleMessage(socket as any, data.toString());
       });
 
       socket.on('close', () => {

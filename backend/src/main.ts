@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import {config} from './config.js';
-import {checkDb, closeDb, pool} from './db.js';
+import {checkDb, closeDb, db} from './db.js';
 import {createWsServer} from './ws/server.js';
 import {registerCleanupJob, runMessagesCleanup} from './jobs/cleanup.js';
 import {registerAuthModule} from './modules/auth/index.js';
@@ -25,17 +25,17 @@ async function bootstrap() {
     const token = request.cookies?.[SESSION_COOKIE_NAME];
     if (!token) return;
     try {
-      const result = await pool.query(
+      const nowIso = new Date().toISOString();
+      const result = db.prepare(
         `select u.id, u.nickname
          from sessions s
          join users u on u.id = s.user_id
-         where s.token = $1 and s.expires_at > now()
+         where s.token = ? and s.expires_at > ?
          limit 1`,
-        [token]
-      );
+      ).get(token, nowIso);
 
-      if (result.rowCount) {
-        request.user = result.rows[0];
+      if (result) {
+        request.user = result as any;
       }
     } catch (err) {
       request.log.warn({err}, 'Failed to resolve session');
@@ -57,16 +57,16 @@ async function bootstrap() {
   });
 
   try {
-    await checkDb();
-    app.log.info('PostgreSQL connection OK');
+    checkDb();
+    app.log.info('SQLite connection OK');
   } catch (err) {
-    app.log.error({err}, 'PostgreSQL connection failed');
+    app.log.error({err}, 'SQLite connection failed');
     await closeDb();
     process.exit(1);
     return;
   }
 
-  await runMessagesCleanup(pool, app.log);
+  await runMessagesCleanup(db, app.log);
 
   await app.listen({
     port: config.port,
@@ -74,7 +74,7 @@ async function bootstrap() {
   });
 
   createWsServer(app.server);
-  registerCleanupJob(pool, app.log);
+  registerCleanupJob(db, app.log);
 
   app.log.info(`HTTP server listening on ${config.host}:${config.port}`);
 }
