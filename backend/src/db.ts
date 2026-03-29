@@ -1,16 +1,16 @@
 import {readFileSync, mkdirSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
-import Database from 'better-sqlite3';
+import {DatabaseSync} from 'node:sqlite';
 import {config} from './config.js';
 
 const schemaPath = resolve(process.cwd(), 'sql/001_init.sql');
 const dbPath = resolve(process.cwd(), config.db.path);
 
-let db: Database;
+let db: DatabaseSync;
 try {
   mkdirSync(dirname(dbPath), {recursive: true});
-  db = new Database(dbPath);
-  db.pragma('foreign_keys = ON');
+  db = new DatabaseSync(dbPath);
+  db.exec('pragma foreign_keys = on');
   const schema = readFileSync(schemaPath, 'utf-8');
   db.exec(schema);
 } catch (err) {

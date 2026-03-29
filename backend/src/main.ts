@@ -14,8 +14,12 @@ import {SESSION_COOKIE_NAME} from './common/const.js';
 async function bootstrap() {
   const app = Fastify({logger: true});
 
+  const corsOrigin = Array.isArray(config.corsOrigins) && config.corsOrigins.includes('*')
+    ? true
+    : config.corsOrigins;
+
   await app.register(cors, {
-    origin: config.corsOrigins,
+    origin: corsOrigin,
     credentials: true,
   });
 

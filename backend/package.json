@@ -7,13 +7,13 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
-    "invite:create": "tsx src/cli/invite-create.ts"
+    "invite:create": "tsx src/cli/invite-create.ts",
+    "user:bootstrap": "tsx src/cli/bootstrap-user.ts"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
     "@fastify/cookie": "^9.3.1",
     "argon2": "^0.41.1",
-    "better-sqlite3": "^11.7.2",
     "fastify": "^4.29.0",
     "ws": "^8.18.0"
   },

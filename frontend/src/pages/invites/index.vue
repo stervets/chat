@@ -4,7 +4,7 @@
       <header class="invites-header">
         <div>
           <div class="title">Инвайты</div>
-          <div class="subtitle">Личный список кодов приглашений</div>
+          <div class="subtitle">Нажми кнопку — ссылка сразу скопируется</div>
         </div>
         <div class="actions">
           <NuxtLink class="nav-link" to="/chat">Чат</NuxtLink>
@@ -15,23 +15,12 @@
       </header>
 
       <div class="invites-body">
-        <div v-if="loading" class="hint">Загрузка...</div>
-        <div v-else-if="!invites.length" class="hint">Инвайтов нет</div>
-        <div v-else class="invites-list">
-          <div v-for="invite in invites" :key="invite.id" class="invite">
-            <div class="code">{{ invite.code }}</div>
-            <div class="meta">
-              <span class="status" :class="{used: invite.isUsed}">
-                {{ invite.isUsed ? 'Использован' : 'Свободен' }}
-              </span>
-              <span>Создан: {{ formatDate(invite.createdAt) }}</span>
-              <span v-if="invite.usedAt">Использован: {{ formatDate(invite.usedAt) }}</span>
-              <span v-if="invite.usedBy">
-                Пользователь: {{ invite.usedBy.nickname }} (#{{ invite.usedBy.id }})
-              </span>
-            </div>
-          </div>
+        <div class="hint">После клика просто вставь ссылку (Ctrl+V) в чат.</div>
+        <div v-if="lastLink" class="invite-link">
+          <div class="label">Ссылка для приглашения</div>
+          <div class="link">{{ lastLink }}</div>
         </div>
+        <div v-if="copied" class="copied">Ссылка скопирована в буфер обмена.</div>
         <div v-if="error" class="error">{{ error }}</div>
       </div>
     </div>

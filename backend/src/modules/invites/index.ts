@@ -1,5 +1,5 @@
 import type {FastifyInstance} from 'fastify';
-import {randomBytes} from 'node:crypto';
+import * as crypto from 'node:crypto';
 import {API_PREFIX} from '../../common/const.js';
 import {db} from '../../db.js';
 import {createSession, hashPassword} from '../../common/auth.js';
@@ -42,7 +42,7 @@ export async function registerInvitesModule(app: FastifyInstance) {
       return {ok: false, error: 'unauthorized'};
     }
 
-    const code = randomBytes(8).toString('hex');
+    const code = crypto.randomBytes(8).toString('hex');
     const insert = db.prepare(
       'insert into invites (code, created_by) values (?, ?)'
     ).run(code, request.user.id);

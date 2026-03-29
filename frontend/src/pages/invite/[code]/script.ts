@@ -1,10 +1,11 @@
 import {ref} from 'vue';
+import {getApiBase} from '@/composables/api';
 
 export default {
   async setup() {
     const route = useRoute();
     const router = useRouter();
-    const config = useRuntimeConfig();
+    const apiBase = getApiBase();
 
     const codeParam = Array.isArray(route.params.code) ? route.params.code[0] : route.params.code;
     const code = ref(codeParam || '');
@@ -22,7 +23,7 @@ export default {
 
       loading.value = true;
       try {
-        const response = await fetch(`${config.public.apiUrl}/api/invites/redeem`, {
+        const response = await fetch(`${apiBase}/api/invites/redeem`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -36,7 +37,18 @@ export default {
         });
 
         if (!response.ok) {
-          error.value = 'Не удалось зарегистрироваться по инвайту.';
+          let message = 'Не удалось зарегистрироваться по инвайту.';
+          try {
+            const data = await response.json();
+            const err = data?.error;
+            if (err === 'invite_not_found') message = 'Инвайт не найден. Создайте новый.';
+            else if (err === 'invite_invalid') message = 'Инвайт уже использован или истек.';
+            else if (err === 'nickname_taken') message = 'Никнейм уже занят.';
+            else if (err === 'invalid_input') message = 'Заполните все поля.';
+          } catch {
+            // ignore parse errors
+          }
+          error.value = message;
           return;
         }
 

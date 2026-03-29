@@ -1,4 +1,5 @@
 import {ref} from 'vue';
+import {getApiBase} from '@/composables/api';
 
 export default {
   async setup() {
@@ -6,8 +7,8 @@ export default {
     const password = ref('');
     const error = ref('');
     const loading = ref(false);
-    const config = useRuntimeConfig();
     const router = useRouter();
+    const apiBase = getApiBase();
 
     const onLogin = async () => {
       error.value = '';
@@ -18,7 +19,7 @@ export default {
 
       loading.value = true;
       try {
-        const response = await fetch(`${config.public.apiUrl}/api/auth/login`, {
+        const response = await fetch(`${apiBase}/api/auth/login`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'

@@ -1,42 +1,21 @@
 <template>
   <div class="page page-chat">
     <div class="chat-shell">
-      <aside class="sidebar">
-        <div class="section">
-          <div class="section-title">Диалоги</div>
-          <button
-            class="item"
-            :class="{active: activeDialog?.kind === 'general'}"
-            @click="selectGeneral"
-          >
-            Общий чат
-          </button>
-        </div>
-        <div class="section">
-          <div class="section-title">Пользователи</div>
-          <button
-            v-for="user in users"
-            :key="user.id"
-            class="item"
-            :class="{active: activeDialog?.kind === 'private' && activeDialog?.targetUser?.id === user.id}"
-            @click="selectPrivate(user)"
-          >
-            {{ user.nickname }}
-          </button>
-        </div>
-      </aside>
-
       <main class="chat-main">
         <header class="chat-header">
           <div>
             <div class="title">
-              {{ activeDialog?.title || 'Чат' }}
+              {{ activeDialog?.kind === 'general' ? 'Чат' : (activeDialog?.title || 'Чат') }}
             </div>
             <div class="subtitle" v-if="activeDialog?.kind === 'private'">
-              private message
+              директ
             </div>
           </div>
           <div class="actions">
+            <button v-if="activeDialog?.kind === 'private'" class="nav-link" @click="selectGeneral">
+              В чат
+            </button>
+            <button class="nav-link" @click="openUsers">Директы</button>
             <NuxtLink class="nav-link" to="/invites">Инвайты</NuxtLink>
             <button class="logout" @click="onLogout">Выйти</button>
           </div>
@@ -73,10 +52,39 @@
             class="input"
             rows="2"
             placeholder="Сообщение..."
+            @keydown="onKeydown"
           />
           <button class="btn" @click="onSend">Отправить</button>
         </div>
       </main>
+    </div>
+
+    <div v-if="showUsers" class="users-overlay" @click.self="closeUsers">
+        <div class="users-panel">
+          <div class="users-header">
+            <div class="users-title">Директы</div>
+            <button class="users-close" @click="closeUsers">Закрыть</button>
+          </div>
+        <input
+          v-model="searchQuery"
+          class="users-search"
+          type="text"
+          placeholder="Никнейм..."
+        />
+        <div v-if="!users.length" class="users-empty">Нет пользователей</div>
+        <div v-else-if="!filteredUsers.length" class="users-empty">Никого не найдено</div>
+        <div class="users-list">
+          <button
+            v-for="user in filteredUsers"
+            :key="user.id"
+            class="item"
+            :class="{active: activeDialog?.kind === 'private' && activeDialog?.targetUser?.id === user.id}"
+            @click="selectUser(user)"
+          >
+            {{ user.nickname }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>

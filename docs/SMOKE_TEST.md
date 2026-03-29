@@ -2,6 +2,30 @@
 
 SQLite файл создаётся автоматически при запуске backend.
 
+## Быстрый smoke (headless)
+
+Требуется установленный Playwright:
+
+```bash
+cd /var/home/lisov/projects/chat
+yarn install
+npx playwright install chromium
+```
+
+Запуск:
+
+```bash
+yarn run smoke
+```
+
+Сценарий делает:
+1. Сброс БД.
+2. Создание первого пользователя через `user:bootstrap`.
+3. Запуск backend и frontend.
+4. Логин, создание инвайта, регистрация второго пользователя.
+5. Проверка обмена сообщениями в общем чате.
+6. Проверка приватного диалога между пользователями.
+
 ## 1. Запуск backend
 
 ```bash

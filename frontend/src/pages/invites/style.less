@@ -70,50 +70,36 @@
     overflow-y: auto;
   }
 
-  .invites-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .invite {
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--bg-elevated);
-    padding: 12px 14px;
-  }
-
-  .code {
-    font-size: 14px;
-    color: var(--accent);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-  }
-
-  .meta {
-    margin-top: 6px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  .status {
-    padding: 2px 6px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    color: var(--text);
-  }
-
-  .status.used {
-    border-color: var(--danger);
-    color: var(--danger);
-  }
-
   .hint {
     font-size: 12px;
     color: var(--text-muted);
+  }
+
+  .invite-link {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+  }
+
+  .label {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .link {
+    margin-top: 6px;
+    font-size: 14px;
+    color: var(--accent);
+    font-weight: 600;
+    word-break: break-all;
+  }
+
+  .copied {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--accent-strong);
   }
 
   .error {

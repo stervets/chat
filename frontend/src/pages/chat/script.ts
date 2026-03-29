@@ -1,11 +1,13 @@
-import {ref, onMounted, nextTick} from 'vue';
+import {ref, onMounted, nextTick, computed} from 'vue';
 import type {Dialog, Message, User} from '@/composables/types';
 import {linkify} from '@/composables/utils';
+import {getApiBase, getWsUrl} from '@/composables/api';
 
 export default {
   async setup() {
     const router = useRouter();
-    const config = useRuntimeConfig();
+    const apiBase = getApiBase();
+    const wsUrl = getWsUrl();
 
     const users = ref<User[]>([]);
     const generalDialog = ref<Dialog | null>(null);
@@ -15,12 +17,23 @@ export default {
     const error = ref('');
     const historyLoading = ref(false);
     const messagesEl = ref<HTMLDivElement | null>(null);
+    const showUsers = ref(false);
+    const searchQuery = ref('');
+
+    const filteredUsers = computed(() => {
+      const query = searchQuery.value.trim().toLowerCase();
+      if (!query) return users.value;
+      return users.value.filter((user) =>
+        user.nickname.toLowerCase().includes(query)
+      );
+    });
 
     const ws = ref<WebSocket | null>(null);
     const wsReady = ref(false);
+    const pendingMessages = ref<{dialogId: number; body: string}[]>([]);
 
     const ensureAuth = async () => {
-      const response = await fetch(`${config.public.apiUrl}/api/me`, {
+      const response = await fetch(`${apiBase}/api/me`, {
         credentials: 'include'
       });
 
@@ -33,7 +46,7 @@ export default {
     };
 
     const fetchUsers = async () => {
-      const response = await fetch(`${config.public.apiUrl}/api/users`, {
+      const response = await fetch(`${apiBase}/api/users`, {
         credentials: 'include'
       });
 
@@ -43,7 +56,7 @@ export default {
     };
 
     const fetchGeneralDialog = async () => {
-      const response = await fetch(`${config.public.apiUrl}/api/dialogs/general`, {
+      const response = await fetch(`${apiBase}/api/dialogs/general`, {
         credentials: 'include'
       });
 
@@ -57,7 +70,7 @@ export default {
     };
 
     const fetchPrivateDialog = async (user: User) => {
-      const response = await fetch(`${config.public.apiUrl}/api/dialogs/private/${user.id}`, {
+      const response = await fetch(`${apiBase}/api/dialogs/private/${user.id}`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -80,7 +93,7 @@ export default {
       historyLoading.value = true;
       try {
         const response = await fetch(
-          `${config.public.apiUrl}/api/dialogs/${dialogId}/messages?limit=100`,
+          `${apiBase}/api/dialogs/${dialogId}/messages?limit=100`,
           {credentials: 'include'}
         );
 
@@ -99,12 +112,22 @@ export default {
 
     const connectWs = () => {
       if (ws.value) return;
-      ws.value = new WebSocket(config.public.wsUrl);
+      if (!wsUrl) return;
+      ws.value = new WebSocket(wsUrl);
 
       ws.value.onopen = () => {
         wsReady.value = true;
         if (activeDialog.value) {
           joinDialog(activeDialog.value.id);
+        }
+        if (pendingMessages.value.length) {
+          const pending = pendingMessages.value.slice();
+          pendingMessages.value = [];
+          setTimeout(() => {
+            for (const msg of pending) {
+              sendWs('chat:send', msg);
+            }
+          }, 50);
         }
       };
 
@@ -164,21 +187,44 @@ export default {
       await selectDialog(dialog);
     };
 
+    const openUsers = () => {
+      showUsers.value = true;
+    };
+
+    const closeUsers = () => {
+      showUsers.value = false;
+    };
+
+    const selectUser = async (user: User) => {
+      await selectPrivate(user);
+      showUsers.value = false;
+    };
+
     const onSend = () => {
       if (!activeDialog.value) return;
       const text = messageText.value.trim();
       if (!text) return;
-      sendWs('chat:send', {
-        dialogId: activeDialog.value.id,
-        body: text
-      });
+      const payload = {dialogId: activeDialog.value.id, body: text};
+      if (wsReady.value) {
+        sendWs('chat:send', payload);
+      } else {
+        pendingMessages.value.push(payload);
+        connectWs();
+      }
       messageText.value = '';
+    };
+
+    const onKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        onSend();
+      }
     };
 
     const onLogout = async () => {
       error.value = '';
       try {
-        await fetch(`${config.public.apiUrl}/api/auth/logout`, {
+        await fetch(`${apiBase}/api/auth/logout`, {
           method: 'POST',
           credentials: 'include'
         });
@@ -223,7 +269,14 @@ export default {
       messagesEl,
       selectGeneral,
       selectPrivate,
+      selectUser,
+      openUsers,
+      closeUsers,
+      showUsers,
+      searchQuery,
+      filteredUsers,
       onSend,
+      onKeydown,
       onLogout,
       linkify
     };

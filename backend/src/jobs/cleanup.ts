@@ -1,5 +1,5 @@
 import {config} from '../config.js';
-import type Database from 'better-sqlite3';
+import type {DatabaseSync} from 'node:sqlite';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -8,7 +8,7 @@ type CleanupLogger = {
   error: (obj: Record<string, unknown>, msg: string) => void;
 };
 
-export async function runMessagesCleanup(db: Database, logger: CleanupLogger = console as CleanupLogger) {
+export async function runMessagesCleanup(db: DatabaseSync, logger: CleanupLogger = console as CleanupLogger) {
   const ttlDays = Math.max(1, Math.floor(config.messagesTtlDays || 1));
   try {
     const cutoff = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000).toISOString();
@@ -21,7 +21,7 @@ export async function runMessagesCleanup(db: Database, logger: CleanupLogger = c
   }
 }
 
-export function registerCleanupJob(db: Database, logger: CleanupLogger = console as CleanupLogger) {
+export function registerCleanupJob(db: DatabaseSync, logger: CleanupLogger = console as CleanupLogger) {
   const timer = setInterval(() => {
     void runMessagesCleanup(db, logger);
   }, ONE_HOUR_MS);

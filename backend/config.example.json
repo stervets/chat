@@ -4,8 +4,7 @@
   "wsPath": "/ws",
   "messagesTtlDays": 7,
   "corsOrigins": [
-    "http://localhost:8815",
-    "http://127.0.0.1:8815"
+    "*"
   ],
   "db": {
     "path": "./data/marx.sqlite"

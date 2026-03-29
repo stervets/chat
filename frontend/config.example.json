@@ -1,5 +1,6 @@
 {
   "mode": "dev",
   "apiUrl": "http://localhost:8816",
-  "wsPath": "/ws"
+  "wsPath": "/ws",
+  "publicUrl": ""
 }

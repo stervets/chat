@@ -1,13 +1,14 @@
 import {onMounted} from 'vue';
+import {getApiBase} from '@/composables/api';
 
 export default {
   async setup() {
     const router = useRouter();
-    const config = useRuntimeConfig();
+    const apiBase = getApiBase();
 
     const redirect = async () => {
       try {
-        const response = await fetch(`${config.public.apiUrl}/api/me`, {
+        const response = await fetch(`${apiBase}/api/me`, {
           credentials: 'include'
         });
 

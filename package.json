@@ -4,7 +4,15 @@
   "private": true,
   "scripts": {
     "invite:create": "cd backend && yarn run invite:create",
+    "user:bootstrap": "cd backend && yarn run user:bootstrap",
     "frontend:dev": "cd frontend && yarn run dev",
-    "backend:dev": "cd backend && yarn run dev"
+    "backend:dev": "cd backend && yarn run dev",
+    "smoke": "node scripts/smoke-e2e.js"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.58.2"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2"
   }
 }
