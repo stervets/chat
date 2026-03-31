@@ -1,5 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {MESSAGES_TTL_DAYS, WS_PATH} from './common/const.js';
 
 type ConfigFile = {
@@ -15,7 +16,8 @@ type ConfigFile = {
 
 const loadConfig = (): ConfigFile => {
   try {
-    const raw = readFileSync(resolve(process.cwd(), 'config.json'), 'utf-8');
+    const baseDir = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
+    const raw = readFileSync(resolve(baseDir, 'config.json'), 'utf-8');
     return JSON.parse(raw);
   } catch (err: any) {
     if (err && err.code === 'ENOENT') {

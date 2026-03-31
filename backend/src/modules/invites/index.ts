@@ -79,9 +79,10 @@ export async function registerInvitesModule(app: FastifyInstance) {
       return {ok: true};
     }
 
+    const passwordHash = await hashPassword(password);
+
     try {
       db.exec('begin immediate');
-
       const invite = db.prepare(
         'select * from invites where code = ?'
       ).get(code) as any;
@@ -111,7 +112,6 @@ export async function registerInvitesModule(app: FastifyInstance) {
         return {ok: false, error: 'nickname_taken'};
       }
 
-      const passwordHash = await hashPassword(password);
       const userInsert = db.prepare(
         'insert into users (nickname, password_hash) values (?, ?)'
       ).run(nickname, passwordHash);
