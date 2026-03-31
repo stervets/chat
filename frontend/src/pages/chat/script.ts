@@ -6,6 +6,7 @@ import {getApiBase, getWsUrl} from '@/composables/api';
 export default {
   async setup() {
     const router = useRouter();
+    const runtimeConfig = useRuntimeConfig();
     const apiBase = getApiBase();
     const wsUrl = getWsUrl();
 
@@ -31,6 +32,8 @@ export default {
     const ws = ref<WebSocket | null>(null);
     const wsReady = ref(false);
     const pendingMessages = ref<{dialogId: number; body: string}[]>([]);
+    const wsUrls = ref<string[]>([]);
+    const wsIndex = ref(0);
 
     const ensureAuth = async () => {
       const response = await fetch(`${apiBase}/api/me`, {
@@ -112,10 +115,26 @@ export default {
 
     const connectWs = () => {
       if (ws.value) return;
-      if (!wsUrl) return;
-      ws.value = new WebSocket(wsUrl);
+      if (!wsUrls.value.length) return;
+      const url = wsUrls.value[Math.min(wsIndex.value, wsUrls.value.length - 1)];
+      if (!url) return;
+      const socket = new WebSocket(url);
+      ws.value = socket;
+      let opened = false;
+      const failover = () => {
+        if (opened) return;
+        ws.value = null;
+        wsReady.value = false;
+        if (wsIndex.value < wsUrls.value.length - 1) {
+          wsIndex.value += 1;
+          connectWs();
+        }
+      };
+      const failTimer = setTimeout(failover, 3000);
 
-      ws.value.onopen = () => {
+      socket.onopen = () => {
+        opened = true;
+        clearTimeout(failTimer);
         wsReady.value = true;
         if (activeDialog.value) {
           joinDialog(activeDialog.value.id);
@@ -131,7 +150,7 @@ export default {
         }
       };
 
-      ws.value.onmessage = (event) => {
+      socket.onmessage = (event) => {
         let data: any = null;
         try {
           data = JSON.parse(event.data);
@@ -151,9 +170,14 @@ export default {
         }
       };
 
-      ws.value.onclose = () => {
+      socket.onclose = () => {
         wsReady.value = false;
         ws.value = null;
+        if (opened) {
+          setTimeout(connectWs, 800);
+        } else {
+          failover();
+        }
       };
     };
 
@@ -247,6 +271,13 @@ export default {
     onMounted(async () => {
       const ok = await ensureAuth();
       if (!ok) return;
+
+      if (process.client) {
+        const wsPath = (runtimeConfig.public as any)?.wsPath || '/ws';
+        const fallback = new URL(wsPath, window.location.origin).toString();
+        const list = [wsUrl, fallback].filter(Boolean);
+        wsUrls.value = list.filter((item, index) => list.indexOf(item) === index);
+      }
 
       generalDialog.value = await fetchGeneralDialog();
       await fetchUsers();

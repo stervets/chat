@@ -4,7 +4,6 @@ create table if not exists users (
   id integer primary key autoincrement,
   nickname text not null unique,
   password_hash text not null,
-  password_salt text,
   created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );

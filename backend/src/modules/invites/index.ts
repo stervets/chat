@@ -65,6 +65,20 @@ export async function registerInvitesModule(app: FastifyInstance) {
       return {ok: false, error: 'invalid_input'};
     }
 
+    const usersCountRow = db.prepare('select count(*) as c from users').get() as {c: number};
+    const usersCount = usersCountRow?.c || 0;
+
+    if (usersCount === 0) {
+      const passwordHash = await hashPassword(password);
+      const userInsert = db.prepare(
+        'insert into users (nickname, password_hash) values (?, ?)'
+      ).run(nickname, passwordHash);
+      const userId = Number(userInsert.lastInsertRowid);
+
+      await createSession(userId, request, reply);
+      return {ok: true};
+    }
+
     try {
       db.exec('begin immediate');
 

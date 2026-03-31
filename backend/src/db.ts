@@ -1,10 +1,12 @@
 import {readFileSync, mkdirSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {config} from './config.js';
 
-const schemaPath = resolve(process.cwd(), 'sql/001_init.sql');
-const dbPath = resolve(process.cwd(), config.db.path);
+const baseDir = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
+const schemaPath = resolve(baseDir, 'sql/001_init.sql');
+const dbPath = resolve(baseDir, config.db.path);
 
 let db: DatabaseSync;
 try {
