@@ -1,5 +1,5 @@
 import {ref} from 'vue';
-import {wsRedeemInvite} from '@/composables/ws-rpc';
+import {wsCheckInvite, wsRedeemInvite} from '@/composables/ws-rpc';
 
 export default {
   async setup() {
@@ -12,12 +12,49 @@ export default {
       password: ref(''),
       error: ref(''),
       loading: ref(false),
+      inviteChecking: ref(true),
+      inviteValid: ref(false),
     };
   },
 
   methods: {
+    mapInviteError(this: any, errRaw: unknown) {
+      const err = String(errRaw || '');
+      if (err === 'invite_not_found') return 'Инвайт не найден.';
+      if (err === 'invite_invalid') return 'Инвайт уже использован или истек.';
+      if (err === 'invalid_input') return 'Некорректный код инвайта.';
+      if (err === 'ws_connect_error') return 'Не удалось подключиться к серверу.';
+      return 'Не удалось проверить инвайт.';
+    },
+
+    async validateInvite(this: any) {
+      this.inviteChecking = true;
+      this.inviteValid = false;
+      this.error = '';
+
+      try {
+        const result = await wsCheckInvite(this.code);
+        if ((result as any)?.ok) {
+          this.inviteValid = true;
+          return;
+        }
+
+        this.inviteValid = false;
+        this.error = this.mapInviteError((result as any)?.error);
+      } catch {
+        this.inviteValid = false;
+        this.error = 'Сервер недоступен.';
+      } finally {
+        this.inviteChecking = false;
+      }
+    },
+
     async onRegister(this: any) {
       this.error = '';
+      if (!this.inviteValid) {
+        this.error = 'Регистрация по этому инвайту недоступна.';
+        return;
+      }
       if (!this.nickname || !this.password || !this.code) {
         this.error = 'Заполните все поля.';
         return;
@@ -49,6 +86,10 @@ export default {
       if (event.key !== 'Enter') return;
       event.preventDefault();
       void this.onRegister();
-    }
+    },
+  },
+
+  async mounted(this: any) {
+    await this.validateInvite();
   },
 };

@@ -3,6 +3,7 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {config} from './config.js';
+import {DEFAULT_NICKNAME_COLOR} from './common/const.js';
 
 const baseDir = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const schemaPath = resolve(baseDir, 'sql/001_init.sql');
@@ -34,6 +35,13 @@ function ensureMigrations(database: DatabaseSync) {
   if (!hasNicknameColor) {
     database.exec(`alter table users add column nickname_color text`);
   }
+
+  database.exec(`update users set nickname_color = lower(nickname_color) where nickname_color is not null`);
+  database.prepare(
+    `update users
+     set nickname_color = ?
+     where nickname_color is null or trim(nickname_color) = ''`
+  ).run(DEFAULT_NICKNAME_COLOR);
 
   const duplicatedNicknames = database.prepare(
     `select lower(nickname) as nickname_ci, count(*) as c

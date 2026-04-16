@@ -5,6 +5,17 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
+  background:
+    radial-gradient(900px 520px at -10% -16%, rgba(198, 120, 221, 0.09) 0%, rgba(198, 120, 221, 0) 64%),
+    radial-gradient(860px 500px at 116% 0%, rgba(224, 108, 117, 0.08) 0%, rgba(224, 108, 117, 0) 66%),
+    linear-gradient(162deg, #161a21 0%, #1a2029 48%, #1b222b 100%);
+
+  .invite-shell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
 
   .content {
     text-align: center;
@@ -13,6 +24,16 @@
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 20px;
+  }
+
+  .project-logo {
+    width: min(56vw, 240px);
+    max-width: 240px;
+    height: auto;
+    display: block;
+    filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.34));
+    user-select: none;
+    pointer-events: none;
   }
 
   h1 {
@@ -64,6 +85,12 @@
   .btn:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
   }
 
   .error {

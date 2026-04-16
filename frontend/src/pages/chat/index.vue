@@ -7,6 +7,11 @@
           <button class="drawer-close" @click="closeLeftMenu">Закрыть</button>
         </div>
 
+        <div v-if="me" class="drawer-profile">
+          <div class="drawer-profile-name" :style="getUserNameStyle(me)">{{ me.name }}</div>
+          <div class="drawer-profile-username">{{ formatUsername(me.nickname) }}</div>
+        </div>
+
         <button
           class="menu-item"
           :class="{active: activeDialog?.kind === 'general'}"
@@ -26,7 +31,7 @@
             @click="selectDirectDialog(dialog)"
           >
             <span class="name" :style="getUserNameStyle(dialog.targetUser)">{{ dialog.targetUser.name }}</span>
-            <span class="nickname">{{ dialog.targetUser.nickname }}</span>
+            <span class="nickname">{{ formatUsername(dialog.targetUser.nickname) }}</span>
           </button>
         </div>
 
@@ -47,11 +52,12 @@
             @click="selectUser(user)"
           >
             <span class="name" :style="getUserNameStyle(user)">{{ user.name }}</span>
-            <span class="nickname">{{ user.nickname }}</span>
+            <span class="nickname">{{ formatUsername(user.nickname) }}</span>
           </button>
         </div>
 
         <NuxtLink class="menu-link" to="/invites">Инвайты</NuxtLink>
+        <button class="menu-logout" @click="onLogout">Выйти из аккаунта</button>
       </aside>
 
       <div v-if="isCompactLayout && leftMenuOpen" class="drawer-backdrop" @click="closeLeftMenu"/>
@@ -176,7 +182,7 @@
                 {{ message.authorName }}
               </span>
               <span class="nickname message-meta-action" @click="onAuthorClick(message)">
-                {{ message.authorNickname }}
+                {{ formatUsername(message.authorNickname) }}
               </span>
               <span
                 v-if="canOpenDirectFromMessage(message)"
@@ -237,6 +243,14 @@
                 >
                   {{ segment.value }}
                 </a>
+                <span
+                  v-else-if="segment.type === 'mention'"
+                  class="mention-token"
+                  :title="segment.username || ''"
+                  :style="segment.color ? {color: segment.color} : undefined"
+                >
+                  {{ segment.value }}
+                </span>
                 <span
                   v-else-if="segment.type === 'timeTag'"
                   class="time-reference"
@@ -357,12 +371,11 @@
       <aside class="drawer drawer-right" :class="{open: rightMenuOpen}">
         <div class="drawer-head">
           <div class="drawer-title">Опции</div>
-          <button class="logout-link" @click="onLogout">выйти из аккаунта</button>
         </div>
 
         <div class="section-title">Профиль</div>
-        <div class="field-label">Логин</div>
-        <div class="readonly">{{ me?.nickname || '' }}</div>
+        <div class="field-label">Username</div>
+        <div class="readonly">{{ formatUsername(me?.nickname || '') }}</div>
 
         <div class="field-label">Имя</div>
         <input

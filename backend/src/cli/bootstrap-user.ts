@@ -1,4 +1,5 @@
 import {hashPassword} from '../common/auth.js';
+import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
 import {db, closeDb} from '../db.js';
 
 const getArg = (name: string) => {
@@ -27,8 +28,8 @@ const run = async () => {
 
   const passwordHash = await hashPassword(password);
   const insert = db.prepare(
-    'insert into users (nickname, name, password_hash) values (?, ?, ?)'
-  ).run(nickname, nickname, passwordHash);
+    'insert into users (nickname, name, nickname_color, password_hash) values (?, ?, ?, ?)'
+  ).run(nickname, nickname, DEFAULT_NICKNAME_COLOR, passwordHash);
 
   process.stdout.write(`Created user id ${Number(insert.lastInsertRowid)}\n`);
   closeDb();

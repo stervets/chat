@@ -1,7 +1,7 @@
 import {randomBytes, randomUUID} from 'node:crypto';
 import argon2 from 'argon2';
 import {db} from '../db.js';
-import {SESSION_TTL_DAYS} from './const.js';
+import {DEFAULT_NICKNAME_COLOR, SESSION_TTL_DAYS} from './const.js';
 
 export type ResolvedSession = {
   user: {
@@ -68,7 +68,7 @@ export function resolveSession(token: string): ResolvedSession | null {
       id: row.userId,
       nickname: row.nickname,
       name: row.name || row.nickname,
-      nicknameColor: row.nicknameColor || null,
+      nicknameColor: row.nicknameColor || DEFAULT_NICKNAME_COLOR,
     },
   };
 }

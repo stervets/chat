@@ -2,6 +2,7 @@ import {createInterface} from 'node:readline/promises';
 import {stdin as input, stdout as output} from 'node:process';
 import {randomBytes} from 'node:crypto';
 import {hashPassword} from '../common/auth.js';
+import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
 import {config} from '../config.js';
 import {db, closeDb} from '../db.js';
 
@@ -169,8 +170,8 @@ async function addUserAction() {
   try {
     const passwordHash = await hashPassword(password);
     const insert = db.prepare(
-      'insert into users (nickname, name, password_hash) values (?, ?, ?)'
-    ).run(nickname, name || nickname, passwordHash);
+      'insert into users (nickname, name, nickname_color, password_hash) values (?, ?, ?, ?)'
+    ).run(nickname, name || nickname, DEFAULT_NICKNAME_COLOR, passwordHash);
     output.write(`\nПользователь создан: id=${Number(insert.lastInsertRowid)}\n`);
   } catch (err: any) {
     output.write(`\nНе удалось создать пользователя: ${String(err?.message || err)}\n`);

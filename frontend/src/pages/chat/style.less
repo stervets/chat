@@ -304,6 +304,7 @@
   .author {
     color: var(--accent);
     font-weight: 600;
+    font-size: 15px;
   }
 
   .message-meta-action {
@@ -403,6 +404,11 @@
 
   .message-body a {
     color: var(--accent);
+  }
+
+  .mention-token {
+    font-weight: 600;
+    color: #e5c07b;
   }
 
   .message-edit {
@@ -747,6 +753,31 @@
     gap: 8px;
   }
 
+  .drawer-profile {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(21, 29, 39, 0.62);
+    padding: 9px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .drawer-profile-name {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text);
+    word-break: break-word;
+  }
+
+  .drawer-profile-username {
+    font-size: 11px;
+    line-height: 1.2;
+    color: var(--text-muted);
+    word-break: break-word;
+  }
+
   .drawer-title {
     font-size: 14px;
     font-weight: 700;
@@ -764,16 +795,6 @@
   .drawer-close:hover {
     color: var(--text);
     border-color: var(--accent-strong);
-  }
-
-  .logout-link {
-    border: none;
-    background: transparent;
-    color: var(--danger);
-    font-size: 12px;
-    text-decoration: underline;
-    cursor: pointer;
-    padding: 0;
   }
 
   .drawer-backdrop {
@@ -864,6 +885,24 @@
   .menu-link:hover {
     border-color: var(--accent-strong);
     color: var(--accent);
+  }
+
+  .menu-logout {
+    margin-top: auto;
+    border-radius: 8px;
+    border: 1px solid rgba(224, 108, 117, 0.36);
+    background: rgba(224, 108, 117, 0.1);
+    color: #f2b4b8;
+    text-align: left;
+    padding: 9px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .menu-logout:hover {
+    border-color: rgba(224, 108, 117, 0.52);
+    background: rgba(224, 108, 117, 0.16);
+    color: #ffd1d4;
   }
 
   .field-label {

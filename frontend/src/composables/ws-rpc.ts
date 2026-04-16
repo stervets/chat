@@ -79,6 +79,12 @@ export async function wsRedeemInvite(code: string, nickname: string, password: s
   return result;
 }
 
+export async function wsCheckInvite(code: string) {
+  const connected = await ensureWsConnected();
+  if (!(connected as any).ok) return connected;
+  return ws.request('invites:check', {code});
+}
+
 export async function wsLogout() {
   const connected = await ensureWsConnected();
   if ((connected as any).ok) {

@@ -4,7 +4,7 @@ create table if not exists users (
   id integer primary key autoincrement,
   nickname text not null unique,
   name text not null,
-  nickname_color text,
+  nickname_color text default '#61afef',
   password_hash text not null,
   created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))

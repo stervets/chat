@@ -15,6 +15,7 @@ import {
   revokeSession,
   verifyPassword,
 } from '../common/auth.js';
+import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
 import {deleteUploadFile, sanitizeUploadName} from '../common/uploads.js';
 import type {SocketState} from './protocol.js';
 
@@ -159,7 +160,7 @@ export class ChatService {
       id: user.id,
       nickname: user.nickname,
       name: user.name?.trim() ? user.name.trim() : user.nickname,
-      nicknameColor: user.nicknameColor || null,
+      nicknameColor: user.nicknameColor || DEFAULT_NICKNAME_COLOR,
     };
   }
 
@@ -200,7 +201,7 @@ export class ChatService {
         id: row.userId,
         nickname: row.userNickname,
         name: row.userName?.trim() ? row.userName.trim() : row.userNickname,
-        nicknameColor: row.userNicknameColor || null,
+        nicknameColor: row.userNicknameColor || DEFAULT_NICKNAME_COLOR,
       });
       grouped.set(row.emoji, users);
     }
@@ -251,7 +252,7 @@ export class ChatService {
         id: row.userId,
         nickname: row.userNickname,
         name: row.userName?.trim() ? row.userName.trim() : row.userNickname,
-        nicknameColor: row.userNicknameColor || null,
+        nicknameColor: row.userNicknameColor || DEFAULT_NICKNAME_COLOR,
       });
       byEmoji.set(row.emoji, users);
     }
@@ -498,7 +499,7 @@ export class ChatService {
           id: row.usedById,
           nickname: row.usedByNickname,
           name: row.usedByName || row.usedByNickname,
-          nicknameColor: row.usedByNicknameColor || null,
+          nicknameColor: row.usedByNicknameColor || DEFAULT_NICKNAME_COLOR,
         }
         : null,
       isUsed: Boolean(row.isUsed),
@@ -528,6 +529,41 @@ export class ChatService {
     return created;
   }
 
+  async invitesCheck(_state: SocketState, payload: any): Promise<ApiError | ApiOk<{code: string}>> {
+    const code = (payload?.code || '').toString().trim();
+    if (!code) {
+      return {ok: false, error: 'invalid_input'};
+    }
+
+    const invite = db.prepare(
+      `select
+         i.id as id,
+         i.used_at as "usedAt",
+         i.expires_at as "expiresAt"
+       from invites i
+       where i.code = ?`
+    ).get(code) as {
+      id: number;
+      usedAt: string | null;
+      expiresAt: string | null;
+    } | undefined;
+
+    if (!invite) {
+      return {ok: false, error: 'invite_not_found'};
+    }
+
+    const isExpired = invite.expiresAt && new Date(invite.expiresAt) < new Date();
+    const isUsedUp = !!invite.usedAt;
+    if (isExpired || isUsedUp) {
+      return {ok: false, error: 'invite_invalid'};
+    }
+
+    return {
+      ok: true,
+      code,
+    };
+  }
+
   async invitesRedeem(state: SocketState, payload: any): Promise<ApiError | ApiOk<{
     token: string;
     expiresAt: string;
@@ -539,32 +575,6 @@ export class ChatService {
 
     if (!code || !nickname || !password) {
       return {ok: false, error: 'invalid_input'};
-    }
-
-    const usersCountRow = db.prepare('select count(*) as c from users').get() as {c: number};
-    const usersCount = usersCountRow?.c || 0;
-
-    if (usersCount === 0) {
-      const passwordHash = await hashPassword(password);
-      const name = this.normalizeName(payload?.name, nickname);
-      const userInsert = db.prepare(
-        'insert into users (nickname, name, password_hash) values (?, ?, ?)'
-      ).run(nickname, name, passwordHash);
-      const userId = Number(userInsert.lastInsertRowid);
-      const session = createSession(userId, {
-        ip: state.ip,
-        userAgent: state.userAgent,
-      });
-
-      state.user = {id: userId, nickname, name, nicknameColor: null};
-      state.token = session.token;
-
-      return {
-        ok: true,
-        token: session.token,
-        expiresAt: session.expiresAt,
-        user: state.user,
-      };
     }
 
     const passwordHash = await hashPassword(password);
@@ -597,8 +607,8 @@ export class ChatService {
 
       const name = this.normalizeName(payload?.name, nickname);
       const userInsert = db.prepare(
-        'insert into users (nickname, name, password_hash) values (?, ?, ?)'
-      ).run(nickname, name, passwordHash);
+        'insert into users (nickname, name, nickname_color, password_hash) values (?, ?, ?, ?)'
+      ).run(nickname, name, DEFAULT_NICKNAME_COLOR, passwordHash);
       const userId = Number(userInsert.lastInsertRowid);
       const usedAt = new Date().toISOString();
 
@@ -613,7 +623,7 @@ export class ChatService {
         userAgent: state.userAgent,
       });
 
-      state.user = {id: userId, nickname, name, nicknameColor: null};
+      state.user = {id: userId, nickname, name, nicknameColor: DEFAULT_NICKNAME_COLOR};
       state.token = session.token;
 
       return {
@@ -730,7 +740,7 @@ export class ChatService {
         id: row.targetUserId,
         nickname: row.targetUserNickname,
         name: row.targetUserName?.trim() ? row.targetUserName.trim() : row.targetUserNickname,
-        nicknameColor: row.targetUserNicknameColor || null,
+        nicknameColor: row.targetUserNicknameColor || DEFAULT_NICKNAME_COLOR,
       },
     }));
   }

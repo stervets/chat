@@ -50,6 +50,7 @@ type ToastItem = {
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const TIME_TAG_RE = /\[(\d{2}:\d{2}:\d{2})\]/g;
+const MENTION_TAG_RE = /@([a-zA-Z0-9._-]+)/g;
 const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)$/i;
 const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '☹️', '😡', '👎', '😢'];
@@ -138,7 +139,7 @@ export default {
 
   computed: {
     filteredUsers(this: any) {
-      const query = this.searchQuery.trim().toLowerCase();
+      const query = this.searchQuery.trim().toLowerCase().replace(/^@+/, '');
       if (!query) return [];
       return this.users.filter((user: User) => {
         const byName = user.name.toLowerCase().includes(query);
@@ -159,6 +160,12 @@ export default {
       const value = String(raw || '').trim();
       if (!value) return '';
       return value.toLowerCase();
+    },
+
+    formatUsername(this: any, nicknameRaw: unknown) {
+      const nickname = String(nicknameRaw || '').trim();
+      if (!nickname) return '';
+      return `@${nickname}`;
     },
 
     getUserNameStyle(this: any, user: User | null) {
@@ -214,11 +221,11 @@ export default {
     },
 
     onAuthorClick(this: any, message: Message) {
-      this.appendToInput(`${message.authorNickname}, `);
+      this.appendToInput(`${this.formatUsername(message.authorNickname)}, `);
     },
 
     onMessageTimeClick(this: any, message: Message) {
-      this.appendToInput(`${message.authorNickname} [${this.formatMessageTime(message.createdAt)}], `);
+      this.appendToInput(`${this.formatUsername(message.authorNickname)} [${this.formatMessageTime(message.createdAt)}], `);
     },
 
     canOpenDirectFromMessage(this: any, message: Message) {
@@ -332,17 +339,34 @@ export default {
       void this.saveMessageEdit(message);
     },
 
+    extractMentionTokens(this: any, bodyRaw: unknown) {
+      const body = String(bodyRaw || '');
+      const tokens: string[] = [];
+      MENTION_TAG_RE.lastIndex = 0;
+      for (const match of body.matchAll(MENTION_TAG_RE)) {
+        const nickname = String(match[1] || '').trim().toLowerCase();
+        if (!nickname) continue;
+        tokens.push(nickname);
+      }
+      return tokens;
+    },
+
+    hasMentionToken(this: any, bodyRaw: unknown, nicknameRaw: unknown) {
+      const nickname = String(nicknameRaw || '').trim().toLowerCase();
+      if (!nickname) return false;
+      return this.extractMentionTokens(bodyRaw).includes(nickname);
+    },
+
     containsAllKeyword(this: any, body: string) {
-      return /\ball\b/i.test(body);
+      return this.hasMentionToken(body, 'all');
     },
 
     isMentionedForMe(this: any, message: Message) {
       const meNickname = String(this.me?.nickname || '').toLowerCase();
       if (message.authorId === this.me?.id) return false;
-      if (this.activeDialog?.kind === 'private' && this.activeDialog.id === message.dialogId) return true;
       if (this.containsAllKeyword(message.body)) return true;
       if (!meNickname) return false;
-      return message.body.toLowerCase().includes(meNickname);
+      return this.hasMentionToken(message.body, meNickname);
     },
 
     getNotificationDialogTitle(this: any, notification: NotificationItem) {
@@ -623,7 +647,7 @@ export default {
     buildTimeTagTooltip(this: any, message: Message) {
       const normalized = message.body.replace(/\s+/g, ' ').trim();
       const preview = normalized.length > 100 ? `${normalized.slice(0, 97)}...` : normalized;
-      return `${message.authorNickname}: ${preview || '(пусто)'}`;
+      return `${this.formatUsername(message.authorNickname)}: ${preview || '(пусто)'}`;
     },
 
     findClosestMessageByTime(this: any, sourceIndex: number, timeLabel: string) {
@@ -651,6 +675,68 @@ export default {
       return preview?.type === 'image';
     },
 
+    findMentionUser(this: any, nicknameRaw: unknown) {
+      const nickname = String(nicknameRaw || '').trim().toLowerCase();
+      if (!nickname) return null;
+
+      if (String(this.me?.nickname || '').toLowerCase() === nickname) {
+        return this.me as User;
+      }
+
+      const byUsers = this.users.find((user: User) => user.nickname.toLowerCase() === nickname);
+      if (byUsers) return byUsers;
+
+      const byDialogs = this.directDialogs
+        .map((dialog: DirectDialog) => dialog.targetUser)
+        .find((user: User) => user.nickname.toLowerCase() === nickname);
+      if (byDialogs) return byDialogs;
+
+      return null;
+    },
+
+    pushMentionSegments(this: any, segments: any[], textRaw: string) {
+      const text = String(textRaw || '');
+      if (!text) return;
+
+      let lastIndex = 0;
+      MENTION_TAG_RE.lastIndex = 0;
+      for (const match of text.matchAll(MENTION_TAG_RE)) {
+        if (match.index === undefined) continue;
+
+        if (match.index > lastIndex) {
+          segments.push({
+            type: 'text',
+            value: text.slice(lastIndex, match.index),
+          });
+        }
+
+        const nickname = String(match[1] || '').trim();
+        const user = this.findMentionUser(nickname);
+        if (user) {
+          segments.push({
+            type: 'mention',
+            value: user.name,
+            username: this.formatUsername(user.nickname),
+            color: user.nicknameColor || null,
+          });
+        } else {
+          segments.push({
+            type: 'text',
+            value: this.formatUsername(nickname),
+          });
+        }
+
+        lastIndex = match.index + match[0].length;
+      }
+
+      if (lastIndex < text.length) {
+        segments.push({
+          type: 'text',
+          value: text.slice(lastIndex),
+        });
+      }
+    },
+
     buildMessageBodySegments(this: any, message: Message, sourceIndex: number) {
       const segments: Array<any> = [];
       let hiddenImageLink = false;
@@ -670,10 +756,7 @@ export default {
         for (const match of part.value.matchAll(TIME_TAG_RE)) {
           if (match.index === undefined) continue;
           if (match.index > lastIndex) {
-            segments.push({
-              type: 'text',
-              value: part.value.slice(lastIndex, match.index),
-            });
+            this.pushMentionSegments(segments, part.value.slice(lastIndex, match.index));
           }
 
           const timeLabel = match[1];
@@ -688,10 +771,7 @@ export default {
         }
 
         if (lastIndex < part.value.length) {
-          segments.push({
-            type: 'text',
-            value: part.value.slice(lastIndex),
-          });
+          this.pushMentionSegments(segments, part.value.slice(lastIndex));
         }
       }
 
@@ -909,7 +989,7 @@ export default {
       const users = reaction.users || [];
       if (!users.length) return '';
       return users
-        .map((user: User) => `${user.name} (${user.nickname})`)
+        .map((user: User) => `${user.name} (${this.formatUsername(user.nickname)})`)
         .join('\n');
     },
 

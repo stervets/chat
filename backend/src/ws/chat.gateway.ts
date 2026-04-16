@@ -188,6 +188,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     if (com === 'invites:list') return this.chatService.invitesList(client.state);
     if (com === 'invites:create') return this.chatService.invitesCreate(client.state);
+    if (com === 'invites:check') return this.chatService.invitesCheck(client.state, args[0]);
     if (com === 'invites:redeem') return this.chatService.invitesRedeem(client.state, args[0]);
 
     if (com === 'dialogs:general') return this.chatService.dialogsGeneral(client.state);
