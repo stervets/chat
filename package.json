@@ -7,7 +7,8 @@
     "user:bootstrap": "cd backend && yarn run user:bootstrap",
     "frontend:dev": "cd frontend && yarn run dev",
     "backend:dev": "cd backend && yarn run dev",
-    "smoke": "node scripts/smoke-e2e.js"
+    "smoke": "node scripts/smoke-e2e.js",
+    "test:login": "playwright test tests/login.spec.ts --config=playwright.config.ts --project=chromium"
   },
   "dependencies": {
     "@playwright/test": "^1.58.2"

@@ -7,7 +7,7 @@ const {chromium} = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
 const DB_PATH = path.join(ROOT, 'backend', 'data', 'marx.sqlite');
-const BACKEND_URL = 'http://localhost:8816/health';
+const BACKEND_WS_URL = 'ws://localhost:8816/ws';
 const FRONTEND_URL = 'http://localhost:8815';
 const BASE_URL = 'http://localhost:8815';
 
@@ -26,6 +26,66 @@ const waitForUrl = async (url, timeoutMs) => {
     await new Promise((r) => setTimeout(r, 300));
   }
   return false;
+};
+
+const waitForWs = async (url, timeoutMs) => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const ok = await new Promise((resolve) => {
+        const ws = new WebSocket(url);
+        const timer = setTimeout(() => {
+          try {
+            ws.close();
+          } catch {}
+          resolve(false);
+        }, 1000);
+
+        ws.onopen = () => {
+          clearTimeout(timer);
+          ws.close();
+          resolve(true);
+        };
+
+        ws.onerror = () => {
+          clearTimeout(timer);
+          resolve(false);
+        };
+      });
+
+      if (ok) return true;
+    } catch {
+      // ignore
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return false;
+};
+
+const isWsUp = async (url) => {
+  try {
+    const ws = new WebSocket(url);
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        try {
+          ws.close();
+        } catch {}
+        resolve(false);
+      }, 800);
+
+      ws.onopen = () => {
+        clearTimeout(timer);
+        ws.close();
+        resolve(true);
+      };
+      ws.onerror = () => {
+        clearTimeout(timer);
+        resolve(false);
+      };
+    });
+  } catch {
+    return false;
+  }
 };
 
 const isUrlUp = async (url) => {
@@ -102,7 +162,7 @@ async function openPrivate(page, nickname) {
 }
 
 (async () => {
-  if (await isUrlUp(BACKEND_URL) || await isUrlUp(FRONTEND_URL)) {
+  if (await isWsUp(BACKEND_WS_URL) || await isUrlUp(FRONTEND_URL)) {
     throw new Error('Ports 8815/8816 are busy. Stop running servers and retry.');
   }
 
@@ -114,7 +174,7 @@ async function openPrivate(page, nickname) {
 
   log('Start backend');
   const backend = startProcess('backend', 'yarn', ['run', 'backend:dev'], {cwd: ROOT});
-  if (!await waitForUrl(BACKEND_URL, 20000)) {
+  if (!await waitForWs(BACKEND_WS_URL, 20000)) {
     await stopProcess(backend, 'backend');
     throw new Error('Backend did not start');
   }
@@ -128,7 +188,20 @@ async function openPrivate(page, nickname) {
   }
 
   log('Run headless flow');
-  const browser = await chromium.launch({headless: true});
+  const browser = await chromium.launch({
+    ...(process.env.PW_EXECUTABLE_PATH
+      ? {executablePath: process.env.PW_EXECUTABLE_PATH}
+      : {channel: process.env.PW_CHANNEL || 'chromium'}),
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-crash-reporter',
+      '--disable-breakpad',
+      '--disable-crashpad',
+    ],
+  });
   try {
     const ctx1 = await browser.newContext();
     const page1 = await ctx1.newPage();

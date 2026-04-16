@@ -13,11 +13,10 @@ podman compose up -d
 
 - `caddy` — внешний reverse proxy и TLS
 - `frontend` — Nuxt SPA на `8815`
-- `backend` — API + WS на `8816`
+- `backend` — WS API на `8816`
 
 Caddy завершает HTTPS и проксирует:
 
-- `/api/*` → backend
 - `/ws*` → backend
 - остальное → frontend
 

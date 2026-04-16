@@ -1,3 +1,5 @@
+const normalizeWindowHost = (host: string) => (host === '0.0.0.0' ? '127.0.0.1' : host);
+
 export const getApiBase = () => {
   const config = useRuntimeConfig();
   const raw = config.public.apiUrl || '';
@@ -12,7 +14,8 @@ export const getApiBase = () => {
       const isLocal = apiUrl.hostname === 'localhost' || apiUrl.hostname === '127.0.0.1';
       if (isLocal) {
         const port = apiUrl.port ? `:${apiUrl.port}` : '';
-        return `${window.location.protocol}//${window.location.hostname}${port}`;
+        const host = normalizeWindowHost(window.location.hostname);
+        return `${window.location.protocol}//${host}${port}`;
       }
       return apiUrl.origin;
     }
@@ -23,18 +26,70 @@ export const getApiBase = () => {
 };
 
 export const getWsUrl = () => {
+  const candidates = getWsUrlCandidates();
+  return candidates[0] || '';
+};
+
+export const getWsUrlCandidates = () => {
   const config = useRuntimeConfig();
   const wsPath = config.public.wsPath || '/ws';
-  const apiBase = getApiBase();
+  const rawWsUrl = (config.public as any).wsUrl || '';
+  const values: string[] = [];
 
-  if (!apiBase) {
-    return '';
+  const pushUrl = (value: string) => {
+    if (!value) return;
+    if (!values.includes(value)) {
+      values.push(value);
+    }
+  };
+
+  if (rawWsUrl) {
+    try {
+      const parsed = new URL(rawWsUrl);
+      if (parsed.hostname === '0.0.0.0') {
+        parsed.hostname = process.client ? normalizeWindowHost(window.location.hostname) : '127.0.0.1';
+      }
+      pushUrl(parsed.toString());
+    } catch {
+      if (process.client) {
+        try {
+          const parsed = new URL(rawWsUrl, window.location.origin);
+          pushUrl(parsed.toString());
+        } catch {
+          // ignore invalid wsUrl
+        }
+      }
+    }
   }
 
-  const wsUrl = new URL(apiBase);
-  wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-  wsUrl.pathname = wsPath.startsWith('/') ? wsPath : `/${wsPath}`;
-  wsUrl.search = '';
-  wsUrl.hash = '';
-  return wsUrl.toString();
+  const apiBase = getApiBase();
+  if (apiBase) {
+    try {
+      const wsUrl = new URL(apiBase);
+      wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl.pathname = wsPath.startsWith('/') ? wsPath : `/${wsPath}`;
+      wsUrl.search = '';
+      wsUrl.hash = '';
+      pushUrl(wsUrl.toString());
+    } catch {
+      // ignore invalid apiBase
+    }
+  }
+
+  if (process.client) {
+    try {
+      const fallback = new URL(wsPath, window.location.origin);
+      fallback.protocol = fallback.protocol === 'https:' ? 'wss:' : 'ws:';
+      fallback.search = '';
+      fallback.hash = '';
+      if (fallback.hostname === '0.0.0.0') {
+        fallback.hostname = normalizeWindowHost(window.location.hostname);
+      }
+      pushUrl(fallback.toString());
+    } catch {
+      // ignore
+    }
+  }
+
+  return values;
 };

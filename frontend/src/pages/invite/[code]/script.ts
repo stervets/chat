@@ -1,72 +1,54 @@
 import {ref} from 'vue';
-import {getApiBase} from '@/composables/api';
+import {wsRedeemInvite} from '@/composables/ws-rpc';
 
 export default {
   async setup() {
     const route = useRoute();
-    const router = useRouter();
-    const apiBase = getApiBase();
-
     const codeParam = Array.isArray(route.params.code) ? route.params.code[0] : route.params.code;
-    const code = ref(codeParam || '');
-    const nickname = ref('');
-    const password = ref('');
-    const error = ref('');
-    const loading = ref(false);
+    return {
+      router: useRouter(),
+      code: ref(codeParam || ''),
+      nickname: ref(''),
+      password: ref(''),
+      error: ref(''),
+      loading: ref(false),
+    };
+  },
 
-    const onRegister = async () => {
-      error.value = '';
-      if (!nickname.value || !password.value || !code.value) {
-        error.value = 'Заполните все поля.';
+  methods: {
+    async onRegister(this: any) {
+      this.error = '';
+      if (!this.nickname || !this.password || !this.code) {
+        this.error = 'Заполните все поля.';
         return;
       }
 
-      loading.value = true;
+      this.loading = true;
       try {
-        const response = await fetch(`${apiBase}/api/invites/redeem`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            code: code.value,
-            nickname: nickname.value,
-            password: password.value
-          })
-        });
-
-        if (!response.ok) {
+        const result = await wsRedeemInvite(this.code, this.nickname, this.password);
+        if (!(result as any)?.ok) {
           let message = 'Не удалось зарегистрироваться по инвайту.';
-          try {
-            const data = await response.json();
-            const err = data?.error;
-            if (err === 'invite_not_found') message = 'Инвайт не найден. Создайте новый.';
-            else if (err === 'invite_invalid') message = 'Инвайт уже использован или истек.';
-            else if (err === 'nickname_taken') message = 'Никнейм уже занят.';
-            else if (err === 'invalid_input') message = 'Заполните все поля.';
-          } catch {
-            // ignore parse errors
-          }
-          error.value = message;
+          const err = (result as any)?.error;
+          if (err === 'invite_not_found') message = 'Инвайт не найден. Создайте новый.';
+          else if (err === 'invite_invalid') message = 'Инвайт уже использован или истек.';
+          else if (err === 'nickname_taken') message = 'Никнейм уже занят.';
+          else if (err === 'invalid_input') message = 'Заполните все поля.';
+          this.error = message;
           return;
         }
 
-        await router.push('/chat');
-      } catch (e) {
-        error.value = 'Сервер недоступен.';
+        await this.router.push('/chat');
+      } catch {
+        this.error = 'Сервер недоступен.';
       } finally {
-        loading.value = false;
+        this.loading = false;
       }
-    };
+    },
 
-    return {
-      code,
-      nickname,
-      password,
-      error,
-      loading,
-      onRegister
-    };
-  }
-}
+    onKeydown(this: any, event: KeyboardEvent) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      void this.onRegister();
+    }
+  },
+};

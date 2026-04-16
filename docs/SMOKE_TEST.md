@@ -104,12 +104,7 @@ yarn run invite:create
 ## 9. Проверка доступа к чужому dialogId
 
 - Возьми `dialogId` приватного диалога пользователя A и B.
-- Зайди под третьим пользователем и попробуй открыть:
-
-```bash
-curl -i -s \
-  -b "marx_session=<SESSION>" \
-  "http://localhost:8816/api/dialogs/<dialogId>/messages"
-```
-
-Ожидается `403 forbidden`.
+- Зайди под третьим пользователем и отправь WS запрос:
+  - `["dialogs:messages",[<dialogId>,100],"frontend","backend","req-1"]`
+- Ожидается ответ:
+  - `["[res]",[{"ok":false,"error":"forbidden"}],"backend","frontend","req-1"]`

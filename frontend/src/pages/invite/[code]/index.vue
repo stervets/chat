@@ -9,12 +9,14 @@
           type="text"
           placeholder="nickname"
           class="input"
+          @keydown="onKeydown"
         />
         <input
           v-model="password"
           type="password"
           placeholder="password"
           class="input"
+          @keydown="onKeydown"
         />
         <button class="btn" :disabled="loading" @click="onRegister">
           {{ loading ? 'Регистрация...' : 'Register' }}

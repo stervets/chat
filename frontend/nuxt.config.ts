@@ -57,10 +57,6 @@ export default defineNuxtConfig({
       port: 8815,
       strictPort: true,
       proxy: {
-        '/api': {
-          target: apiUrl,
-          changeOrigin: true
-        },
         [wsPath]: {
           target: apiUrl,
           changeOrigin: true,

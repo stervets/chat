@@ -1,31 +1,31 @@
-import {ref, onMounted} from 'vue';
-import {getApiBase} from '@/composables/api';
+import {ref} from 'vue';
+import {ws} from '@/composables/classes/ws';
+import {restoreSession} from '@/composables/ws-rpc';
 
 export default {
   async setup() {
-    const router = useRouter();
-    const apiBase = getApiBase();
-    const config = useRuntimeConfig();
+    return {
+      router: useRouter(),
+      config: useRuntimeConfig(),
+      creating: ref(false),
+      error: ref(''),
+      lastLink: ref(''),
+      copied: ref(false),
+    };
+  },
 
-    const creating = ref(false);
-    const error = ref('');
-    const lastLink = ref('');
-    const copied = ref(false);
-
-    const ensureAuth = async () => {
-      const response = await fetch(`${apiBase}/api/me`, {
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        await router.push('/login');
+  methods: {
+    async ensureAuth(this: any) {
+      const session = await restoreSession();
+      if (!(session as any)?.ok) {
+        await this.router.push('/login');
         return false;
       }
 
       return true;
-    };
+    },
 
-    const copyToClipboard = async (text: string) => {
+    async copyToClipboard(this: any, text: string) {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
         return;
@@ -40,56 +40,36 @@ export default {
       input.select();
       document.execCommand('copy');
       document.body.removeChild(input);
-    };
+    },
 
-    const onCreate = async () => {
-      if (creating.value) return;
-      creating.value = true;
-      error.value = '';
-      copied.value = false;
+    async onCreate(this: any) {
+      if (this.creating) return;
+      this.creating = true;
+      this.error = '';
+      this.copied = false;
 
       try {
-        const response = await fetch(`${apiBase}/api/invites/create`, {
-          method: 'POST',
-          credentials: 'include'
-        });
-
-        if (response.status === 401) {
-          await router.push('/login');
+        const created = await ws.request('invites:create');
+        if ((created as any)?.error === 'unauthorized' || (created as any)?.ok === false) {
+          await this.router.push('/login');
           return;
         }
-
-        if (!response.ok) {
-          error.value = 'Не удалось создать инвайт.';
-          return;
-        }
-
-        const created = await response.json();
-        const rawPublicUrl = (config.public as any)?.publicUrl || '';
+        const rawPublicUrl = (this.config.public as any)?.publicUrl || '';
         const publicUrl = rawPublicUrl.trim();
         const origin = publicUrl || window.location.origin;
-        const link = `${origin}/invite/${created.code}`;
-        lastLink.value = link;
-        await copyToClipboard(link);
-        copied.value = true;
-      } catch (e) {
-        error.value = 'Сервер недоступен.';
+        const link = `${origin}/invite/${(created as any).code}`;
+        this.lastLink = link;
+        await this.copyToClipboard(link);
+        this.copied = true;
+      } catch {
+        this.error = 'Сервер недоступен.';
       } finally {
-        creating.value = false;
+        this.creating = false;
       }
-    };
+    },
+  },
 
-    onMounted(async () => {
-      const ok = await ensureAuth();
-      if (!ok) return;
-    });
-
-    return {
-      creating,
-      error,
-      onCreate,
-      lastLink,
-      copied
-    };
-  }
-}
+  mounted(this: any) {
+    void this.ensureAuth();
+  },
+};

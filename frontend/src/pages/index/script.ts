@@ -1,32 +1,33 @@
-import {onMounted} from 'vue';
-import {getApiBase} from '@/composables/api';
+import {ws} from '@/composables/classes/ws';
+import {restoreSession} from '@/composables/ws-rpc';
 
 export default {
   async setup() {
-    const router = useRouter();
-    const apiBase = getApiBase();
+    return {
+      router: useRouter(),
+    };
+  },
 
-    const redirect = async () => {
+  methods: {
+    async redirect(this: any) {
       try {
-        const response = await fetch(`${apiBase}/api/me`, {
-          credentials: 'include'
-        });
-
-        if (response.ok) {
-          await router.replace('/chat');
-          return;
+        const session = await restoreSession();
+        if ((session as any)?.ok) {
+          const me = await ws.request('auth:me');
+          if ((me as any)?.id) {
+            await this.router.replace('/chat');
+            return;
+          }
         }
-      } catch (e) {
+      } catch {
         // fall through to login
       }
 
-      await router.replace('/login');
-    };
+      await this.router.replace('/login');
+    }
+  },
 
-    onMounted(() => {
-      redirect();
-    });
-
-    return {};
-  }
-}
+  mounted(this: any) {
+    void this.redirect();
+  },
+};

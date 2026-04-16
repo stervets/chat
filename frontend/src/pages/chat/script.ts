@@ -1,315 +1,205 @@
-import {ref, onMounted, nextTick, computed} from 'vue';
+import {ref, nextTick} from 'vue';
 import type {Dialog, Message, User} from '@/composables/types';
 import {linkify} from '@/composables/utils';
-import {getApiBase, getWsUrl} from '@/composables/api';
+import {ws} from '@/composables/classes/ws';
+import {on, off} from '@/composables/event-bus';
+import {restoreSession, wsLogout} from '@/composables/ws-rpc';
 
 export default {
   async setup() {
-    const router = useRouter();
-    const runtimeConfig = useRuntimeConfig();
-    const apiBase = getApiBase();
-    const wsUrl = getWsUrl();
+    return {
+      router: useRouter(),
 
-    const users = ref<User[]>([]);
-    const generalDialog = ref<Dialog | null>(null);
-    const activeDialog = ref<Dialog | null>(null);
-    const messages = ref<Message[]>([]);
-    const messageText = ref('');
-    const error = ref('');
-    const historyLoading = ref(false);
-    const messagesEl = ref<HTMLDivElement | null>(null);
-    const showUsers = ref(false);
-    const searchQuery = ref('');
+      users: ref<User[]>([]),
+      generalDialog: ref<Dialog | null>(null),
+      activeDialog: ref<Dialog | null>(null),
+      messages: ref<Message[]>([]),
+      messageText: ref(''),
+      error: ref(''),
+      historyLoading: ref(false),
+      messagesEl: ref<HTMLDivElement | null>(null),
+      showUsers: ref(false),
+      searchQuery: ref(''),
 
-    const filteredUsers = computed(() => {
-      const query = searchQuery.value.trim().toLowerCase();
-      if (!query) return users.value;
-      return users.value.filter((user) =>
-        user.nickname.toLowerCase().includes(query)
-      );
-    });
+      chatMessageHandler: ref<Function | null>(null),
+      disconnectedHandler: ref<Function | null>(null),
 
-    const ws = ref<WebSocket | null>(null);
-    const wsReady = ref(false);
-    const pendingMessages = ref<{dialogId: number; body: string}[]>([]);
-    const wsUrls = ref<string[]>([]);
-    const wsIndex = ref(0);
+      linkify,
+    };
+  },
 
-    const ensureAuth = async () => {
-      const response = await fetch(`${apiBase}/api/me`, {
-        credentials: 'include'
-      });
+  computed: {
+    filteredUsers(this: any) {
+      const query = this.searchQuery.trim().toLowerCase();
+      if (!query) return this.users;
+      return this.users.filter((user: User) => user.nickname.toLowerCase().includes(query));
+    }
+  },
 
-      if (!response.ok) {
-        await router.push('/login');
+  methods: {
+    async ensureAuth(this: any) {
+      const session = await restoreSession();
+      if (!(session as any)?.ok) {
+        await this.router.push('/login');
+        return false;
+      }
+
+      const me = await ws.request('auth:me');
+      if (!(me as any)?.id) {
+        await this.router.push('/login');
         return false;
       }
 
       return true;
-    };
+    },
 
-    const fetchUsers = async () => {
-      const response = await fetch(`${apiBase}/api/users`, {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        users.value = await response.json();
+    async fetchUsers(this: any) {
+      const result = await ws.request('users:list');
+      if (Array.isArray(result)) {
+        this.users = result;
       }
-    };
+    },
 
-    const fetchGeneralDialog = async () => {
-      const response = await fetch(`${apiBase}/api/dialogs/general`, {
-        credentials: 'include'
-      });
-
-      if (!response.ok) return null;
-      const data = await response.json();
+    async fetchGeneralDialog(this: any) {
+      const result = await ws.request('dialogs:general');
+      if ((result as any)?.error || (result as any)?.ok === false) return null;
       return {
-        id: data.dialogId,
+        id: (result as any).dialogId,
         kind: 'general',
-        title: data.title
+        title: (result as any).title,
       } as Dialog;
-    };
+    },
 
-    const fetchPrivateDialog = async (user: User) => {
-      const response = await fetch(`${apiBase}/api/dialogs/private/${user.id}`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        error.value = 'Не удалось открыть диалог.';
+    async fetchPrivateDialog(this: any, user: User) {
+      const result = await ws.request('dialogs:private', user.id);
+      if ((result as any)?.error || (result as any)?.ok === false) {
+        this.error = 'Не удалось открыть диалог.';
         return null;
       }
-
-      const data = await response.json();
       return {
-        id: data.dialogId,
+        id: (result as any).dialogId,
         kind: 'private',
-        targetUser: data.targetUser,
-        title: data.targetUser.nickname
+        targetUser: (result as any).targetUser,
+        title: (result as any).targetUser.nickname,
       } as Dialog;
-    };
+    },
 
-    const loadHistory = async (dialogId: number) => {
-      historyLoading.value = true;
+    async loadHistory(this: any, dialogId: number) {
+      this.historyLoading = true;
       try {
-        const response = await fetch(
-          `${apiBase}/api/dialogs/${dialogId}/messages?limit=100`,
-          {credentials: 'include'}
-        );
-
-        if (!response.ok) {
-          error.value = 'Не удалось загрузить историю.';
+        const result = await ws.request('dialogs:messages', dialogId, 100);
+        if (!Array.isArray(result)) {
+          this.error = 'Не удалось загрузить историю.';
           return;
         }
-
-        messages.value = await response.json();
+        this.messages = result;
         await nextTick();
-        scrollToBottom();
+        this.scrollToBottom();
       } finally {
-        historyLoading.value = false;
+        this.historyLoading = false;
       }
-    };
+    },
 
-    const connectWs = () => {
-      if (ws.value) return;
-      if (!wsUrls.value.length) return;
-      const url = wsUrls.value[Math.min(wsIndex.value, wsUrls.value.length - 1)];
-      if (!url) return;
-      const socket = new WebSocket(url);
-      ws.value = socket;
-      let opened = false;
-      const failover = () => {
-        if (opened) return;
-        ws.value = null;
-        wsReady.value = false;
-        if (wsIndex.value < wsUrls.value.length - 1) {
-          wsIndex.value += 1;
-          connectWs();
-        }
-      };
-      const failTimer = setTimeout(failover, 3000);
-
-      socket.onopen = () => {
-        opened = true;
-        clearTimeout(failTimer);
-        wsReady.value = true;
-        if (activeDialog.value) {
-          joinDialog(activeDialog.value.id);
-        }
-        if (pendingMessages.value.length) {
-          const pending = pendingMessages.value.slice();
-          pendingMessages.value = [];
-          setTimeout(() => {
-            for (const msg of pending) {
-              sendWs('chat:send', msg);
-            }
-          }, 50);
-        }
-      };
-
-      socket.onmessage = (event) => {
-        let data: any = null;
-        try {
-          data = JSON.parse(event.data);
-        } catch (e) {
-          return;
-        }
-
-        if (data.type === 'chat:message') {
-          if (activeDialog.value && data.payload.dialogId === activeDialog.value.id) {
-            messages.value.push(data.payload);
-            nextTick().then(scrollToBottom);
-          }
-        }
-
-        if (data.type === 'chat:error') {
-          error.value = data.payload?.message || 'Ошибка чата.';
-        }
-      };
-
-      socket.onclose = () => {
-        wsReady.value = false;
-        ws.value = null;
-        if (opened) {
-          setTimeout(connectWs, 800);
-        } else {
-          failover();
-        }
-      };
-    };
-
-    const sendWs = (type: string, payload: any) => {
-      if (!ws.value || ws.value.readyState !== WebSocket.OPEN) return;
-      ws.value.send(JSON.stringify({type, payload}));
-    };
-
-    const joinDialog = (dialogId: number) => {
-      sendWs('chat:join', {dialogId});
-    };
-
-    const selectDialog = async (dialog: Dialog) => {
-      activeDialog.value = dialog;
-      messages.value = [];
-      error.value = '';
-      await loadHistory(dialog.id);
-      if (wsReady.value) {
-        joinDialog(dialog.id);
+    async joinDialog(this: any, dialogId: number) {
+      const result = await ws.request('chat:join', dialogId);
+      if (!(result as any)?.ok) {
+        this.error = 'Не удалось подключиться к диалогу.';
       }
-    };
+    },
 
-    const selectGeneral = async () => {
-      if (!generalDialog.value) return;
-      await selectDialog(generalDialog.value);
-    };
+    async selectDialog(this: any, dialog: Dialog) {
+      this.activeDialog = dialog;
+      this.messages = [];
+      this.error = '';
+      await this.loadHistory(dialog.id);
+      await this.joinDialog(dialog.id);
+    },
 
-    const selectPrivate = async (user: User) => {
-      const dialog = await fetchPrivateDialog(user);
+    async selectGeneral(this: any) {
+      if (!this.generalDialog) return;
+      await this.selectDialog(this.generalDialog);
+    },
+
+    async selectPrivate(this: any, user: User) {
+      const dialog = await this.fetchPrivateDialog(user);
       if (!dialog) return;
-      await selectDialog(dialog);
-    };
+      await this.selectDialog(dialog);
+    },
 
-    const openUsers = () => {
-      showUsers.value = true;
-    };
+    openUsers(this: any) {
+      this.showUsers = true;
+    },
 
-    const closeUsers = () => {
-      showUsers.value = false;
-    };
+    closeUsers(this: any) {
+      this.showUsers = false;
+    },
 
-    const selectUser = async (user: User) => {
-      await selectPrivate(user);
-      showUsers.value = false;
-    };
+    async selectUser(this: any, user: User) {
+      await this.selectPrivate(user);
+      this.showUsers = false;
+    },
 
-    const onSend = () => {
-      if (!activeDialog.value) return;
-      const text = messageText.value.trim();
+    async onSend(this: any) {
+      if (!this.activeDialog) return;
+      const text = this.messageText.trim();
       if (!text) return;
-      const payload = {dialogId: activeDialog.value.id, body: text};
-      if (wsReady.value) {
-        sendWs('chat:send', payload);
+      const result = await ws.request('chat:send', this.activeDialog.id, text);
+      if ((result as any)?.ok) {
+        this.messageText = '';
       } else {
-        pendingMessages.value.push(payload);
-        connectWs();
+        this.error = 'Не удалось отправить сообщение.';
       }
-      messageText.value = '';
-    };
+    },
 
-    const onKeydown = (event: KeyboardEvent) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
-        onSend();
-      }
-    };
+    onKeydown(this: any, event: KeyboardEvent) {
+      if (event.key !== 'Enter' || event.shiftKey) return;
+      event.preventDefault();
+      void this.onSend();
+    },
 
-    const onLogout = async () => {
-      error.value = '';
-      try {
-        await fetch(`${apiBase}/api/auth/logout`, {
-          method: 'POST',
-          credentials: 'include'
-        });
-      } catch (e) {
-        // ignore
-      } finally {
-        if (ws.value) {
-          ws.value.close();
-          ws.value = null;
-        }
-        await router.push('/login');
-      }
-    };
+    async onLogout(this: any) {
+      this.error = '';
+      await wsLogout();
+      await this.router.push('/login');
+    },
 
-    const scrollToBottom = () => {
-      if (!messagesEl.value) return;
-      messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
-    };
+    scrollToBottom(this: any) {
+      if (!this.messagesEl) return;
+      this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    },
 
-    onMounted(async () => {
-      const ok = await ensureAuth();
-      if (!ok) return;
+    onChatMessage(this: any, message: Message) {
+      if (!this.activeDialog) return;
+      if (message.dialogId !== this.activeDialog.id) return;
+      this.messages.push(message);
+      nextTick().then(() => this.scrollToBottom());
+    },
 
-      if (process.client) {
-        const wsPath = (runtimeConfig.public as any)?.wsPath || '/ws';
-        const fallback = new URL(wsPath, window.location.origin).toString();
-        const list = [wsUrl, fallback].filter(Boolean);
-        wsUrls.value = list.filter((item, index) => list.indexOf(item) === index);
-      }
+    onDisconnected(this: any) {
+      this.error = 'Соединение потеряно. Перезайди в чат.';
+    }
+  },
 
-      generalDialog.value = await fetchGeneralDialog();
-      await fetchUsers();
+  async mounted(this: any) {
+    const ok = await this.ensureAuth();
+    if (!ok) return;
 
-      if (generalDialog.value) {
-        await selectDialog(generalDialog.value);
-      }
+    this.chatMessageHandler = (message: Message) => this.onChatMessage(message);
+    this.disconnectedHandler = () => this.onDisconnected();
 
-      connectWs();
-    });
+    on('chat:message', this.chatMessageHandler);
+    on('ws:disconnected', this.disconnectedHandler);
 
-    return {
-      users,
-      generalDialog,
-      activeDialog,
-      messages,
-      messageText,
-      error,
-      historyLoading,
-      messagesEl,
-      selectGeneral,
-      selectPrivate,
-      selectUser,
-      openUsers,
-      closeUsers,
-      showUsers,
-      searchQuery,
-      filteredUsers,
-      onSend,
-      onKeydown,
-      onLogout,
-      linkify
-    };
-  }
-}
+    this.generalDialog = await this.fetchGeneralDialog();
+    await this.fetchUsers();
+
+    if (this.generalDialog) {
+      await this.selectDialog(this.generalDialog);
+    }
+  },
+
+  beforeUnmount(this: any) {
+    this.chatMessageHandler && off('chat:message', this.chatMessageHandler);
+    this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
+  },
+};

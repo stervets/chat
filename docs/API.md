@@ -1,172 +1,49 @@
-# API
+# API (WebSocket only)
 
-Базовый набор эндпоинтов для минимальной системы auth/invites/sessions/чат.
+HTTP REST эндпоинтов больше нет. Весь транспорт идёт через `ws://<backend-host>:8816/ws`.
 
-## Auth
+## Формат пакета
 
-### POST `/api/auth/login`
-Body:
+Клиент → сервер:
 ```json
-{
-  "nickname": "user",
-  "password": "secret"
-}
-```
-Ответ: `200 OK`, выставляет httpOnly cookie.
-
-### POST `/api/auth/change-password`
-Auth required.
-
-Body:
-```json
-{
-  "oldPassword": "old",
-  "newPassword": "new"
-}
+["command", [arg1, arg2], "frontend", "backend", "requestId"]
 ```
 
-### GET `/api/me`
-Auth required.
-
-Ответ:
+Сервер → клиент (ответ):
 ```json
-{
-  "id": 1,
-  "nickname": "user"
-}
+["[res]", [result], "backend", "frontend", "requestId"]
 ```
 
-### POST `/api/auth/logout`
-Auth required.
-
-Ответ:
+Сервер → клиент (push-событие):
 ```json
-{
-  "ok": true
-}
+["chat:message", [payload], "backend", "<client-id>"]
 ```
 
-## Users
+## Команды
 
-### GET `/api/users`
-Auth required.
+- `auth:login` args: `[{nickname, password}]`  
+  result: `{ok, token?, expiresAt?, user?, error?}`
+- `auth:session` args: `[token]`  
+  result: `{ok, token?, expiresAt?, user?, error?}`
+- `auth:me` args: `[]`  
+  result: `{id, nickname}` или `{ok:false,error}`
+- `auth:logout` args: `[]`
+- `auth:changePassword` args: `[{oldPassword, newPassword}]`
 
-Ответ:
-```json
-[
-  {"id": 2, "nickname": "user2"}
-]
-```
+- `users:list` args: `[]`
 
-## Invites
+- `invites:list` args: `[]`
+- `invites:create` args: `[]`
+- `invites:redeem` args: `[{code, nickname, password}]`
 
-### GET `/api/invites`
-Auth required.
+- `dialogs:general` args: `[]`
+- `dialogs:private` args: `[userId]`
+- `dialogs:messages` args: `[dialogId, limit]`
 
-Ответ:
-```json
-[
-  {
-    "id": 10,
-    "code": "abcd1234",
-    "createdAt": "2026-03-27T10:00:00.000Z",
-    "usedAt": null,
-    "usedBy": null,
-    "isUsed": false
-  }
-]
-```
+- `chat:join` args: `[dialogId]`
+- `chat:send` args: `[dialogId, body]`
 
-### POST `/api/invites/create`
-Auth required.
+## Push-события
 
-Ответ:
-```json
-{
-  "id": 10,
-  "code": "abcd1234",
-  "createdAt": "2026-03-27T10:00:00.000Z"
-}
-```
-
-### POST `/api/invites/redeem`
-Body:
-```json
-{
-  "code": "abcd1234",
-  "nickname": "user",
-  "password": "secret"
-}
-```
-Ответ: `200 OK`, выставляет cookie.
-
-## Dialogs
-
-### GET `/api/dialogs/general`
-Auth required.
-
-Ответ:
-```json
-{
-  "dialogId": 1,
-  "type": "general",
-  "title": "Общий чат"
-}
-```
-
-### POST `/api/dialogs/private/:userId`
-Auth required.
-
-Ответ:
-```json
-{
-  "dialogId": 10,
-  "type": "private",
-  "targetUser": {"id": 2, "nickname": "user2"}
-}
-```
-
-### GET `/api/dialogs/:dialogId/messages?limit=100`
-Auth required.
-
-Ответ:
-```json
-[
-  {
-    "id": 1,
-    "dialogId": 10,
-    "authorId": 2,
-    "authorNickname": "user2",
-    "body": "hello",
-    "createdAt": "2026-03-27T10:00:00.000Z"
-  }
-]
-```
-
-## WebSocket
-
-Подключение: `ws://localhost:8816/ws` (cookie session обязателен)
-
-### client → server
-
-- `chat:join`
-```json
-{"type":"chat:join","payload":{"dialogId":1}}
-```
-
-- `chat:send`
-```json
-{"type":"chat:send","payload":{"dialogId":1,"body":"hello"}}
-```
-
-### server → client
-
-- `chat:message`
-```json
-{"type":"chat:message","payload":{"id":1,"dialogId":1,"authorId":1,"authorNickname":"user","body":"hello","createdAt":"..."}}
-```
-
-- `chat:error`
-```json
-{"type":"chat:error","payload":{"message":"forbidden"}}
-```
+- `chat:message` args: `[message]`
+- `ws:connected` / `ws:disconnected` на фронте пробрасываются через event-bus клиентом.

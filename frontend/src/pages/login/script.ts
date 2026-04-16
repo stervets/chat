@@ -1,55 +1,46 @@
-import {ref} from 'vue';
-import {getApiBase} from '@/composables/api';
+import { ref } from 'vue';
+import { wsLogin } from '@/composables/ws-rpc';
 
 export default {
-  async setup() {
-    const nickname = ref('');
-    const password = ref('');
-    const error = ref('');
-    const loading = ref(false);
-    const router = useRouter();
-    const apiBase = getApiBase();
+    async setup() {
+        const router = useRouter();
+        return {
+            router,
+            nickname: ref(''),
+            password: ref(''),
+            error: ref(''),
+            loading: ref(false)
+        };
+    },
 
-    const onLogin = async () => {
-      error.value = '';
-      if (!nickname.value || !password.value) {
-        error.value = 'Введите nickname и пароль.';
-        return;
-      }
+    methods: {
+        async onLogin(this: any) {
+            this.error = '';
+            if (!this.nickname || !this.password) {
+                this.error = 'Введите nickname и пароль.';
+                return;
+            }
 
-      loading.value = true;
-      try {
-        const response = await fetch(`${apiBase}/api/auth/login`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            nickname: nickname.value,
-            password: password.value
-          })
-        });
+            this.loading = true;
+            try {
+                const result = await wsLogin(this.nickname, this.password);
+                if (!(result as any)?.ok) {
+                    this.error = 'Неверный nickname или пароль.';
+                    return;
+                }
 
-        if (!response.ok) {
-          error.value = 'Неверный nickname или пароль.';
-          return;
+                await this.router.push('/chat');
+            } catch (e) {
+                this.error = 'Сервер недоступен.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        onKeydown(this: any, event: KeyboardEvent) {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            void this.onLogin();
         }
-
-        await router.push('/chat');
-      } catch (e) {
-        error.value = 'Сервер недоступен.';
-      } finally {
-        loading.value = false;
-      }
-    };
-
-    return {
-      nickname,
-      password,
-      error,
-      loading,
-      onLogin
-    };
-  }
-}
+    }
+};
