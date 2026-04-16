@@ -24,8 +24,6 @@
 
   .chat-main-general {
     --chat-gradient:
-      radial-gradient(960px 520px at -12% -20%, rgba(229, 192, 123, 0.12) 0%, rgba(229, 192, 123, 0) 65%),
-      radial-gradient(920px 560px at 118% 0%, rgba(152, 195, 121, 0.09) 0%, rgba(152, 195, 121, 0) 68%),
       linear-gradient(162deg, #171b22 0%, #1b212a 44%, #1c222c 100%);
   }
 
@@ -55,7 +53,7 @@
     background: #1b2533;
     color: var(--text);
     padding: 6px 10px;
-    font-size: 12px;
+    font-size: 16px;
     line-height: 1;
     cursor: pointer;
     z-index: 2;
@@ -290,7 +288,7 @@
     padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: 10px;
-    background: rgba(20, 30, 43, 0.4);
+    background: linear-gradient(180deg, rgba(20, 30, 40, .2) 0%, rgba(10, 20, 30, .5) 100%);
     margin-bottom: 10px;
   }
 
@@ -369,7 +367,7 @@
 
   .message-body {
     margin-top: 6px;
-    font-size: 16px;
+    font-size: 15px;
     line-height: 1.45;
     color: #d5dde8;
     white-space: pre-wrap;
@@ -378,15 +376,13 @@
 
   .message-own {
     margin-left: 22px;
-    background: rgba(20, 30, 43, 0.6);
-    //background: rgba(40, 51, 68, 0.76);
+    background: linear-gradient(180deg, rgba(20, 30, 40, .5) 0%, rgba(10, 20, 30, .8) 100%);
     border-color: rgba(97, 175, 239, 0.3);
   }
 
   .message-mention-me {
-    border-color: rgba(255, 196, 94, 0.5);
-    background: rgba(40, 51, 68, 0.5);
-    //box-shadow: inset 0 0 0 1px rgba(255, 196, 94, 0.18);
+    border-color: rgba(210, 255, 130, 0.45);
+    background: linear-gradient(180deg, rgba(20, 30, 40, .7) 0%, rgba(10, 20, 30, 1) 100%);
   }
 
   .message-blink-target {
@@ -397,15 +393,9 @@
     0% {
       box-shadow: inset 0 0 0 0 rgba(92, 201, 255, 0);
     }
-    //28% {
-    //}
     50% {
-      //box-shadow: inset 0 0 0 1px rgba(92, 201, 255, 0.08);
       box-shadow: inset 0 0 0 2px rgba(92, 201, 255, 0.8);
     }
-    //78% {
-    //  box-shadow: inset 0 0 0 2px rgba(92, 201, 255, 0.75);
-    //}
     100% {
       box-shadow: inset 0 0 0 0 rgba(92, 201, 255, 0);
     }

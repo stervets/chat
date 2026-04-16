@@ -71,7 +71,7 @@
             class="header-center-btn"
             @click="onGoToGeneralChat"
           >
-            В чат
+            Общий чат
           </button>
           <div class="header-text">
             <div class="title">
