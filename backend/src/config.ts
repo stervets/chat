@@ -38,7 +38,10 @@ export const config = {
   port: fileConfig.port || 8816,
   wsPath: fileConfig.wsPath || WS_PATH,
   messagesTtlDays: fileConfig.messagesTtlDays || MESSAGES_TTL_DAYS,
-  corsOrigins: fileConfig.corsOrigins || ['*'],
+  corsOrigins: fileConfig.corsOrigins || [
+    'http://localhost:8815',
+    'http://127.0.0.1:8815'
+  ],
   db: {
     path: fileConfig.db?.path || './data/marx.sqlite',
   }
