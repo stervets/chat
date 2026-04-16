@@ -2,6 +2,7 @@
 .idea/
 *.iml
 chat.zip
+.codex
 
 # --- Node.js ---
 node_modules/

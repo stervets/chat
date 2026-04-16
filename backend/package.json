@@ -7,6 +7,7 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
+    "admin:tui": "tsx src/cli/admin-tui.ts",
     "invite:create": "tsx src/cli/invite-create.ts",
     "user:bootstrap": "tsx src/cli/bootstrap-user.ts"
   },

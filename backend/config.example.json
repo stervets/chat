@@ -3,6 +3,7 @@
   "port": 8816,
   "wsPath": "/ws",
   "messagesTtlDays": 7,
+  "inviteBaseUrl": "http://localhost:8815",
   "corsOrigins": [
     "*"
   ],

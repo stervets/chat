@@ -8,11 +8,14 @@ type ConfigFile = {
   port?: number;
   wsPath?: string;
   messagesTtlDays?: number;
+  inviteBaseUrl?: string;
   corsOrigins?: string[];
   db?: {
     path?: string;
   };
 };
+
+const trimTrailingSlashes = (value: string) => value.replace(/\/+$/, '');
 
 const loadConfig = (): ConfigFile => {
   try {
@@ -31,6 +34,15 @@ const loadConfig = (): ConfigFile => {
 };
 
 const fileConfig = loadConfig();
+const defaultCorsOrigins = [
+  'http://localhost:8815',
+  'http://127.0.0.1:8815'
+];
+
+const resolvedCorsOrigins = fileConfig.corsOrigins || defaultCorsOrigins;
+const fallbackInviteBaseUrl = resolvedCorsOrigins.find((origin) => origin && origin !== '*')
+  || 'http://localhost:8815';
+const inviteBaseUrl = trimTrailingSlashes(fileConfig.inviteBaseUrl || fallbackInviteBaseUrl);
 
 export const config = {
   env: 'development',
@@ -38,10 +50,8 @@ export const config = {
   port: fileConfig.port || 8816,
   wsPath: fileConfig.wsPath || WS_PATH,
   messagesTtlDays: fileConfig.messagesTtlDays || MESSAGES_TTL_DAYS,
-  corsOrigins: fileConfig.corsOrigins || [
-    'http://localhost:8815',
-    'http://127.0.0.1:8815'
-  ],
+  inviteBaseUrl,
+  corsOrigins: resolvedCorsOrigins,
   db: {
     path: fileConfig.db?.path || './data/marx.sqlite',
   }

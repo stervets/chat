@@ -36,6 +36,7 @@
   "port": 8816,
   "wsPath": "/ws",
   "messagesTtlDays": 7,
+  "inviteBaseUrl": "http://localhost:8815",
   "corsOrigins": [
     "http://localhost:8815",
     "http://127.0.0.1:8815"
@@ -48,6 +49,7 @@
 
 SQLite файл создаётся автоматически при старте, если его ещё нет.
 `db.path` указывается относительно папки `backend/`.
+`inviteBaseUrl` используется CLI/TUI админкой для генерации полной ссылки на инвайт (`/invite/<code>`).
 
 Если открываешь фронт через LAN IP, добавь `http://<LAN_IP>:8815` в `corsOrigins`,
 а в `frontend/config.json` укажи `apiUrl` с тем же IP.
