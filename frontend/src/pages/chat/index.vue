@@ -57,7 +57,13 @@
       <div v-if="isCompactLayout && leftMenuOpen" class="drawer-backdrop" @click="closeLeftMenu"/>
       <div v-if="isCompactLayout && rightMenuOpen" class="drawer-backdrop" @click="closeRightMenu"/>
 
-      <main class="chat-main">
+      <main
+        class="chat-main"
+        :class="{
+          'chat-main-general': activeDialog?.kind !== 'private',
+          'chat-main-private': activeDialog?.kind === 'private',
+        }"
+      >
         <header class="chat-header">
           <button class="icon-btn" @click="toggleLeftMenu">☰</button>
           <button
@@ -341,9 +347,11 @@
             rows="2"
             placeholder="Сообщение..."
             @keydown="onKeydown"
+            @paste="onInputPaste"
           />
           <button class="btn" @click="onSend">Отправить</button>
         </div>
+        <div v-if="pasteUploading" class="upload-hint">Загружаю картинку...</div>
       </main>
 
       <aside class="drawer drawer-right" :class="{open: rightMenuOpen}">

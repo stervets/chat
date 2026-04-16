@@ -6,6 +6,10 @@
   "corsOrigins": [
     "*"
   ],
+  "uploads": {
+    "path": "./data/uploads",
+    "maxBytes": 1048576
+  },
   "db": {
     "path": "./data/marx.sqlite"
   }

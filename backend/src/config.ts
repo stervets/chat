@@ -10,6 +10,10 @@ type ConfigFile = {
   messagesTtlDays?: number;
   inviteBaseUrl?: string;
   corsOrigins?: string[];
+  uploads?: {
+    path?: string;
+    maxBytes?: number;
+  };
   db?: {
     path?: string;
   };
@@ -54,5 +58,9 @@ export const config = {
   corsOrigins: resolvedCorsOrigins,
   db: {
     path: fileConfig.db?.path || './data/marx.sqlite',
-  }
+  },
+  uploads: {
+    path: fileConfig.uploads?.path || './data/uploads',
+    maxBytes: Math.max(64 * 1024, Number(fileConfig.uploads?.maxBytes || 1024 * 1024)),
+  },
 };

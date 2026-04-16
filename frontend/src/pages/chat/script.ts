@@ -3,7 +3,9 @@ import type {Dialog, Message, MessageReaction, User} from '@/composables/types';
 import {linkify} from '@/composables/utils';
 import {ws} from '@/composables/classes/ws';
 import {on, off} from '@/composables/event-bus';
+import {getApiBase} from '@/composables/api';
 import {
+  getSessionToken,
   restoreSession,
   wsChangePassword,
   wsLogout,
@@ -51,6 +53,7 @@ const TIME_TAG_RE = /\[(\d{2}:\d{2}:\d{2})\]/g;
 const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)$/i;
 const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '☹️', '😡', '👎', '😢'];
+const MAX_PASTE_IMAGE_BYTES = 1024 * 1024;
 
 export default {
   async setup() {
@@ -114,6 +117,7 @@ export default {
       directDeletePending: ref(false),
 
       newPassword: ref(''),
+      pasteUploading: ref(false),
 
       chatMessageHandler: ref<Function | null>(null),
       chatMessageUpdatedHandler: ref<Function | null>(null),
@@ -1238,20 +1242,191 @@ export default {
       }
     },
 
+    normalizeUploadFileName(this: any, mimeRaw: string) {
+      const mime = String(mimeRaw || '').toLowerCase();
+      if (mime.includes('png')) return `paste-${Date.now()}.png`;
+      if (mime.includes('webp')) return `paste-${Date.now()}.webp`;
+      if (mime.includes('gif')) return `paste-${Date.now()}.gif`;
+      return `paste-${Date.now()}.jpg`;
+    },
+
+    canvasToBlob(this: any, canvas: HTMLCanvasElement, mime: string, quality: number) {
+      return new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), mime, quality);
+      });
+    },
+
+    loadImageFromBlob(this: any, blob: Blob) {
+      return new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        const src = URL.createObjectURL(blob);
+        img.onload = () => {
+          URL.revokeObjectURL(src);
+          resolve(img);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(src);
+          reject(new Error('image_decode_failed'));
+        };
+        img.src = src;
+      });
+    },
+
+    async compressImageToLimit(this: any, source: Blob, maxBytes: number) {
+      if (source.type === 'image/gif') {
+        return source;
+      }
+
+      if (source.size <= maxBytes) {
+        return source;
+      }
+
+      const image = await this.loadImageFromBlob(source);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return source;
+
+      let scale = 1;
+      let quality = 0.9;
+      let bestBlob: Blob = source;
+
+      for (let attempt = 0; attempt < 14; attempt += 1) {
+        const width = Math.max(1, Math.floor(image.naturalWidth * scale));
+        const height = Math.max(1, Math.floor(image.naturalHeight * scale));
+        canvas.width = width;
+        canvas.height = height;
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(image, 0, 0, width, height);
+
+        const mime = source.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        const blob = await this.canvasToBlob(canvas, mime, quality);
+        if (!blob) break;
+
+        if (blob.size < bestBlob.size) {
+          bestBlob = blob;
+        }
+        if (blob.size <= maxBytes) {
+          return blob;
+        }
+
+        if (quality > 0.46) {
+          quality = Math.max(0.46, quality - 0.12);
+          continue;
+        }
+        scale *= 0.84;
+        quality = 0.84;
+      }
+
+      return bestBlob;
+    },
+
+    async preparePastedImage(this: any, file: File) {
+      const compressed = await this.compressImageToLimit(file, MAX_PASTE_IMAGE_BYTES);
+      if (compressed.size > MAX_PASTE_IMAGE_BYTES) {
+        return null;
+      }
+      const mime = compressed.type || 'image/jpeg';
+      const fileName = this.normalizeUploadFileName(mime);
+      return new File([compressed], fileName, {type: mime});
+    },
+
+    async uploadImageFile(this: any, file: File) {
+      const token = getSessionToken();
+      if (!token) {
+        return {ok: false, error: 'unauthorized'};
+      }
+
+      const form = new FormData();
+      form.append('file', file);
+      const response = await fetch(`${getApiBase()}/upload/image`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: form,
+      });
+
+      let result: any = null;
+      try {
+        result = await response.json();
+      } catch {
+        result = null;
+      }
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          error: result?.message || result?.error || 'upload_failed',
+        };
+      }
+
+      return result;
+    },
+
+    async sendMessageBody(this: any, textRaw: string) {
+      if (!this.activeDialog) return false;
+
+      const text = String(textRaw || '').trim();
+      if (!text) return false;
+
+      const result = await ws.request('chat:send', this.activeDialog.id, text);
+      if (!(result as any)?.ok) {
+        this.error = 'Не удалось отправить сообщение.';
+        return false;
+      }
+
+      this.forceOwnScrollDown = true;
+      this.scrollToBottom();
+      if (this.activeDialog.kind === 'private') {
+        await this.fetchDirectDialogs();
+      }
+      return true;
+    },
+
     async onSend(this: any) {
-      if (!this.activeDialog) return;
       const text = this.messageText.trim();
       if (!text) return;
-      const result = await ws.request('chat:send', this.activeDialog.id, text);
-      if ((result as any)?.ok) {
+      const ok = await this.sendMessageBody(text);
+      if (ok) {
         this.messageText = '';
-        this.forceOwnScrollDown = true;
-        this.scrollToBottom();
-        if (this.activeDialog.kind === 'private') {
-          await this.fetchDirectDialogs();
+      }
+    },
+
+    async onInputPaste(this: any, event: ClipboardEvent) {
+      if (!event.clipboardData) return;
+
+      const files = Array.from(event.clipboardData.items || [])
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item) => item.getAsFile())
+        .filter(Boolean) as File[];
+
+      if (!files.length) return;
+
+      event.preventDefault();
+      if (!this.activeDialog || this.pasteUploading) return;
+
+      this.pasteUploading = true;
+      this.error = '';
+
+      try {
+        for (const sourceFile of files) {
+          const preparedFile = await this.preparePastedImage(sourceFile);
+          if (!preparedFile) {
+            this.error = 'Картинка слишком большая даже после сжатия.';
+            continue;
+          }
+
+          const uploadResult = await this.uploadImageFile(preparedFile);
+          if (!(uploadResult as any)?.ok || !(uploadResult as any)?.url) {
+            this.error = 'Не удалось загрузить картинку.';
+            continue;
+          }
+
+          await this.sendMessageBody((uploadResult as any).url);
         }
-      } else {
-        this.error = 'Не удалось отправить сообщение.';
+      } finally {
+        this.pasteUploading = false;
+        this.focusMessageInputToEnd();
       }
     },
 

@@ -14,6 +14,11 @@ async function bootstrap() {
     logger: ['error', 'warn', 'log'],
   });
   app.useWebSocketAdapter(new WsAdapter(app));
+  app.enableCors({
+    origin: config.corsOrigins.includes('*') ? true : config.corsOrigins,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 
   try {
     checkDb();

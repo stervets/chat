@@ -15,6 +15,7 @@ import {
   revokeSession,
   verifyPassword,
 } from '../common/auth.js';
+import {deleteUploadFile, sanitizeUploadName} from '../common/uploads.js';
 import type {SocketState} from './protocol.js';
 
 const MAX_MESSAGE_LENGTH = 4000;
@@ -24,6 +25,7 @@ const MIN_PASSWORD_LENGTH = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
+const UPLOAD_LINK_RE = /\/uploads\/([a-zA-Z0-9._-]+)/gi;
 const ALLOWED_REACTIONS = new Set([
   '🙂',
   '👍',
@@ -93,6 +95,41 @@ export class ChatService {
 
   private pruneExpiredMessages() {
     db.prepare('delete from messages where created_at < ?').run(this.messagesCutoffIso());
+  }
+
+  private extractUploadNamesFromBody(bodyRaw: unknown) {
+    const body = String(bodyRaw || '');
+    const names = new Set<string>();
+
+    UPLOAD_LINK_RE.lastIndex = 0;
+    for (const match of body.matchAll(UPLOAD_LINK_RE)) {
+      const safeName = sanitizeUploadName(match[1]);
+      if (!safeName) continue;
+      names.add(safeName);
+    }
+
+    return Array.from(names);
+  }
+
+  private isUploadUsed(fileName: string) {
+    const row = db.prepare(
+      `select id
+       from messages
+       where body like ?
+       limit 1`
+    ).get(`%/uploads/${fileName}%`) as {id: number} | undefined;
+
+    return !!row?.id;
+  }
+
+  private cleanupUnusedUploads(uploadNamesRaw: string[]) {
+    const uploadNames = Array.from(new Set(uploadNamesRaw.filter(Boolean)));
+    if (!uploadNames.length) return;
+
+    for (const fileName of uploadNames) {
+      if (this.isUploadUsed(fileName)) continue;
+      deleteUploadFile(fileName);
+    }
   }
 
   private normalizeNickname(nicknameRaw: unknown) {
@@ -887,7 +924,11 @@ export class ChatService {
 
     const changed = body !== existing.body;
     if (changed) {
+      const oldUploadNames = this.extractUploadNamesFromBody(existing.body);
+      const newUploadNames = this.extractUploadNamesFromBody(body);
+      const removedUploadNames = oldUploadNames.filter((name) => !newUploadNames.includes(name));
       db.prepare('update messages set body = ? where id = ?').run(body, messageId);
+      this.cleanupUnusedUploads(removedUploadNames);
     }
 
     return {
@@ -925,13 +966,15 @@ export class ChatService {
       `select
          m.id as id,
          m.dialog_id as "dialogId",
-         m.sender_id as "authorId"
+         m.sender_id as "authorId",
+         m.body as body
        from messages m
        where m.id = ?`
     ).get(messageId) as {
       id: number;
       dialogId: number;
       authorId: number | null;
+      body: string;
     } | undefined;
 
     if (!existing) {
@@ -947,7 +990,11 @@ export class ChatService {
       return {ok: false, error: 'forbidden'};
     }
 
+    const uploadNames = this.extractUploadNamesFromBody(existing.body);
     const result = db.prepare('delete from messages where id = ?').run(messageId);
+    if (result.changes > 0) {
+      this.cleanupUnusedUploads(uploadNames);
+    }
     return {
       ok: true,
       changed: result.changes > 0,
@@ -982,7 +1029,17 @@ export class ChatService {
       return {ok: false, error: 'forbidden'};
     }
 
+    const uploadRows = db.prepare(
+      `select m.body as body
+       from messages m
+       where m.dialog_id = ?`
+    ).all(dialogId) as Array<{body: string}>;
+    const uploadNames = uploadRows.flatMap((row) => this.extractUploadNamesFromBody(row.body));
+
     const result = db.prepare('delete from dialogs where id = ?').run(dialogId);
+    if (result.changes > 0) {
+      this.cleanupUnusedUploads(uploadNames);
+    }
     if (state.dialogId === dialogId) {
       state.dialogId = null;
     }

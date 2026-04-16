@@ -10,12 +10,30 @@
   }
 
   .chat-main {
+    --chat-gradient:
+      radial-gradient(940px 520px at -14% -22%, rgba(229, 192, 123, 0.08) 0%, rgba(229, 192, 123, 0) 64%),
+      radial-gradient(900px 540px at 118% -2%, rgba(152, 195, 121, 0.07) 0%, rgba(152, 195, 121, 0) 66%),
+      linear-gradient(160deg, #171b22 0%, #1b2028 46%, #1a1f27 100%);
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
     width: 100%;
     position: relative;
+  }
+
+  .chat-main-general {
+    --chat-gradient:
+      radial-gradient(960px 520px at -12% -20%, rgba(229, 192, 123, 0.12) 0%, rgba(229, 192, 123, 0) 65%),
+      radial-gradient(920px 560px at 118% 0%, rgba(152, 195, 121, 0.09) 0%, rgba(152, 195, 121, 0) 68%),
+      linear-gradient(162deg, #171b22 0%, #1b212a 44%, #1c222c 100%);
+  }
+
+  .chat-main-private {
+    --chat-gradient:
+      radial-gradient(860px 500px at -14% -18%, rgba(198, 120, 221, 0.10) 0%, rgba(198, 120, 221, 0) 64%),
+      radial-gradient(900px 540px at 116% -4%, rgba(224, 108, 117, 0.08) 0%, rgba(224, 108, 117, 0) 66%),
+      linear-gradient(164deg, #161a21 0%, #1a2029 46%, #1b222b 100%);
   }
 
   .chat-header {
@@ -265,13 +283,14 @@
     min-height: 0;
     padding: 14px 16px;
     overflow-y: auto;
+    background: var(--chat-gradient);
   }
 
   .message {
     padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: 10px;
-    background: var(--bg-elevated);
+    background: rgba(20, 30, 43, 0.4);
     margin-bottom: 10px;
   }
 
@@ -359,13 +378,15 @@
 
   .message-own {
     margin-left: 22px;
-    background: #252c37;
+    background: rgba(20, 30, 43, 0.6);
+    //background: rgba(40, 51, 68, 0.76);
     border-color: rgba(97, 175, 239, 0.3);
   }
 
   .message-mention-me {
-    border-color: rgba(255, 196, 94, 0.6);
-    box-shadow: inset 0 0 0 1px rgba(255, 196, 94, 0.18);
+    border-color: rgba(255, 196, 94, 0.5);
+    background: rgba(40, 51, 68, 0.5);
+    //box-shadow: inset 0 0 0 1px rgba(255, 196, 94, 0.18);
   }
 
   .message-blink-target {
@@ -376,15 +397,15 @@
     0% {
       box-shadow: inset 0 0 0 0 rgba(92, 201, 255, 0);
     }
-    28% {
+    //28% {
+    //}
+    50% {
+      //box-shadow: inset 0 0 0 1px rgba(92, 201, 255, 0.08);
       box-shadow: inset 0 0 0 2px rgba(92, 201, 255, 0.8);
     }
-    55% {
-      box-shadow: inset 0 0 0 1px rgba(92, 201, 255, 0.08);
-    }
-    78% {
-      box-shadow: inset 0 0 0 2px rgba(92, 201, 255, 0.75);
-    }
+    //78% {
+    //  box-shadow: inset 0 0 0 2px rgba(92, 201, 255, 0.75);
+    //}
     100% {
       box-shadow: inset 0 0 0 0 rgba(92, 201, 255, 0);
     }
@@ -581,6 +602,12 @@
     gap: 10px;
     background: var(--bg-elevated);
     width: 100%;
+  }
+
+  .upload-hint {
+    margin: -8px 16px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
   }
 
   .scroll-down-btn {
