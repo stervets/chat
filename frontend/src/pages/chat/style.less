@@ -28,6 +28,26 @@
     position: relative;
   }
 
+  .header-center-btn {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #1b2533;
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 2;
+  }
+
+  .header-center-btn:hover {
+    border-color: var(--accent-strong);
+    color: var(--accent);
+  }
+
   .icon-btn {
     border-radius: 8px;
     width: 36px;
@@ -44,8 +64,23 @@
     color: var(--accent);
   }
 
+  .icon-btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  .icon-btn:disabled:hover {
+    border-color: var(--border);
+    color: var(--text);
+  }
+
   .notify-btn {
     position: relative;
+  }
+
+  .delete-direct-btn {
+    font-size: 13px;
+    line-height: 1;
   }
 
   .notify-icon {
@@ -283,6 +318,36 @@
     margin-left: auto;
   }
 
+  .message-inline-btn {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 10px;
+    line-height: 1;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+
+  .message-inline-btn:hover {
+    border-color: var(--accent-strong);
+    color: var(--text);
+  }
+
+  .message-inline-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .message-inline-btn-danger {
+    color: #f3a1a1;
+  }
+
+  .message-inline-btn-danger:hover {
+    border-color: rgba(224, 108, 117, 0.55);
+    color: #ffc2c2;
+  }
+
   .message-body {
     margin-top: 6px;
     font-size: 16px;
@@ -329,6 +394,41 @@
     color: var(--accent);
   }
 
+  .message-edit {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .message-edit-input {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #121a27;
+    color: var(--text);
+    padding: 8px 10px;
+    resize: vertical;
+    min-height: 62px;
+    max-height: 220px;
+  }
+
+  .message-edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .message-edit-cancel {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .message-edit-save {
+    padding: 6px 11px;
+    font-size: 12px;
+  }
+
   .time-reference {
     cursor: pointer;
     color: #ffc25d;
@@ -368,16 +468,16 @@
     object-fit: contain;
   }
 
-  .preview-youtube {
-    object-fit: cover;
-  }
-
   .preview-video {
     background: #06090f;
   }
 
   .preview-embed {
     height: min(260px, 48vw);
+  }
+
+  .preview-youtube-embed {
+    background: #000;
   }
 
   .reaction-controls {
@@ -822,6 +922,13 @@
   }
 
   @media (max-width: 860px) {
+    .header-center-btn {
+      position: static;
+      transform: none;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
     .chat-input {
       flex-direction: column;
     }

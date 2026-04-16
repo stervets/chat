@@ -90,6 +90,17 @@ export default defineNuxtConfig({
           content: 'yes'
         }
       ],
+      link: [
+        {
+          rel: 'icon',
+          type: 'image/png',
+          href: '/favicon.png',
+        },
+        {
+          rel: 'shortcut icon',
+          href: '/favicon.png',
+        },
+      ],
     },
   },
 

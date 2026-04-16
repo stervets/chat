@@ -60,6 +60,13 @@
       <main class="chat-main">
         <header class="chat-header">
           <button class="icon-btn" @click="toggleLeftMenu">☰</button>
+          <button
+            v-if="activeDialog?.kind === 'private'"
+            class="header-center-btn"
+            @click="onGoToGeneralChat"
+          >
+            В чат
+          </button>
           <div class="header-text">
             <div class="title">
               {{ activeDialog?.kind === 'general' ? 'Общий чат' : (activeDialog?.title || 'Чат') }}
@@ -68,6 +75,15 @@
               директ
             </div>
           </div>
+          <button
+            v-if="activeDialog?.kind === 'private'"
+            class="icon-btn delete-direct-btn"
+            :disabled="directDeletePending"
+            title="Удалить директ"
+            @click="onDeleteActiveDirect"
+          >
+            🗑
+          </button>
           <button
             ref="notificationButtonEl"
             class="icon-btn notify-btn"
@@ -167,8 +183,42 @@
               <span class="time message-meta-action" @click="onMessageTimeClick(message)">
                 {{ formatMessageTime(message.createdAt) }}
               </span>
+              <button
+                v-if="isOwnMessage(message) && editingMessageId !== message.id"
+                class="message-inline-btn"
+                :disabled="messageActionPendingId === message.id"
+                @click="startMessageEdit(message)"
+              >
+                ред.
+              </button>
+              <button
+                v-if="isOwnMessage(message) && editingMessageId !== message.id"
+                class="message-inline-btn message-inline-btn-danger"
+                :disabled="messageActionPendingId === message.id"
+                @click="deleteOwnMessage(message)"
+              >
+                удал.
+              </button>
             </div>
-            <div class="message-body">
+            <div v-if="editingMessageId === message.id" class="message-edit">
+              <textarea
+                v-model="editingMessageText"
+                class="message-edit-input"
+                rows="3"
+                @keydown="onEditMessageKeydown($event, message)"
+              />
+              <div class="message-edit-actions">
+                <button class="ghost-btn message-edit-cancel" @click="cancelMessageEdit">Отмена</button>
+                <button
+                  class="btn message-edit-save"
+                  :disabled="messageActionPendingId === message.id"
+                  @click="saveMessageEdit(message)"
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
+            <div v-else class="message-body">
               <template
                 v-for="(segment, index) in buildMessageBodySegments(message, messageIndex)"
                 :key="`${message.id}-${index}`"
@@ -194,7 +244,7 @@
                 <span v-else>{{ segment.value }}</span>
               </template>
             </div>
-            <div v-if="getMessagePreviews(message).length" class="message-previews">
+            <div v-if="editingMessageId !== message.id && getMessagePreviews(message).length" class="message-previews">
               <template v-for="preview in getMessagePreviews(message)" :key="preview.key">
                 <div class="preview-item">
                   <img
@@ -213,21 +263,14 @@
                     preload="metadata"
                     playsinline
                   />
-                  <a
+                  <iframe
                     v-else-if="preview.type === 'youtube'"
-                    class="preview-link"
-                    :href="preview.href"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <img
-                      class="preview-media preview-image preview-youtube"
-                      :src="preview.src"
-                      alt="youtube preview"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </a>
+                    class="preview-media preview-embed preview-youtube-embed"
+                    :src="preview.src"
+                    loading="lazy"
+                    allowfullscreen
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  />
                   <iframe
                     v-else
                     class="preview-media preview-embed"
@@ -239,7 +282,7 @@
                 </div>
               </template>
             </div>
-            <div class="reaction-controls" @click.stop>
+            <div v-if="editingMessageId !== message.id" class="reaction-controls" @click.stop>
               <button class="reaction-add-btn" @click="toggleReactionPicker(message)">+</button>
               <div v-if="reactionPickerMessageId === message.id" class="reaction-picker">
                 <button

@@ -177,6 +177,19 @@ async function openPrivate(page, nickname) {
   }
 }
 
+async function closeLeftDrawerIfOpen(page) {
+  const opened = await page.locator('.drawer-left.open').count();
+  if (!opened) return;
+  const drawerClose = page.locator('.drawer-left.open .drawer-close').first();
+  const canUseDrawerClose = await drawerClose.isVisible({timeout: 1000}).catch(() => false);
+  if (canUseDrawerClose) {
+    await drawerClose.click();
+  } else {
+    await page.getByRole('button', {name: '☰'}).click({force: true});
+  }
+  await page.waitForSelector('.drawer-left.open', {state: 'hidden', timeout: 10000}).catch(() => {});
+}
+
 (async () => {
   if (await isWsUp(BACKEND_WS_URL) || await isUrlUp(FRONTEND_URL)) {
     throw new Error('Ports 8815/8816 are busy. Stop running servers and retry.');
@@ -223,6 +236,7 @@ async function openPrivate(page, nickname) {
     const page1 = await ctx1.newPage();
 
     await login(page1, 'lisov', '123');
+    await closeLeftDrawerIfOpen(page1);
     await sendMessage(page1, 'hello-from-lisov');
     await page1.waitForSelector('text=hello-from-lisov', {timeout: 30000});
     await ensureNoError(page1);
@@ -248,6 +262,7 @@ async function openPrivate(page, nickname) {
     if (result !== 'chat') {
       throw new Error(`Register failed: ${result} (url=${page2.url()})`);
     }
+    await closeLeftDrawerIfOpen(page2);
 
     await page2.waitForSelector('text=hello-from-lisov', {timeout: 30000});
     await sendMessage(page2, 'hello-from-mike');
@@ -267,18 +282,69 @@ async function openPrivate(page, nickname) {
 
     const imageUrl = 'https://cs8.pikabu.ru/post_img/2016/09/16/10/og_og_1474048544294839279.jpg';
     await sendMessage(page2, imageUrl);
-    await page1.waitForSelector(`text=${imageUrl}`, {timeout: 30000});
-    const imageMessage = page1.locator('.message', {hasText: imageUrl}).last();
-    await imageMessage.locator('.message-previews').first().waitFor({state: 'attached', timeout: 30000});
+    await page1.waitForSelector(`img.preview-image[src="${imageUrl}"]`, {timeout: 30000, state: 'attached'});
+    const imageMessage = page1.locator('.message').filter({
+      has: page1.locator(`img.preview-image[src="${imageUrl}"]`),
+    }).last();
+    const imageLinkInBody = await imageMessage.locator(`.message-body a[href="${imageUrl}"]`).count();
+    if (imageLinkInBody !== 0) {
+      throw new Error('Image URL should be hidden in message body when preview is rendered');
+    }
 
     await page1.reload({waitUntil: 'networkidle'});
-    await page1.waitForSelector(`text=${imageUrl}`, {timeout: 30000});
-    const imageMessageAfterSwitch = page1.locator('.message', {hasText: imageUrl}).last();
-    await imageMessageAfterSwitch.locator('.message-previews').first().waitFor({state: 'attached', timeout: 30000});
+    await page1.waitForSelector(`img.preview-image[src="${imageUrl}"]`, {timeout: 30000, state: 'attached'});
+    const imageMessageAfterReload = page1.locator('.message').filter({
+      has: page1.locator(`img.preview-image[src="${imageUrl}"]`),
+    }).last();
+    const imageLinkAfterReload = await imageMessageAfterReload.locator(`.message-body a[href="${imageUrl}"]`).count();
+    if (imageLinkAfterReload !== 0) {
+      throw new Error('Image URL should stay hidden after reload');
+    }
 
     const ytUrl = 'https://www.youtube.com/watch?v=LW4X1DvNDNo';
     await sendMessage(page2, ytUrl);
-    await page1.waitForSelector('img.preview-youtube[src*="i.ytimg.com/vi/LW4X1DvNDNo"]', {timeout: 30000, state: 'attached'});
+    await page1.waitForSelector('iframe.preview-youtube-embed[src*="youtube.com/embed/LW4X1DvNDNo"]', {timeout: 30000, state: 'attached'});
+
+    const reactionTarget = `reaction-target-${Date.now()}`;
+    await sendMessage(page1, reactionTarget);
+    await page2.waitForSelector(`text=${reactionTarget}`, {timeout: 30000});
+
+    await closeLeftDrawerIfOpen(page2);
+    const reactionMessagePage2 = page2.locator('.message', {hasText: reactionTarget}).last();
+    await reactionMessagePage2.locator('.reaction-add-btn').click();
+    await reactionMessagePage2.locator('.reaction-picker-item', {hasText: '🔥'}).click();
+    await reactionMessagePage2.locator('.reaction-chip', {hasText: '🔥'}).waitFor({state: 'visible', timeout: 30000});
+
+    const reactionMessagePage1 = page1.locator('.message', {hasText: reactionTarget}).last();
+    await reactionMessagePage1.locator('.reaction-chip', {hasText: '🔥'}).waitFor({state: 'visible', timeout: 30000});
+
+    await page1.waitForSelector('.notify-badge', {timeout: 30000});
+    await page1.locator('.notify-btn').click();
+    await page1.waitForSelector('.notifications-menu', {timeout: 10000});
+    const reactionNotifyItem = page1.locator('.notification-item', {hasText: /реакция 🔥/i}).first();
+    await reactionNotifyItem.waitFor({state: 'visible', timeout: 10000});
+    await reactionNotifyItem.click();
+
+    await reactionMessagePage2.locator('.reaction-chip', {hasText: '🔥'}).click();
+    await reactionMessagePage2.locator('.reaction-chip', {hasText: '🔥'}).waitFor({state: 'detached', timeout: 30000});
+    await reactionMessagePage1.locator('.reaction-chip', {hasText: '🔥'}).waitFor({state: 'detached', timeout: 30000});
+
+    const editableText = `editable-from-lisov-${Date.now()}`;
+    await sendMessage(page1, editableText);
+    await page2.waitForSelector(`text=${editableText}`, {timeout: 30000});
+    const editableMessagePage1 = page1.locator('.message', {hasText: editableText}).last();
+    await editableMessagePage1.locator('.message-inline-btn', {hasText: 'ред.'}).click();
+    const editedText = `${editableText}-edited`;
+    await page1.locator('.message-edit-input').last().fill(editedText);
+    await page1.locator('.message-edit-save').last().click();
+    await page1.waitForSelector(`text=${editedText}`, {timeout: 30000});
+    await page2.waitForSelector(`text=${editedText}`, {timeout: 30000});
+
+    const editedMessagePage1 = page1.locator('.message', {hasText: editedText}).last();
+    page1.once('dialog', (dialog) => dialog.accept());
+    await editedMessagePage1.locator('.message-inline-btn', {hasText: 'удал.'}).click();
+    await page1.waitForSelector(`text=${editedText}`, {state: 'detached', timeout: 30000});
+    await page2.waitForSelector(`text=${editedText}`, {state: 'detached', timeout: 30000});
 
     await openPrivate(page2, 'lisov');
     await sendMessage(page2, 'direct-notify-without-reply');
@@ -296,6 +362,11 @@ async function openPrivate(page, nickname) {
 
     await openPrivate(page2, 'lisov');
     await page2.waitForSelector('text=private-from-lisov', {timeout: 30000});
+
+    page1.once('dialog', (dialog) => dialog.accept());
+    await page1.locator('.delete-direct-btn').click();
+    await page1.locator('.title', {hasText: 'Общий чат'}).waitFor({timeout: 30000});
+    await page2.locator('.title', {hasText: 'Общий чат'}).waitFor({timeout: 30000});
 
     log(`Flow OK. Invite link: ${inviteLink}`);
   } finally {

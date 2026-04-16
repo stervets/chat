@@ -6,6 +6,13 @@
   justify-content: center;
   padding: 24px;
 
+  .login-shell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+
   .content {
     text-align: center;
     width: min(92vw, 360px);
@@ -13,6 +20,16 @@
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 20px;
+  }
+
+  .project-logo {
+    width: min(56vw, 240px);
+    max-width: 240px;
+    height: auto;
+    display: block;
+    filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.34));
+    user-select: none;
+    pointer-events: none;
   }
 
   h1 {

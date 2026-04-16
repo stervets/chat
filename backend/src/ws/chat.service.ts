@@ -823,10 +823,183 @@ export class ChatService {
     };
   }
 
+  async chatEdit(state: SocketState, messageIdRaw: unknown, bodyRaw: unknown): Promise<ApiError | ApiOk<{
+    changed: boolean;
+    message: {
+      id: number;
+      dialogId: number;
+      authorId: number;
+      authorNickname: string;
+      authorName: string;
+      authorNicknameColor: string | null;
+      body: string;
+      createdAt: string;
+      reactions: MessageReaction[];
+    };
+  }>> {
+    const authError = this.requireAuth(state);
+    if (authError) return authError;
+    this.pruneExpiredMessages();
+
+    const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
+    if (!Number.isFinite(messageId) || messageId <= 0) {
+      return {ok: false, error: 'invalid_message'};
+    }
+
+    const existing = db.prepare(
+      `select
+         m.id as id,
+         m.dialog_id as "dialogId",
+         m.sender_id as "authorId",
+         m.body as body,
+         m.created_at as "createdAt"
+       from messages m
+       where m.id = ?`
+    ).get(messageId) as {
+      id: number;
+      dialogId: number;
+      authorId: number | null;
+      body: string;
+      createdAt: string;
+    } | undefined;
+
+    if (!existing) {
+      return {ok: false, error: 'message_not_found'};
+    }
+
+    if (existing.authorId !== state.user!.id) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const dialog = await getDialogById(existing.dialogId);
+    if (!dialog || !userCanAccessDialog(state.user!.id, dialog)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const trimmed = String(bodyRaw ?? '').trim();
+    if (!trimmed) {
+      return {ok: false, error: 'empty_message'};
+    }
+
+    const body = trimmed.length > MAX_MESSAGE_LENGTH
+      ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
+      : trimmed;
+
+    const changed = body !== existing.body;
+    if (changed) {
+      db.prepare('update messages set body = ? where id = ?').run(body, messageId);
+    }
+
+    return {
+      ok: true,
+      changed,
+      message: {
+        id: existing.id,
+        dialogId: existing.dialogId,
+        authorId: state.user!.id,
+        authorNickname: state.user!.nickname,
+        authorName: state.user!.name,
+        authorNicknameColor: state.user!.nicknameColor,
+        body,
+        createdAt: existing.createdAt,
+        reactions: this.loadMessageReactions(messageId),
+      },
+    };
+  }
+
+  async chatDelete(state: SocketState, messageIdRaw: unknown): Promise<ApiError | ApiOk<{
+    changed: boolean;
+    dialogId: number;
+    messageId: number;
+  }>> {
+    const authError = this.requireAuth(state);
+    if (authError) return authError;
+    this.pruneExpiredMessages();
+
+    const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
+    if (!Number.isFinite(messageId) || messageId <= 0) {
+      return {ok: false, error: 'invalid_message'};
+    }
+
+    const existing = db.prepare(
+      `select
+         m.id as id,
+         m.dialog_id as "dialogId",
+         m.sender_id as "authorId"
+       from messages m
+       where m.id = ?`
+    ).get(messageId) as {
+      id: number;
+      dialogId: number;
+      authorId: number | null;
+    } | undefined;
+
+    if (!existing) {
+      return {ok: false, error: 'message_not_found'};
+    }
+
+    if (existing.authorId !== state.user!.id) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const dialog = await getDialogById(existing.dialogId);
+    if (!dialog || !userCanAccessDialog(state.user!.id, dialog)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const result = db.prepare('delete from messages where id = ?').run(messageId);
+    return {
+      ok: true,
+      changed: result.changes > 0,
+      dialogId: existing.dialogId,
+      messageId,
+    };
+  }
+
+  async dialogsDelete(state: SocketState, dialogIdRaw: unknown): Promise<ApiError | ApiOk<{
+    changed: boolean;
+    dialogId: number;
+    kind: 'private';
+  }>> {
+    const authError = this.requireAuth(state);
+    if (authError) return authError;
+
+    const dialogId = this.parseDialogId(dialogIdRaw);
+    if (!dialogId) {
+      return {ok: false, error: 'invalid_dialog'};
+    }
+
+    const dialog = await getDialogById(dialogId);
+    if (!dialog) {
+      return {ok: false, error: 'dialog_not_found'};
+    }
+
+    if (dialog.kind !== 'private') {
+      return {ok: false, error: 'invalid_dialog'};
+    }
+
+    if (!userCanAccessDialog(state.user!.id, dialog)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const result = db.prepare('delete from dialogs where id = ?').run(dialogId);
+    if (state.dialogId === dialogId) {
+      state.dialogId = null;
+    }
+
+    return {
+      ok: true,
+      changed: result.changes > 0,
+      dialogId,
+      kind: 'private',
+    };
+  }
+
   async chatReact(state: SocketState, messageIdRaw: unknown, reactionRaw: unknown): Promise<ApiError | ApiOk<{
     dialogId: number;
     messageId: number;
     reactions: MessageReaction[];
+    changed: boolean;
     notify: null | {
       userId: number;
       dialogId: number;
@@ -884,22 +1057,26 @@ export class ChatService {
     const now = new Date().toISOString();
     let finalEmoji: string | null = parsedEmoji.value;
     let reactionSetForNotify = false;
+    let changed = false;
 
     if (!parsedEmoji.value) {
       if (existing) {
         db.prepare('delete from message_reactions where id = ?').run(existing.id);
+        changed = true;
       }
       finalEmoji = null;
     } else if (existing) {
       if (existing.reaction === parsedEmoji.value) {
         db.prepare('delete from message_reactions where id = ?').run(existing.id);
         finalEmoji = null;
+        changed = true;
       } else {
         db.prepare(
           'update message_reactions set reaction = ?, created_at = ? where id = ?'
         ).run(parsedEmoji.value, now, existing.id);
         finalEmoji = parsedEmoji.value;
         reactionSetForNotify = true;
+        changed = true;
       }
     } else {
       db.prepare(
@@ -907,6 +1084,7 @@ export class ChatService {
       ).run(messageId, state.user!.id, parsedEmoji.value, now);
       finalEmoji = parsedEmoji.value;
       reactionSetForNotify = true;
+      changed = true;
     }
 
     const reactions = this.loadMessageReactions(messageId);
@@ -921,6 +1099,7 @@ export class ChatService {
       dialogId: message.dialogId,
       messageId,
       reactions,
+      changed,
       notify: shouldNotify
         ? {
           userId: Number(message.authorId),

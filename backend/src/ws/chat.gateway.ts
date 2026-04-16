@@ -153,6 +153,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  private closeDialogSubscriptions(dialogId: number) {
+    const set = this.subscriptions.get(dialogId);
+    if (set) {
+      for (const client of set) {
+        if (client.state?.dialogId === dialogId) {
+          client.state.dialogId = null;
+        }
+      }
+      this.subscriptions.delete(dialogId);
+    }
+
+    for (const rawClient of this.server.clients) {
+      const client = rawClient as ClientSocket;
+      if (client.state?.dialogId === dialogId) {
+        client.state.dialogId = null;
+      }
+    }
+  }
+
   private async dispatch(client: ClientSocket, com: string, args: any[]) {
     if (com === 'auth:login') return this.chatService.authLogin(client.state, args[0]);
     if (com === 'auth:session') return this.chatService.authSession(client.state, args[0]);
@@ -175,6 +194,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'dialogs:private') return this.chatService.dialogsPrivate(client.state, args[0]);
     if (com === 'dialogs:directs') return this.chatService.dialogsDirects(client.state);
     if (com === 'dialogs:messages') return this.chatService.dialogsMessages(client.state, args[0], args[1]);
+    if (com === 'dialogs:delete') {
+      const dialogBeforeDelete = await getDialogById(Number.parseInt(String(args[0] ?? ''), 10));
+      const result = await this.chatService.dialogsDelete(client.state, args[0]);
+      if ((result as any)?.ok && (result as any)?.changed) {
+        if (dialogBeforeDelete) {
+          this.broadcastToDialogMembers(dialogBeforeDelete, 'dialogs:deleted', {
+            dialogId: (result as any).dialogId,
+            kind: (result as any).kind,
+          });
+        }
+        this.closeDialogSubscriptions((result as any).dialogId);
+      }
+      return result;
+    }
 
     if (com === 'chat:join') {
       const result = await this.chatService.chatJoin(client.state, args[0]);
@@ -197,9 +230,40 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
+    if (com === 'chat:edit') {
+      const result = await this.chatService.chatEdit(client.state, args[0], args[1]);
+      if ((result as any)?.ok && (result as any)?.changed && (result as any)?.message) {
+        const dialog = await getDialogById((result as any).message.dialogId);
+        if (dialog) {
+          this.broadcastToDialogMembers(dialog, 'chat:message-updated', (result as any).message);
+        } else {
+          this.broadcast((result as any).message.dialogId, 'chat:message-updated', (result as any).message);
+        }
+      }
+      return result;
+    }
+
+    if (com === 'chat:delete') {
+      const result = await this.chatService.chatDelete(client.state, args[0]);
+      if ((result as any)?.ok && (result as any)?.changed) {
+        const dialog = await getDialogById((result as any).dialogId);
+        const payload = {
+          dialogId: (result as any).dialogId,
+          messageId: (result as any).messageId,
+        };
+
+        if (dialog) {
+          this.broadcastToDialogMembers(dialog, 'chat:message-deleted', payload);
+        } else {
+          this.broadcast((result as any).dialogId, 'chat:message-deleted', payload);
+        }
+      }
+      return result;
+    }
+
     if (com === 'chat:react') {
       const result = await this.chatService.chatReact(client.state, args[0], args[1]);
-      if ((result as any)?.ok) {
+      if ((result as any)?.ok && (result as any)?.changed) {
         const dialog = await getDialogById((result as any).dialogId);
         const payload = {
           dialogId: (result as any).dialogId,

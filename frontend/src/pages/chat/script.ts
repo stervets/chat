@@ -65,6 +65,9 @@ export default {
 
       messages: ref<Message[]>([]),
       messageText: ref(''),
+      editingMessageId: ref<number | null>(null),
+      editingMessageText: ref(''),
+      messageActionPendingId: ref<number | null>(null),
       error: ref(''),
       historyLoading: ref(false),
       historyLoadSeq: ref(0),
@@ -83,6 +86,12 @@ export default {
       reactionTooltipX: ref(0),
       reactionTooltipY: ref(0),
       reactionPickerMessageId: ref<number | null>(null),
+      messagePreviewCache: ref<Record<string, LinkPreview[]>>({}),
+      faviconBlinkTimer: ref<number | null>(null),
+      faviconBlinkAlertFrame: ref(false),
+      inactiveTabUnread: ref(false),
+      windowFocused: ref(true),
+      documentVisible: ref(true),
 
       leftMenuOpen: ref(false),
       rightMenuOpen: ref(false),
@@ -102,15 +111,22 @@ export default {
       profileColorPicker: ref('#61afef'),
       profileSaving: ref(false),
       profileError: ref(''),
+      directDeletePending: ref(false),
 
       newPassword: ref(''),
 
       chatMessageHandler: ref<Function | null>(null),
+      chatMessageUpdatedHandler: ref<Function | null>(null),
+      chatMessageDeletedHandler: ref<Function | null>(null),
       chatReactionsHandler: ref<Function | null>(null),
+      dialogsDeletedHandler: ref<Function | null>(null),
       chatReactionNotifyHandler: ref<Function | null>(null),
       disconnectedHandler: ref<Function | null>(null),
       windowKeydownHandler: ref<Function | null>(null),
       windowResizeHandler: ref<Function | null>(null),
+      windowFocusHandler: ref<Function | null>(null),
+      windowBlurHandler: ref<Function | null>(null),
+      visibilityChangeHandler: ref<Function | null>(null),
 
       linkify,
     };
@@ -158,6 +174,14 @@ export default {
       } as Message;
     },
 
+    messagePreviewCacheKey(this: any, message: Message) {
+      return `${message.id}:${message.body}`;
+    },
+
+    resetMessagePreviewCache(this: any) {
+      this.messagePreviewCache = {};
+    },
+
     formatMessageTime(this: any, createdAt: string) {
       const date = new Date(createdAt);
       if (Number.isNaN(date.getTime())) return '00:00:00';
@@ -195,6 +219,7 @@ export default {
 
     canOpenDirectFromMessage(this: any, message: Message) {
       if (!this.me) return false;
+      if (this.activeDialog?.kind === 'private') return false;
       return this.me.id !== message.authorId;
     },
 
@@ -206,6 +231,101 @@ export default {
         name: message.authorName,
         nicknameColor: message.authorNicknameColor,
       } as User);
+    },
+
+    isOwnMessage(this: any, message: Message) {
+      return this.me?.id === message.authorId;
+    },
+
+    startMessageEdit(this: any, message: Message) {
+      if (!this.isOwnMessage(message)) return;
+      this.editingMessageId = message.id;
+      this.editingMessageText = message.body;
+      this.reactionPickerMessageId = null;
+      this.reactionTooltipVisible = false;
+      nextTick(() => {
+        const input = document.querySelector('.message-edit-input') as HTMLTextAreaElement | null;
+        if (!input) return;
+        input.focus();
+        const offset = input.value.length;
+        input.setSelectionRange(offset, offset);
+      });
+    },
+
+    cancelMessageEdit(this: any) {
+      this.editingMessageId = null;
+      this.editingMessageText = '';
+    },
+
+    applyMessageUpdate(this: any, messageRaw: any) {
+      const message = this.normalizeMessage(messageRaw);
+      this.messages = this.messages.map((item: Message) => {
+        if (item.id !== message.id || item.dialogId !== message.dialogId) return item;
+        return message;
+      });
+      this.resetMessagePreviewCache();
+    },
+
+    applyMessageDelete(this: any, dialogId: number, messageId: number) {
+      if (this.editingMessageId === messageId) {
+        this.cancelMessageEdit();
+      }
+      if (this.reactionPickerMessageId === messageId) {
+        this.reactionPickerMessageId = null;
+      }
+      this.messages = this.messages.filter((message: Message) => {
+        return !(message.dialogId === dialogId && message.id === messageId);
+      });
+      this.resetMessagePreviewCache();
+      this.updateScrollDownVisibility();
+    },
+
+    async saveMessageEdit(this: any, message: Message) {
+      if (!this.isOwnMessage(message)) return;
+      const body = String(this.editingMessageText || '').trim();
+      if (!body) {
+        this.error = 'Сообщение не может быть пустым.';
+        return;
+      }
+
+      this.messageActionPendingId = message.id;
+      try {
+        const result = await ws.request('chat:edit', message.id, body);
+        if (!(result as any)?.ok) {
+          this.error = 'Не удалось отредактировать сообщение.';
+          return;
+        }
+
+        this.applyMessageUpdate((result as any).message);
+        this.cancelMessageEdit();
+      } finally {
+        this.messageActionPendingId = null;
+      }
+    },
+
+    async deleteOwnMessage(this: any, message: Message) {
+      if (!this.isOwnMessage(message)) return;
+      if (!window.confirm('Удалить это сообщение?')) return;
+
+      this.messageActionPendingId = message.id;
+      try {
+        const result = await ws.request('chat:delete', message.id);
+        if (!(result as any)?.ok) {
+          this.error = 'Не удалось удалить сообщение.';
+          return;
+        }
+
+        this.applyMessageDelete((result as any).dialogId, (result as any).messageId);
+        await this.fetchDirectDialogs();
+      } finally {
+        this.messageActionPendingId = null;
+      }
+    },
+
+    onEditMessageKeydown(this: any, event: KeyboardEvent, message: Message) {
+      if (event.key !== 'Enter' || (!event.ctrlKey && !event.metaKey)) return;
+      event.preventDefault();
+      void this.saveMessageEdit(message);
     },
 
     containsAllKeyword(this: any, body: string) {
@@ -234,6 +354,65 @@ export default {
         return normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized;
       }
       return normalized.length > 110 ? `${normalized.slice(0, 107)}...` : normalized;
+    },
+
+    applyFaviconHref(this: any, href: string) {
+      if (typeof document === 'undefined') return;
+
+      const links = Array.from(
+        document.querySelectorAll('link[rel~="icon"], link[rel="shortcut icon"]')
+      ) as HTMLLinkElement[];
+
+      if (!links.length) {
+        const link = document.createElement('link');
+        link.rel = 'icon';
+        link.href = href;
+        document.head.appendChild(link);
+        return;
+      }
+
+      links.forEach((link) => {
+        link.href = href;
+      });
+    },
+
+    startFaviconBlink(this: any) {
+      if (typeof window === 'undefined') return;
+      if (this.faviconBlinkTimer) return;
+
+      this.faviconBlinkAlertFrame = false;
+      this.applyFaviconHref('/favicon.png');
+      this.faviconBlinkTimer = window.setInterval(() => {
+        this.faviconBlinkAlertFrame = !this.faviconBlinkAlertFrame;
+        this.applyFaviconHref(this.faviconBlinkAlertFrame ? '/favicon-alert.png' : '/favicon.png');
+      }, 680);
+    },
+
+    stopFaviconBlink(this: any) {
+      if (this.faviconBlinkTimer) {
+        clearInterval(this.faviconBlinkTimer);
+        this.faviconBlinkTimer = null;
+      }
+      this.faviconBlinkAlertFrame = false;
+      this.applyFaviconHref('/favicon.png');
+    },
+
+    updateFaviconBlinkByUnread(this: any) {
+      if (this.unreadNotificationsCount > 0 || this.inactiveTabUnread) {
+        this.startFaviconBlink();
+        return;
+      }
+      this.stopFaviconBlink();
+    },
+
+    clearInactiveTabUnread(this: any) {
+      if (!this.inactiveTabUnread) return;
+      this.inactiveTabUnread = false;
+      this.updateFaviconBlinkByUnread();
+    },
+
+    isWindowInactive(this: any) {
+      return !this.windowFocused || !this.documentVisible;
     },
 
     pushToast(this: any, title: string, body: string) {
@@ -297,6 +476,7 @@ export default {
         this.getNotificationDialogTitle(notification),
         `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`
       );
+      this.updateFaviconBlinkByUnread();
     },
 
     addReactionNotification(this: any, payload: any) {
@@ -353,6 +533,7 @@ export default {
         this.getNotificationDialogTitle(notification),
         `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`
       );
+      this.updateFaviconBlinkByUnread();
     },
 
     markNotificationsRead(this: any) {
@@ -360,6 +541,7 @@ export default {
         ...notification,
         unread: false,
       }));
+      this.updateFaviconBlinkByUnread();
     },
 
     toggleNotificationsMenu(this: any) {
@@ -597,8 +779,7 @@ export default {
         return {
           key: `yt:${youtubeId}`,
           type: 'youtube',
-          src: `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`,
-          href: `https://www.youtube.com/watch?v=${youtubeId}`,
+          src: `https://www.youtube.com/embed/${youtubeId}`,
         };
       }
 
@@ -623,6 +804,10 @@ export default {
     },
 
     getMessagePreviews(this: any, message: Message) {
+      const cacheKey = this.messagePreviewCacheKey(message);
+      const cached = this.messagePreviewCache[cacheKey];
+      if (cached) return cached;
+
       const previews: LinkPreview[] = [];
       const seen = new Set<string>();
 
@@ -635,6 +820,10 @@ export default {
         previews.push(preview);
       }
 
+      this.messagePreviewCache = {
+        ...this.messagePreviewCache,
+        [cacheKey]: previews,
+      };
       return previews;
     },
 
@@ -888,6 +1077,7 @@ export default {
       this.historyLoadSeq = seq;
       this.activeDialog = dialog;
       this.messages = [];
+      this.resetMessagePreviewCache();
       this.error = '';
       this.notificationsMenuOpen = false;
       await this.loadHistory(dialog.id, seq);
@@ -898,6 +1088,10 @@ export default {
       if (!this.generalDialog) return;
       await this.selectDialog(this.generalDialog);
       this.closeLeftMenu();
+    },
+
+    async onGoToGeneralChat(this: any) {
+      await this.selectGeneral();
     },
 
     async selectPrivate(this: any, user: User) {
@@ -920,6 +1114,25 @@ export default {
         title: dialog.targetUser.name,
       });
       this.closeLeftMenu();
+    },
+
+    async onDeleteActiveDirect(this: any) {
+      if (this.activeDialog?.kind !== 'private') return;
+      if (this.directDeletePending) return;
+      if (!window.confirm('Удалить директ полностью? Это удалит всю переписку у обоих участников.')) return;
+
+      this.directDeletePending = true;
+      try {
+        const dialogId = this.activeDialog.id;
+        const result = await ws.request('dialogs:delete', dialogId);
+        if (!(result as any)?.ok) {
+          this.error = 'Не удалось удалить директ.';
+          return;
+        }
+        await this.onDialogDeleted({dialogId});
+      } finally {
+        this.directDeletePending = false;
+      }
     },
 
     toggleLeftMenu(this: any) {
@@ -1098,6 +1311,11 @@ export default {
         return;
       }
 
+      if (!ownMessage && this.isWindowInactive()) {
+        this.inactiveTabUnread = true;
+        this.updateFaviconBlinkByUnread();
+      }
+
       const shouldAutoScroll = this.isNearBottom() || (ownMessage && this.forceOwnScrollDown);
       this.messages.push(this.normalizeMessage(message));
       await nextTick();
@@ -1114,6 +1332,51 @@ export default {
       }
     },
 
+    onChatMessageUpdated(this: any, messageRaw: any) {
+      const message = this.normalizeMessage(messageRaw);
+      if (this.activeDialog?.id !== message.dialogId) return;
+      this.applyMessageUpdate(message);
+    },
+
+    async onChatMessageDeleted(this: any, payload: any) {
+      const dialogId = Number(payload?.dialogId);
+      const messageId = Number(payload?.messageId);
+      if (!Number.isFinite(dialogId) || !Number.isFinite(messageId)) return;
+
+      if (this.activeDialog?.id === dialogId) {
+        this.applyMessageDelete(dialogId, messageId);
+      }
+      await this.fetchDirectDialogs();
+    },
+
+    async onDialogDeleted(this: any, payload: any) {
+      const dialogId = Number(payload?.dialogId);
+      if (!Number.isFinite(dialogId)) return;
+
+      this.directDialogs = this.directDialogs.filter((dialog: DirectDialog) => dialog.dialogId !== dialogId);
+      this.notifications = this.notifications.filter((notification: NotificationItem) => notification.dialogId !== dialogId);
+      this.notificationsMenuOpen = false;
+      this.updateFaviconBlinkByUnread();
+
+      if (this.activeDialog?.id !== dialogId) {
+        await this.fetchDirectDialogs();
+        return;
+      }
+
+      this.messages = [];
+      this.cancelMessageEdit();
+      this.reactionPickerMessageId = null;
+      this.reactionTooltipVisible = false;
+      this.resetMessagePreviewCache();
+
+      if (this.generalDialog) {
+        await this.selectDialog(this.generalDialog);
+      } else {
+        this.activeDialog = null;
+      }
+      await this.fetchDirectDialogs();
+    },
+
     onDisconnected(this: any) {
       this.error = 'Соединение потеряно. Перезайди в чат.';
     },
@@ -1126,6 +1389,7 @@ export default {
       if (this.timeTooltipVisible) this.timeTooltipVisible = false;
       if (this.reactionTooltipVisible) this.reactionTooltipVisible = false;
       if (this.reactionPickerMessageId) this.reactionPickerMessageId = null;
+      if (this.editingMessageId) this.cancelMessageEdit();
     },
 
     initLayout(this: any) {
@@ -1147,6 +1411,24 @@ export default {
       this.leftMenuOpen = true;
       this.rightMenuOpen = false;
     },
+
+    onWindowFocus(this: any) {
+      this.windowFocused = true;
+      if (this.documentVisible) {
+        this.clearInactiveTabUnread();
+      }
+    },
+
+    onWindowBlur(this: any) {
+      this.windowFocused = false;
+    },
+
+    onVisibilityChange(this: any) {
+      this.documentVisible = !document.hidden;
+      if (this.documentVisible && this.windowFocused) {
+        this.clearInactiveTabUnread();
+      }
+    },
   },
 
   async mounted(this: any) {
@@ -1156,8 +1438,17 @@ export default {
     this.chatMessageHandler = (message: Message) => {
       void this.onChatMessage(message);
     };
+    this.chatMessageUpdatedHandler = (message: Message) => {
+      this.onChatMessageUpdated(message);
+    };
+    this.chatMessageDeletedHandler = (payload: any) => {
+      void this.onChatMessageDeleted(payload);
+    };
     this.chatReactionsHandler = (payload: any) => {
       this.onChatReactions(payload);
+    };
+    this.dialogsDeletedHandler = (payload: any) => {
+      void this.onDialogDeleted(payload);
     };
     this.chatReactionNotifyHandler = (payload: any) => {
       this.onChatReactionNotify(payload);
@@ -1166,16 +1457,28 @@ export default {
     this.windowKeydownHandler = (event: KeyboardEvent) => this.onWindowKeydown(event);
     this.windowResizeHandler = () => this.onWindowResize();
     this.windowClickHandler = (event: MouseEvent) => this.onWindowClick(event);
+    this.windowFocusHandler = () => this.onWindowFocus();
+    this.windowBlurHandler = () => this.onWindowBlur();
+    this.visibilityChangeHandler = () => this.onVisibilityChange();
 
     on('chat:message', this.chatMessageHandler);
+    on('chat:message-updated', this.chatMessageUpdatedHandler);
+    on('chat:message-deleted', this.chatMessageDeletedHandler);
     on('chat:reactions', this.chatReactionsHandler);
+    on('dialogs:deleted', this.dialogsDeletedHandler);
     on('chat:reaction-notify', this.chatReactionNotifyHandler);
     on('ws:disconnected', this.disconnectedHandler);
     window.addEventListener('keydown', this.windowKeydownHandler);
     window.addEventListener('resize', this.windowResizeHandler);
     window.addEventListener('click', this.windowClickHandler);
+    window.addEventListener('focus', this.windowFocusHandler);
+    window.addEventListener('blur', this.windowBlurHandler);
+    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
 
     this.initLayout();
+    this.windowFocused = typeof document !== 'undefined' ? document.hasFocus() : true;
+    this.documentVisible = typeof document !== 'undefined' ? !document.hidden : true;
+    this.stopFaviconBlink();
     this.generalDialog = await this.fetchGeneralDialog();
     await this.fetchUsers();
     await this.fetchDirectDialogs();
@@ -1187,12 +1490,19 @@ export default {
 
   beforeUnmount(this: any) {
     this.chatMessageHandler && off('chat:message', this.chatMessageHandler);
+    this.chatMessageUpdatedHandler && off('chat:message-updated', this.chatMessageUpdatedHandler);
+    this.chatMessageDeletedHandler && off('chat:message-deleted', this.chatMessageDeletedHandler);
     this.chatReactionsHandler && off('chat:reactions', this.chatReactionsHandler);
+    this.dialogsDeletedHandler && off('dialogs:deleted', this.dialogsDeletedHandler);
     this.chatReactionNotifyHandler && off('chat:reaction-notify', this.chatReactionNotifyHandler);
     this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
     this.windowKeydownHandler && window.removeEventListener('keydown', this.windowKeydownHandler);
     this.windowResizeHandler && window.removeEventListener('resize', this.windowResizeHandler);
     this.windowClickHandler && window.removeEventListener('click', this.windowClickHandler);
+    this.windowFocusHandler && window.removeEventListener('focus', this.windowFocusHandler);
+    this.windowBlurHandler && window.removeEventListener('blur', this.windowBlurHandler);
+    this.visibilityChangeHandler && document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+    this.stopFaviconBlink();
     if (this.blinkTimer) {
       clearTimeout(this.blinkTimer);
       this.blinkTimer = null;
