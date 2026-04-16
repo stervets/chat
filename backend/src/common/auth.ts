@@ -7,6 +7,8 @@ export type ResolvedSession = {
   user: {
     id: number;
     nickname: string;
+    name: string;
+    nicknameColor: string | null;
   };
   token: string;
   expiresAt: string;
@@ -41,7 +43,9 @@ export function resolveSession(token: string): ResolvedSession | null {
        s.token as token,
        s.expires_at as "expiresAt",
        u.id as userId,
-       u.nickname as nickname
+       u.nickname as nickname,
+       u.name as name,
+       u.nickname_color as "nicknameColor"
      from sessions s
      join users u on u.id = s.user_id
      where s.token = ? and s.expires_at > ?
@@ -51,6 +55,8 @@ export function resolveSession(token: string): ResolvedSession | null {
     expiresAt: string;
     userId: number;
     nickname: string;
+    name: string;
+    nicknameColor: string | null;
   } | undefined;
 
   if (!row) return null;
@@ -61,6 +67,8 @@ export function resolveSession(token: string): ResolvedSession | null {
     user: {
       id: row.userId,
       nickname: row.nickname,
+      name: row.name || row.nickname,
+      nicknameColor: row.nicknameColor || null,
     },
   };
 }

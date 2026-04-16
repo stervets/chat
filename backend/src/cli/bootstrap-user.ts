@@ -10,7 +10,7 @@ const getArg = (name: string) => {
 };
 
 const run = async () => {
-  const nickname = getArg('nickname');
+  const nickname = getArg('nickname').trim().toLowerCase();
   const password = getArg('password');
 
   if (!nickname || !password) {
@@ -27,8 +27,8 @@ const run = async () => {
 
   const passwordHash = await hashPassword(password);
   const insert = db.prepare(
-    'insert into users (nickname, password_hash) values (?, ?)'
-  ).run(nickname, passwordHash);
+    'insert into users (nickname, name, password_hash) values (?, ?, ?)'
+  ).run(nickname, nickname, passwordHash);
 
   process.stdout.write(`Created user id ${Number(insert.lastInsertRowid)}\n`);
   closeDb();

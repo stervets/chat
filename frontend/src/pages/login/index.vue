@@ -8,6 +8,9 @@
           type="text"
           placeholder="nickname"
           class="input"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
           @keydown="onKeydown"
         />
         <input

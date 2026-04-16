@@ -87,3 +87,15 @@ export async function wsLogout() {
   clearSessionToken();
   ws.disconnect();
 }
+
+export async function wsUpdateProfile(payload: {name?: string; nicknameColor?: string | null}) {
+  const connected = await ensureWsConnected();
+  if (!(connected as any).ok) return connected;
+  return ws.request('auth:updateProfile', payload);
+}
+
+export async function wsChangePassword(newPassword: string) {
+  const connected = await ensureWsConnected();
+  if (!(connected as any).ok) return connected;
+  return ws.request('auth:changePassword', {newPassword});
+}

@@ -3,6 +3,8 @@ export type Id = number;
 export type User = {
   id: Id;
   nickname: string;
+  name: string;
+  nicknameColor: string | null;
 };
 
 export type DialogKind = 'general' | 'private';

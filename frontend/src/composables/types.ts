@@ -3,6 +3,8 @@ export type Id = number;
 export type User = {
   id: Id;
   nickname: string;
+  name: string;
+  nicknameColor: string | null;
 };
 
 export type Invite = {
@@ -28,8 +30,23 @@ export type Message = {
   dialogId: Id;
   authorId: Id;
   authorNickname: string;
+  authorName: string;
+  authorNicknameColor: string | null;
   body: string;
   createdAt: string;
+  reactions: MessageReaction[];
+};
+
+export type MessageReactionUser = {
+  id: Id;
+  nickname: string;
+  name: string;
+  nicknameColor: string | null;
+};
+
+export type MessageReaction = {
+  emoji: string;
+  users: MessageReactionUser[];
 };
 
 export type Session = {

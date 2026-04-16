@@ -8,6 +8,8 @@ import {db, closeDb} from '../db.js';
 type UserRow = {
   id: number;
   nickname: string;
+  name: string;
+  nicknameColor: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -29,6 +31,7 @@ const rl = createInterface({input, output});
 const nowIso = () => new Date().toISOString();
 const clearScreen = () => output.write('\x1Bc');
 const normalize = (value: string) => value.trim();
+const normalizeNickname = (value: string) => normalize(value).toLowerCase();
 const printable = (value: string | number | null) => (value === null ? '-' : String(value));
 const isYes = (value: string) => ['y', 'yes', 'д', 'да'].includes(value.toLowerCase());
 const inviteLink = (code: string) => `${config.inviteBaseUrl}/invite/${encodeURIComponent(code)}`;
@@ -53,6 +56,8 @@ function getUsers() {
     `select
        id,
        nickname,
+       coalesce(name, nickname) as name,
+       nickname_color as "nicknameColor",
        created_at as "createdAt",
        updated_at as "updatedAt"
      from users
@@ -86,7 +91,8 @@ function renderUsers(rows: UserRow[]) {
   }
 
   for (const row of rows) {
-    output.write(`#${row.id}  ${row.nickname}\n`);
+    output.write(`#${row.id}  ${row.name} (@${row.nickname})\n`);
+    output.write(`    color: ${printable(row.nicknameColor)}\n`);
     output.write(`    created: ${row.createdAt}\n`);
     output.write(`    updated: ${row.updatedAt}\n`);
   }
@@ -150,7 +156,8 @@ async function listUsersAction() {
 
 async function addUserAction() {
   renderTitle('Добавление пользователя');
-  const nickname = await ask('nickname: ');
+  const nickname = normalizeNickname(await ask('nickname: '));
+  const name = await ask('name (Enter = nickname): ');
   const password = await ask('password: ');
 
   if (!nickname || !password) {
@@ -162,8 +169,8 @@ async function addUserAction() {
   try {
     const passwordHash = await hashPassword(password);
     const insert = db.prepare(
-      'insert into users (nickname, password_hash) values (?, ?)'
-    ).run(nickname, passwordHash);
+      'insert into users (nickname, name, password_hash) values (?, ?, ?)'
+    ).run(nickname, name || nickname, passwordHash);
     output.write(`\nПользователь создан: id=${Number(insert.lastInsertRowid)}\n`);
   } catch (err: any) {
     output.write(`\nНе удалось создать пользователя: ${String(err?.message || err)}\n`);
@@ -192,41 +199,52 @@ async function editUserAction() {
     return;
   }
 
-  const nextNickname = await ask(`новый nickname [${user.nickname}] (Enter = без изменений): `);
+  const nextNicknameRaw = await ask(`новый nickname [${user.nickname}] (Enter = без изменений): `);
+  const nextNickname = nextNicknameRaw ? normalizeNickname(nextNicknameRaw) : '';
+  const nextName = await ask(`новое имя [${user.name}] (Enter = без изменений): `);
+  const nextNicknameColor = await ask(
+    `цвет никнейма [${printable(user.nicknameColor)}] (Enter = без изменений, "-" = очистить): `
+  );
   const nextPassword = await ask('новый password (Enter = без изменений): ');
   const updateTime = nowIso();
 
   try {
-    if (nextNickname && nextPassword) {
-      const passwordHash = await hashPassword(nextPassword);
-      db.prepare(
-        'update users set nickname = ?, password_hash = ?, updated_at = ? where id = ?'
-      ).run(nextNickname, passwordHash, updateTime, id);
-      output.write('\nNickname и пароль обновлены.\n');
-      await pause();
-      return;
-    }
+    const fields: string[] = [];
+    const values: Array<string | number | null> = [];
 
     if (nextNickname) {
-      db.prepare(
-        'update users set nickname = ?, updated_at = ? where id = ?'
-      ).run(nextNickname, updateTime, id);
-      output.write('\nNickname обновлён.\n');
-      await pause();
-      return;
+      fields.push('nickname = ?');
+      values.push(nextNickname);
+    }
+
+    if (nextName) {
+      fields.push('name = ?');
+      values.push(nextName);
+    }
+
+    if (nextNicknameColor) {
+      fields.push('nickname_color = ?');
+      values.push(nextNicknameColor === '-' ? null : nextNicknameColor);
     }
 
     if (nextPassword) {
       const passwordHash = await hashPassword(nextPassword);
-      db.prepare(
-        'update users set password_hash = ?, updated_at = ? where id = ?'
-      ).run(passwordHash, updateTime, id);
-      output.write('\nПароль обновлён.\n');
+      fields.push('password_hash = ?');
+      values.push(passwordHash);
+    }
+
+    if (!fields.length) {
+      output.write('\nИзменений нет.\n');
       await pause();
       return;
     }
 
-    output.write('\nИзменений нет.\n');
+    fields.push('updated_at = ?');
+    values.push(updateTime);
+    values.push(id);
+
+    db.prepare(`update users set ${fields.join(', ')} where id = ?`).run(...values);
+    output.write('\nПользователь обновлён.\n');
   } catch (err: any) {
     output.write(`\nНе удалось обновить пользователя: ${String(err?.message || err)}\n`);
   }

@@ -155,10 +155,26 @@ async function waitForChatOrError(page) {
 }
 
 async function openPrivate(page, nickname) {
-  await page.getByRole('button', {name: 'Директы'}).click();
-  const button = page.getByRole('button', {name: nickname});
-  await button.waitFor({timeout: 30000});
+  const opened = await page.locator('.drawer-left.open').count();
+  if (!opened) {
+    await page.getByRole('button', {name: '☰'}).click();
+  }
+
+  const drawer = page.locator('.drawer-left');
+  let button = drawer.getByRole('button', {name: new RegExp(nickname, 'i')}).first();
+  const foundInDirects = await button.isVisible({timeout: 1500}).catch(() => false);
+
+  if (!foundInDirects) {
+    const search = drawer.getByPlaceholder('Найти пользователя...');
+    await search.fill(nickname);
+    button = drawer.getByRole('button', {name: new RegExp(nickname, 'i')}).first();
+    await button.waitFor({timeout: 30000});
+  }
+
   await button.click();
+  if (await page.locator('.drawer-backdrop').count()) {
+    await page.locator('.drawer-backdrop').waitFor({state: 'hidden', timeout: 10000});
+  }
 }
 
 (async () => {
@@ -170,7 +186,7 @@ async function openPrivate(page, nickname) {
   if (existsSync(DB_PATH)) rmSync(DB_PATH, {force: true});
 
   log('Bootstrap first user');
-  runSync('yarn', ['run', 'user:bootstrap', '--', '--nickname', 'owner', '--password', 'pass1'], {cwd: ROOT});
+  runSync('yarn', ['run', 'user:bootstrap', '--', '--nickname', 'lisov', '--password', '123'], {cwd: ROOT});
 
   log('Start backend');
   const backend = startProcess('backend', 'yarn', ['run', 'backend:dev'], {cwd: ROOT});
@@ -206,9 +222,9 @@ async function openPrivate(page, nickname) {
     const ctx1 = await browser.newContext();
     const page1 = await ctx1.newPage();
 
-    await login(page1, 'owner', 'pass1');
-    await sendMessage(page1, 'hello-from-owner');
-    await page1.waitForSelector('text=hello-from-owner', {timeout: 30000});
+    await login(page1, 'lisov', '123');
+    await sendMessage(page1, 'hello-from-lisov');
+    await page1.waitForSelector('text=hello-from-lisov', {timeout: 30000});
     await ensureNoError(page1);
 
     const invitePage = await ctx1.newPage();
@@ -224,8 +240,8 @@ async function openPrivate(page, nickname) {
     const ctx2 = await browser.newContext();
     const page2 = await ctx2.newPage();
     await page2.goto(inviteLink, {waitUntil: 'networkidle'});
-    await page2.getByPlaceholder('nickname').fill('user2');
-    await page2.getByPlaceholder('password').fill('pass2');
+    await page2.getByPlaceholder('nickname').fill('mike');
+    await page2.getByPlaceholder('password').fill('123');
     await page2.getByRole('button', {name: 'Register'}).click();
 
     const result = await waitForChatOrError(page2);
@@ -233,21 +249,53 @@ async function openPrivate(page, nickname) {
       throw new Error(`Register failed: ${result} (url=${page2.url()})`);
     }
 
-    await page2.waitForSelector('text=hello-from-owner', {timeout: 30000});
-    await sendMessage(page2, 'hello-from-user2');
-    await page2.waitForSelector('text=hello-from-user2', {timeout: 30000});
+    await page2.waitForSelector('text=hello-from-lisov', {timeout: 30000});
+    await sendMessage(page2, 'hello-from-mike');
+    await page2.waitForSelector('text=hello-from-mike', {timeout: 30000});
     await ensureNoError(page2);
 
-    await page1.waitForSelector('text=hello-from-user2', {timeout: 30000});
-
-    // refresh owner to pick up new user list
+    await page1.waitForSelector('text=hello-from-mike', {timeout: 30000});
     await page1.reload({waitUntil: 'networkidle'});
-    await openPrivate(page1, 'user2');
-    await sendMessage(page1, 'private-from-owner');
-    await page1.waitForSelector('text=private-from-owner', {timeout: 30000});
+    await page1.waitForSelector('text=hello-from-mike', {timeout: 30000});
 
-    await openPrivate(page2, 'owner');
-    await page2.waitForSelector('text=private-from-owner', {timeout: 30000});
+    await sendMessage(page2, 'all ping-everyone');
+    await page1.waitForSelector('text=all ping-everyone', {timeout: 30000});
+    const mentionClass = await page1.locator('.message', {hasText: 'all ping-everyone'}).last().getAttribute('class');
+    if (!mentionClass || !mentionClass.includes('message-mention-me')) {
+      throw new Error('Message with all keyword was not highlighted');
+    }
+
+    const imageUrl = 'https://cs8.pikabu.ru/post_img/2016/09/16/10/og_og_1474048544294839279.jpg';
+    await sendMessage(page2, imageUrl);
+    await page1.waitForSelector(`text=${imageUrl}`, {timeout: 30000});
+    const imageMessage = page1.locator('.message', {hasText: imageUrl}).last();
+    await imageMessage.locator('.message-previews').first().waitFor({state: 'attached', timeout: 30000});
+
+    await page1.reload({waitUntil: 'networkidle'});
+    await page1.waitForSelector(`text=${imageUrl}`, {timeout: 30000});
+    const imageMessageAfterSwitch = page1.locator('.message', {hasText: imageUrl}).last();
+    await imageMessageAfterSwitch.locator('.message-previews').first().waitFor({state: 'attached', timeout: 30000});
+
+    const ytUrl = 'https://www.youtube.com/watch?v=LW4X1DvNDNo';
+    await sendMessage(page2, ytUrl);
+    await page1.waitForSelector('img.preview-youtube[src*="i.ytimg.com/vi/LW4X1DvNDNo"]', {timeout: 30000, state: 'attached'});
+
+    await openPrivate(page2, 'lisov');
+    await sendMessage(page2, 'direct-notify-without-reply');
+    await page1.waitForSelector('.notify-badge', {timeout: 30000});
+    await page1.locator('.notify-btn').click();
+    await page1.waitForSelector('.notifications-menu', {timeout: 10000});
+    const notifyItem = page1.locator('.notification-item', {hasText: 'direct-notify-without-reply'}).first();
+    await notifyItem.waitFor({state: 'visible', timeout: 10000});
+    await notifyItem.click();
+    await page1.waitForSelector('text=direct-notify-without-reply', {timeout: 30000});
+
+    await openPrivate(page1, 'mike');
+    await sendMessage(page1, 'private-from-lisov');
+    await page1.waitForSelector('text=private-from-lisov', {timeout: 30000});
+
+    await openPrivate(page2, 'lisov');
+    await page2.waitForSelector('text=private-from-lisov', {timeout: 30000});
 
     log(`Flow OK. Invite link: ${inviteLink}`);
   } finally {

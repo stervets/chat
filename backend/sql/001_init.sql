@@ -3,10 +3,13 @@
 create table if not exists users (
   id integer primary key autoincrement,
   nickname text not null unique,
+  name text not null,
+  nickname_color text,
   password_hash text not null,
   created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+create unique index if not exists users_nickname_ci_unique on users(lower(nickname));
 
 create table if not exists invites (
   id integer primary key autoincrement,
@@ -39,6 +42,17 @@ create table if not exists messages (
 );
 
 create index if not exists messages_dialog_created_idx on messages(dialog_id, created_at desc);
+
+create table if not exists message_reactions (
+  id integer primary key autoincrement,
+  message_id integer not null references messages(id) on delete cascade,
+  user_id integer not null references users(id) on delete cascade,
+  reaction text not null,
+  created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+create unique index if not exists message_reactions_unique on message_reactions(message_id, user_id);
+create index if not exists message_reactions_message_idx on message_reactions(message_id, reaction);
 
 create table if not exists sessions (
   id text primary key,

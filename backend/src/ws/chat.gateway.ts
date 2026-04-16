@@ -9,6 +9,7 @@ import {randomBytes} from 'node:crypto';
 import type {IncomingMessage} from 'node:http';
 import {WebSocket, WebSocketServer as WsServer} from 'ws';
 import {config} from '../config.js';
+import {getDialogById, userCanAccessDialog, type DialogRow} from '../common/dialogs.js';
 import {ChatService} from './chat.service.js';
 import {
   BACKEND_PEER_ID,
@@ -134,6 +135,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  private broadcastToDialogMembers(dialog: DialogRow, com: string, ...args: any[]) {
+    for (const rawClient of this.server.clients) {
+      const client = rawClient as ClientSocket;
+      if (!client.state?.user) continue;
+      if (!userCanAccessDialog(client.state.user.id, dialog)) continue;
+      this.sendEvent(client, com, ...args);
+    }
+  }
+
+  private sendToUser(userId: number, com: string, ...args: any[]) {
+    for (const rawClient of this.server.clients) {
+      const client = rawClient as ClientSocket;
+      if (!client.state?.user) continue;
+      if (client.state.user.id !== userId) continue;
+      this.sendEvent(client, com, ...args);
+    }
+  }
+
   private async dispatch(client: ClientSocket, com: string, args: any[]) {
     if (com === 'auth:login') return this.chatService.authLogin(client.state, args[0]);
     if (com === 'auth:session') return this.chatService.authSession(client.state, args[0]);
@@ -143,6 +162,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.unsubscribe(client);
       return result;
     }
+    if (com === 'auth:updateProfile') return this.chatService.authUpdateProfile(client.state, args[0]);
     if (com === 'auth:changePassword') return this.chatService.authChangePassword(client.state, args[0]);
 
     if (com === 'users:list') return this.chatService.usersList(client.state);
@@ -153,6 +173,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     if (com === 'dialogs:general') return this.chatService.dialogsGeneral(client.state);
     if (com === 'dialogs:private') return this.chatService.dialogsPrivate(client.state, args[0]);
+    if (com === 'dialogs:directs') return this.chatService.dialogsDirects(client.state);
     if (com === 'dialogs:messages') return this.chatService.dialogsMessages(client.state, args[0], args[1]);
 
     if (com === 'chat:join') {
@@ -166,7 +187,35 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'chat:send') {
       const result = await this.chatService.chatSend(client.state, args[0], args[1]);
       if ((result as any)?.ok && (result as any)?.message) {
-        this.broadcast((result as any).message.dialogId, 'chat:message', (result as any).message);
+        const dialog = await getDialogById((result as any).message.dialogId);
+        if (dialog) {
+          this.broadcastToDialogMembers(dialog, 'chat:message', (result as any).message);
+        } else {
+          this.broadcast((result as any).message.dialogId, 'chat:message', (result as any).message);
+        }
+      }
+      return result;
+    }
+
+    if (com === 'chat:react') {
+      const result = await this.chatService.chatReact(client.state, args[0], args[1]);
+      if ((result as any)?.ok) {
+        const dialog = await getDialogById((result as any).dialogId);
+        const payload = {
+          dialogId: (result as any).dialogId,
+          messageId: (result as any).messageId,
+          reactions: (result as any).reactions,
+        };
+
+        if (dialog) {
+          this.broadcastToDialogMembers(dialog, 'chat:reactions', payload);
+        } else {
+          this.broadcast((result as any).dialogId, 'chat:reactions', payload);
+        }
+
+        if ((result as any).notify) {
+          this.sendToUser((result as any).notify.userId, 'chat:reaction-notify', (result as any).notify);
+        }
       }
       return result;
     }

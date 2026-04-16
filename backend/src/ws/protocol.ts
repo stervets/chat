@@ -13,6 +13,8 @@ export type Packet = [
 export type SocketUser = {
   id: number;
   nickname: string;
+  name: string;
+  nicknameColor: string | null;
 };
 
 export type SocketState = {

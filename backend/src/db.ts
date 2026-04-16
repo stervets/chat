@@ -15,9 +15,39 @@ try {
   db.exec('pragma foreign_keys = on');
   const schema = readFileSync(schemaPath, 'utf-8');
   db.exec(schema);
+  ensureMigrations(db);
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err);
   throw new Error(`SQLite init failed: ${message}`);
+}
+
+function ensureMigrations(database: DatabaseSync) {
+  const columns = database.prepare(`pragma table_info('users')`).all() as {name: string}[];
+  const hasName = columns.some((column) => column.name === 'name');
+  const hasNicknameColor = columns.some((column) => column.name === 'nickname_color');
+
+  if (!hasName) {
+    database.exec(`alter table users add column name text`);
+    database.exec(`update users set name = nickname where name is null or trim(name) = ''`);
+  }
+
+  if (!hasNicknameColor) {
+    database.exec(`alter table users add column nickname_color text`);
+  }
+
+  const duplicatedNicknames = database.prepare(
+    `select lower(nickname) as nickname_ci, count(*) as c
+     from users
+     group by lower(nickname)
+     having count(*) > 1
+     limit 1`
+  ).get() as {nickname_ci: string; c: number} | undefined;
+
+  if (duplicatedNicknames) {
+    throw new Error(`duplicate nicknames by case-insensitive key: ${duplicatedNicknames.nickname_ci}`);
+  }
+
+  database.exec(`create unique index if not exists users_nickname_ci_unique on users(lower(nickname))`);
 }
 
 export {db};
