@@ -1954,7 +1954,8 @@ export default {
     initLayout(this: any) {
       if (typeof window === 'undefined') return;
       this.isCompactLayout = window.innerWidth < 1100;
-      this.leftMenuOpen = !this.isCompactLayout;
+      this.leftMenuOpen = false;
+      this.rightMenuOpen = false;
     },
 
     onWindowResize(this: any) {
@@ -1967,7 +1968,7 @@ export default {
         return;
       }
 
-      this.leftMenuOpen = true;
+      this.leftMenuOpen = false;
       this.rightMenuOpen = false;
     },
 
