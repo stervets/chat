@@ -80,9 +80,9 @@ export const chatMethodsNotifications = {
       return !this.windowFocused || !this.documentVisible;
     },
 
-    pushToast(this: any, title: string, body: string) {
+    pushToast(this: any, title: string, body: string, notificationId?: number) {
       const id = Date.now() + Math.floor(Math.random() * 1000);
-      this.toasts = [{id, title, body}, ...this.toasts].slice(0, 4);
+      this.toasts = [{id, title, body, notificationId}, ...this.toasts].slice(0, 4);
 
       const timerId = window.setTimeout(() => {
         this.removeToast(id);
@@ -101,6 +101,25 @@ export const chatMethodsNotifications = {
       const next = {...this.toastTimerById};
       delete next[id];
       this.toastTimerById = next;
+    },
+
+    isToastClickable(this: any, toast: ToastItem) {
+      const notificationId = Number(toast?.notificationId || 0);
+      return Number.isFinite(notificationId) && notificationId > 0;
+    },
+
+    async onToastClick(this: any, toast: ToastItem) {
+      if (!this.isToastClickable(toast)) return;
+
+      const notificationId = Number(toast.notificationId || 0);
+      const notification = this.notifications.find((item: NotificationItem) => item.id === notificationId);
+      if (!notification) {
+        this.removeToast(toast.id);
+        return;
+      }
+
+      await this.openNotification(notification);
+      this.removeToast(toast.id);
     },
 
     resolveDialogKind(this: any, dialogId: number): 'general' | 'private' | 'unknown' {
@@ -148,7 +167,8 @@ export const chatMethodsNotifications = {
       if (showToast) {
         this.pushToast(
           this.getNotificationDialogTitle(notification),
-          `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`
+          `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`,
+          notification.id
         );
         void this.playNotificationSound();
       }

@@ -35,6 +35,7 @@ export type ToastItem = {
   id: number;
   title: string;
   body: string;
+  notificationId?: number;
 };
 
 export type RouteMode = 'push' | 'replace' | 'none';

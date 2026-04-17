@@ -358,6 +358,16 @@
     box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38);
     padding: 8px 10px;
     pointer-events: auto;
+    transition: background .3s ease, border-color .3s ease;
+  }
+
+  .toast-item-clickable {
+    cursor: pointer;
+  }
+
+  .toast-item-clickable:hover {
+    border-color: #3d5778;
+    background: rgba(19, 29, 42, 0.97);
   }
 
   .toast-head {
