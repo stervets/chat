@@ -56,6 +56,9 @@ const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)$/i;
 const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '☹️', '😡', '👎', '😢'];
 const MAX_PASTE_IMAGE_BYTES = 1024 * 1024;
 const HISTORY_BATCH_SIZE = 100;
+const VIRTUAL_MAX_ITEMS = 300;
+const VIRTUAL_OVERSCAN = 40;
+const VIRTUAL_ESTIMATED_ITEM_HEIGHT = 132;
 const COLOR_HEX_FULL_RE = /^#[0-9a-fA-F]{6}$/;
 const COMPOSER_NAMED_COLORS = [
   {name: 'red', swatch: '#ff5d5d'},
@@ -98,6 +101,12 @@ export default {
       historyLoadingMore: ref(false),
       historyHasMore: ref(true),
       historyLoadSeq: ref(0),
+      virtualMessageHeights: ref<Record<number, number>>({}),
+      virtualPrefixHeights: ref<number[]>([0]),
+      virtualTotalHeight: ref(0),
+      virtualRangeStart: ref(0),
+      virtualRangeEnd: ref(0),
+      virtualSyncScheduled: ref(false),
       messagesEl: ref<HTMLDivElement | null>(null),
       messageInputEl: ref<HTMLTextAreaElement | null>(null),
       galleryInputEl: ref<HTMLInputElement | null>(null),
@@ -178,9 +187,181 @@ export default {
         return notification.unread ? count + 1 : count;
       }, 0);
     },
+
+    virtualMessages(this: any) {
+      if (!this.messages.length) return [];
+      const start = Math.max(0, Number(this.virtualRangeStart || 0));
+      const configuredEnd = Math.max(start, Number(this.virtualRangeEnd || 0));
+      const end = configuredEnd > start
+        ? configuredEnd
+        : Math.min(this.messages.length, start + VIRTUAL_MAX_ITEMS);
+      return this.messages.slice(start, end).map((message: Message, index: number) => ({
+        message,
+        sourceIndex: start + index,
+      }));
+    },
+
+    virtualTopSpacerHeight(this: any) {
+      const start = Math.max(0, Number(this.virtualRangeStart || 0));
+      const prefix = Array.isArray(this.virtualPrefixHeights) ? this.virtualPrefixHeights : [];
+      if (start <= 0 || start >= prefix.length) return 0;
+      return Math.max(0, Number(prefix[start] || 0));
+    },
+
+    virtualBottomSpacerHeight(this: any) {
+      const end = Math.max(0, Number(this.virtualRangeEnd || 0));
+      const prefix = Array.isArray(this.virtualPrefixHeights) ? this.virtualPrefixHeights : [];
+      const total = Math.max(0, Number(this.virtualTotalHeight || 0));
+      if (!prefix.length || end >= prefix.length) return 0;
+      return Math.max(0, total - Number(prefix[end] || 0));
+    },
   },
 
   methods: {
+    estimateMessageHeight(this: any, message: Message) {
+      const known = Number(this.virtualMessageHeights?.[message.id] || 0);
+      if (known > 0) return known;
+      return VIRTUAL_ESTIMATED_ITEM_HEIGHT;
+    },
+
+    rebuildVirtualPrefix(this: any) {
+      if (!this.messages.length) {
+        this.virtualPrefixHeights = [0];
+        this.virtualTotalHeight = 0;
+        return;
+      }
+
+      const prefix = new Array(this.messages.length + 1);
+      prefix[0] = 0;
+      for (let index = 0; index < this.messages.length; index += 1) {
+        prefix[index + 1] = prefix[index] + this.estimateMessageHeight(this.messages[index]);
+      }
+
+      this.virtualPrefixHeights = prefix;
+      this.virtualTotalHeight = prefix[prefix.length - 1] || 0;
+    },
+
+    findMessageIndexByOffset(this: any, offsetRaw: number) {
+      const total = this.messages.length;
+      if (!total) return 0;
+
+      const prefix = this.virtualPrefixHeights;
+      if (!Array.isArray(prefix) || prefix.length !== total + 1) {
+        return 0;
+      }
+
+      const totalHeight = Number(this.virtualTotalHeight || 0);
+      const offset = Math.max(0, Number(offsetRaw || 0));
+      if (offset <= 0) return 0;
+      if (offset >= totalHeight) return total - 1;
+
+      let left = 0;
+      let right = total - 1;
+      while (left <= right) {
+        const middle = (left + right) >> 1;
+        const rowTop = Number(prefix[middle] || 0);
+        const rowBottom = Number(prefix[middle + 1] || rowTop);
+        if (offset < rowTop) {
+          right = middle - 1;
+          continue;
+        }
+        if (offset >= rowBottom) {
+          left = middle + 1;
+          continue;
+        }
+        return middle;
+      }
+
+      return Math.max(0, Math.min(total - 1, left));
+    },
+
+    syncVirtualWindowFromScroll(this: any) {
+      const total = this.messages.length;
+      if (!total) {
+        this.virtualRangeStart = 0;
+        this.virtualRangeEnd = 0;
+        this.virtualPrefixHeights = [0];
+        this.virtualTotalHeight = 0;
+        return;
+      }
+
+      this.rebuildVirtualPrefix();
+      if (total <= VIRTUAL_MAX_ITEMS || !this.messagesEl) {
+        this.virtualRangeStart = 0;
+        this.virtualRangeEnd = total;
+        return;
+      }
+
+      const scrollTop = Math.max(0, Number(this.messagesEl.scrollTop || 0));
+      const viewportBottom = scrollTop + Math.max(1, Number(this.messagesEl.clientHeight || 1));
+      const firstVisible = this.findMessageIndexByOffset(scrollTop);
+      const lastVisible = this.findMessageIndexByOffset(Math.max(0, viewportBottom - 1));
+
+      let start = Math.max(0, firstVisible - VIRTUAL_OVERSCAN);
+      let end = Math.min(total, start + VIRTUAL_MAX_ITEMS);
+
+      const requiredEnd = Math.min(total, lastVisible + 1 + VIRTUAL_OVERSCAN);
+      if (end < requiredEnd) {
+        end = requiredEnd;
+        start = Math.max(0, end - VIRTUAL_MAX_ITEMS);
+      }
+
+      this.virtualRangeStart = start;
+      this.virtualRangeEnd = end;
+    },
+
+    scheduleVirtualSync(this: any) {
+      if (this.virtualSyncScheduled) return;
+      this.virtualSyncScheduled = true;
+
+      const run = () => {
+        this.virtualSyncScheduled = false;
+        this.syncVirtualWindowFromScroll();
+      };
+
+      if (typeof window === 'undefined') {
+        run();
+        return;
+      }
+      window.requestAnimationFrame(run);
+    },
+
+    pruneVirtualHeightMap(this: any) {
+      const current = this.virtualMessageHeights || {};
+      const activeIds = new Set(this.messages.map((message: Message) => Number(message.id)));
+      const next: Record<number, number> = {};
+
+      for (const [idRaw, valueRaw] of Object.entries(current)) {
+        const id = Number.parseInt(idRaw, 10);
+        if (!Number.isFinite(id) || !activeIds.has(id)) continue;
+        const value = Number(valueRaw || 0);
+        if (value <= 0) continue;
+        next[id] = value;
+      }
+
+      this.virtualMessageHeights = next;
+    },
+
+    notifyMessagesChanged(this: any) {
+      this.pruneVirtualHeightMap();
+      this.scheduleVirtualSync();
+    },
+
+    onVirtualItemHeight(this: any, messageIdRaw: unknown, heightRaw: unknown) {
+      const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
+      const height = Math.max(24, Math.round(Number(heightRaw || 0)));
+      if (!Number.isFinite(messageId) || !Number.isFinite(height) || height <= 0) return;
+
+      const prev = Number(this.virtualMessageHeights?.[messageId] || 0);
+      if (prev > 0 && Math.abs(prev - height) < 2) return;
+
+      this.virtualMessageHeights = {
+        ...this.virtualMessageHeights,
+        [messageId]: height,
+      };
+      this.scheduleVirtualSync();
+    },
+
     normalizeColor(this: any, raw: string) {
       const value = String(raw || '').trim();
       if (!value) return '';
@@ -517,6 +698,7 @@ export default {
         return message;
       });
       this.resetMessagePreviewCache();
+      this.notifyMessagesChanged();
     },
 
     applyMessageDelete(this: any, dialogId: number, messageId: number) {
@@ -530,6 +712,7 @@ export default {
         return !(message.dialogId === dialogId && message.id === messageId);
       });
       this.resetMessagePreviewCache();
+      this.notifyMessagesChanged();
       this.updateScrollDownVisibility();
     },
 
@@ -708,14 +891,48 @@ export default {
       this.toastTimerById = next;
     },
 
-    addNotificationFromMessage(this: any, message: Message) {
+    resolveDialogKind(this: any, dialogId: number): 'general' | 'private' | 'unknown' {
+      const generalId = this.generalDialog?.id || null;
+      if (generalId && dialogId === generalId) return 'general';
+      return dialogId > 0 ? 'private' : 'unknown';
+    },
+
+    isMessageAddressedToMe(this: any, message: Message) {
+      if (!message || message.authorId === this.me?.id) return false;
+      const dialogKind = this.resolveDialogKind(Number(message.dialogId || 0));
+      if (dialogKind === 'private') return true;
+      return this.isMentionedForMe(message);
+    },
+
+    hasMessageNotification(this: any, messageIdRaw: unknown) {
+      const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
+      if (!Number.isFinite(messageId) || messageId <= 0) return false;
+      return this.notifications.some((notification: NotificationItem) => {
+        return notification.notificationType === 'message'
+          && Number(notification.targetMessageId) === messageId;
+      });
+    },
+
+    pushNotification(this: any, notification: NotificationItem, showToast: boolean) {
+      this.notifications = [notification, ...this.notifications].slice(0, 500);
+      if (showToast) {
+        this.pushToast(
+          this.getNotificationDialogTitle(notification),
+          `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`
+        );
+      }
+      this.updateFaviconBlinkByUnread();
+    },
+
+    addNotificationFromMessage(this: any, messageRaw: Message, optionsRaw?: {showToast?: boolean}) {
+      const message = this.normalizeMessage(messageRaw);
+      if (!this.isMessageAddressedToMe(message)) return;
+      if (this.hasMessageNotification(message.id)) return;
+
       const notificationId = this.notificationsSeq;
       this.notificationsSeq += 1;
-      const generalId = this.generalDialog?.id || null;
-      const hasDirectDialog = this.directDialogs.some((dialog: DirectDialog) => dialog.dialogId === message.dialogId);
-      const dialogKind = generalId && message.dialogId === generalId
-        ? 'general'
-        : (hasDirectDialog ? 'private' : 'unknown');
+      const dialogKind = this.resolveDialogKind(Number(message.dialogId || 0));
+      const showToast = !!optionsRaw?.showToast;
 
       const targetUser = this.me?.id === message.authorId
         ? null
@@ -739,14 +956,10 @@ export default {
         createdAt: message.createdAt,
         unread: true,
         targetUser,
+        targetMessageId: message.id,
       };
 
-      this.notifications = [notification, ...this.notifications].slice(0, 50);
-      this.pushToast(
-        this.getNotificationDialogTitle(notification),
-        `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`
-      );
-      this.updateFaviconBlinkByUnread();
+      this.pushNotification(notification, showToast);
     },
 
     addReactionNotification(this: any, payload: any) {
@@ -759,11 +972,7 @@ export default {
       const notificationId = this.notificationsSeq;
       this.notificationsSeq += 1;
 
-      const generalId = this.generalDialog?.id || null;
-      const hasDirectDialog = this.directDialogs.some((dialog: DirectDialog) => dialog.dialogId === dialogId);
-      const dialogKind = generalId && dialogId === generalId
-        ? 'general'
-        : (hasDirectDialog ? 'private' : 'unknown');
+      const dialogKind = this.resolveDialogKind(dialogId);
 
       const targetUser = this.me?.id === actor.id
         ? null
@@ -798,26 +1007,86 @@ export default {
         reactionEmoji: emoji || undefined,
       };
 
-      this.notifications = [notification, ...this.notifications].slice(0, 50);
-      this.pushToast(
-        this.getNotificationDialogTitle(notification),
-        `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`
-      );
+      this.pushNotification(notification, true);
+    },
+
+    markNotificationRead(this: any, notificationIdRaw: unknown) {
+      const notificationId = Number.parseInt(String(notificationIdRaw ?? ''), 10);
+      if (!Number.isFinite(notificationId) || notificationId <= 0) return;
+      let changed = false;
+      this.notifications = this.notifications.map((notification: NotificationItem) => {
+        if (notification.id !== notificationId || !notification.unread) return notification;
+        changed = true;
+        return {
+          ...notification,
+          unread: false,
+        };
+      });
+      if (!changed) return;
       this.updateFaviconBlinkByUnread();
     },
 
-    markNotificationsRead(this: any) {
-      this.notifications = this.notifications.map((notification: NotificationItem) => ({
-        ...notification,
-        unread: false,
-      }));
+    markReactionNotificationsRead(this: any) {
+      let changed = false;
+      this.notifications = this.notifications.map((notification: NotificationItem) => {
+        if (!notification.unread || notification.notificationType !== 'reaction') return notification;
+        changed = true;
+        return {
+          ...notification,
+          unread: false,
+        };
+      });
+      if (!changed) return;
       this.updateFaviconBlinkByUnread();
+    },
+
+    markVisibleMessageNotificationsRead(this: any) {
+      if (!this.messagesEl || !this.activeDialog) return;
+
+      const viewportRect = this.messagesEl.getBoundingClientRect();
+      if (viewportRect.height <= 0) return;
+
+      let changed = false;
+      this.notifications = this.notifications.map((notification: NotificationItem) => {
+        if (!notification.unread || notification.notificationType !== 'message') return notification;
+        if (notification.dialogId !== this.activeDialog.id) return notification;
+
+        const targetMessageId = Number(notification.targetMessageId || 0);
+        if (!Number.isFinite(targetMessageId) || targetMessageId <= 0) return notification;
+
+        const messageEl = this.messagesEl.querySelector(
+          `[data-message-id="${targetMessageId}"]`
+        ) as HTMLElement | null;
+        if (!messageEl) return notification;
+
+        const messageRect = messageEl.getBoundingClientRect();
+        const overlapTop = Math.max(viewportRect.top, messageRect.top);
+        const overlapBottom = Math.min(viewportRect.bottom, messageRect.bottom);
+        const visibleHeight = overlapBottom - overlapTop;
+        const minVisible = Math.min(30, Math.max(10, messageRect.height * 0.35));
+        if (visibleHeight < minVisible) return notification;
+
+        changed = true;
+        return {
+          ...notification,
+          unread: false,
+        };
+      });
+
+      if (!changed) return;
+      this.updateFaviconBlinkByUnread();
+    },
+
+    seedNotificationsFromMessages(this: any, messagesRaw: Message[]) {
+      for (const message of messagesRaw) {
+        this.addNotificationFromMessage(message, {showToast: false});
+      }
     },
 
     toggleNotificationsMenu(this: any) {
       this.notificationsMenuOpen = !this.notificationsMenuOpen;
       if (this.notificationsMenuOpen) {
-        this.markNotificationsRead();
+        this.markReactionNotificationsRead();
         this.rightMenuOpen = false;
         this.leftMenuOpen = false;
       }
@@ -854,6 +1123,9 @@ export default {
 
     async openNotification(this: any, notification: NotificationItem) {
       const targetMessageId = Number(notification.targetMessageId || 0) || null;
+      if (notification.notificationType === 'reaction' || !targetMessageId) {
+        this.markNotificationRead(notification.id);
+      }
 
       if (notification.dialogKind === 'general' && this.generalDialog) {
         await this.selectDialog(this.generalDialog);
@@ -861,6 +1133,7 @@ export default {
         if (targetMessageId) {
           await nextTick();
           this.scrollToMessageById(targetMessageId);
+          window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
         }
         return;
       }
@@ -877,6 +1150,7 @@ export default {
         if (targetMessageId) {
           await nextTick();
           this.scrollToMessageById(targetMessageId);
+          window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
         }
         return;
       }
@@ -886,6 +1160,7 @@ export default {
         if (targetMessageId) {
           await nextTick();
           this.scrollToMessageById(targetMessageId);
+          window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
         }
       }
       this.closeNotificationsMenu();
@@ -1129,10 +1404,27 @@ export default {
 
     scrollToMessageById(this: any, messageId: number) {
       if (!this.messagesEl) return;
-      const target = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
-      if (!target) return;
-      target.scrollIntoView({behavior: 'smooth', block: 'center'});
-      this.triggerMessageBlink(messageId);
+
+      const targetIndex = this.messages.findIndex((message: Message) => message.id === messageId);
+      if (targetIndex < 0) return;
+
+      this.syncVirtualWindowFromScroll();
+      const prefix = this.virtualPrefixHeights;
+      const topOffset = Array.isArray(prefix) ? Number(prefix[targetIndex] || 0) : 0;
+      const clientHeight = Number(this.messagesEl.clientHeight || 0);
+      this.messagesEl.scrollTo({
+        top: Math.max(0, topOffset - Math.floor(clientHeight / 2)),
+        behavior: 'smooth',
+      });
+      this.scheduleVirtualSync();
+
+      nextTick(() => {
+        const target = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
+        if (target) {
+          target.scrollIntoView({behavior: 'smooth', block: 'center'});
+        }
+        this.triggerMessageBlink(messageId);
+      });
     },
 
     parseUrl(this: any, raw: string) {
@@ -1316,6 +1608,7 @@ export default {
           reactions,
         };
       });
+      this.notifyMessagesChanged();
     },
 
     onChatReactions(this: any, payload: any) {
@@ -1479,11 +1772,15 @@ export default {
 
         const nextChunk = result.map((message: any) => this.normalizeMessage(message));
         this.historyHasMore = nextChunk.length >= HISTORY_BATCH_SIZE;
+        this.seedNotificationsFromMessages(nextChunk);
 
         if (isInitialLoad) {
           this.messages = nextChunk;
+          this.notifyMessagesChanged();
+          this.syncVirtualWindowFromScroll();
           await nextTick();
-          this.scrollToBottom();
+          this.scrollToBottomPinned();
+          this.markVisibleMessageNotificationsRead();
           return;
         }
 
@@ -1493,10 +1790,14 @@ export default {
         }
 
         this.messages = [...nextChunk, ...this.messages];
+        this.notifyMessagesChanged();
+        this.syncVirtualWindowFromScroll();
         await nextTick();
         if (!this.messagesEl) return;
         const nextScrollHeight = this.messagesEl.scrollHeight;
         this.messagesEl.scrollTop = Math.max(0, nextScrollHeight - prevScrollHeight + prevScrollTop);
+        this.scheduleVirtualSync();
+        this.markVisibleMessageNotificationsRead();
       } finally {
         if (seq === this.historyLoadSeq) {
           this.historyLoading = false;
@@ -1535,6 +1836,11 @@ export default {
       this.resetMessagePreviewCache();
       this.error = '';
       this.notificationsMenuOpen = false;
+      this.virtualMessageHeights = {};
+      this.virtualPrefixHeights = [0];
+      this.virtualTotalHeight = 0;
+      this.virtualRangeStart = 0;
+      this.virtualRangeEnd = 0;
       await this.loadHistory(dialog.id, seq);
       await this.joinDialog(dialog.id);
     },
@@ -1665,6 +1971,7 @@ export default {
             authorNicknameColor: this.me!.nicknameColor,
           };
         });
+        this.notifyMessagesChanged();
 
         const nextPassword = this.newPassword.trim();
         if (nextPassword) {
@@ -1827,7 +2134,7 @@ export default {
       }
 
       this.forceOwnScrollDown = true;
-      this.scrollToBottom();
+      this.scrollToBottomPinned();
       if (this.activeDialog.kind === 'private') {
         await this.fetchDirectDialogs();
       }
@@ -1872,9 +2179,11 @@ export default {
       await this.router.push('/login');
     },
 
-    isNearBottom(this: any) {
+    isNearBottom(this: any, thresholdRaw?: unknown) {
       if (!this.messagesEl) return true;
-      const threshold = 30;
+      const threshold = Number.isFinite(Number(thresholdRaw))
+        ? Math.max(0, Number(thresholdRaw))
+        : 50;
       const distance = this.messagesEl.scrollHeight - (this.messagesEl.scrollTop + this.messagesEl.clientHeight);
       return distance <= threshold;
     },
@@ -1888,14 +2197,16 @@ export default {
     },
 
     onMessagesScroll(this: any) {
+      this.syncVirtualWindowFromScroll();
       this.updateScrollDownVisibility();
+      this.markVisibleMessageNotificationsRead();
       if (!this.messagesEl) return;
       if (this.messagesEl.scrollTop > 80) return;
       void this.loadOlderHistory();
     },
 
     onScrollDownClick(this: any) {
-      this.scrollToBottom('smooth');
+      this.scrollToBottomPinned('smooth');
     },
 
     scrollToBottom(this: any, behavior: ScrollBehavior = 'auto') {
@@ -1905,33 +2216,59 @@ export default {
         behavior,
       });
       this.showScrollDown = false;
+      this.scheduleVirtualSync();
+    },
+
+    scrollToBottomPinned(this: any, behavior: ScrollBehavior = 'auto') {
+      this.scrollToBottom(behavior);
+      if (typeof window === 'undefined') return;
+
+      window.requestAnimationFrame(() => {
+        this.scrollToBottom(behavior === 'smooth' ? 'smooth' : 'auto');
+      });
+      window.setTimeout(() => {
+        if (this.isNearBottom(60)) return;
+        this.scrollToBottom('auto');
+      }, 120);
     },
 
     async onChatMessage(this: any, message: Message) {
-      const ownMessage = message.authorId === this.me?.id;
-      const isCurrentDialogMessage = this.activeDialog?.id === message.dialogId;
+      const normalized = this.normalizeMessage(message);
+      const ownMessage = normalized.authorId === this.me?.id;
+      const isCurrentDialogMessage = this.activeDialog?.id === normalized.dialogId;
+      const addressedToMe = this.isMessageAddressedToMe(normalized);
 
       if (!isCurrentDialogMessage) {
         if (!ownMessage) {
-          this.addNotificationFromMessage(message);
+          this.addNotificationFromMessage(normalized, {showToast: true});
         }
         await this.fetchDirectDialogs();
         return;
       }
 
-      if (!ownMessage && this.isWindowInactive()) {
+      if (!ownMessage && addressedToMe && this.isWindowInactive()) {
         this.inactiveTabUnread = true;
         this.updateFaviconBlinkByUnread();
       }
 
       const shouldAutoScroll = this.isNearBottom() || (ownMessage && this.forceOwnScrollDown);
-      this.messages.push(this.normalizeMessage(message));
+      this.messages.push(normalized);
+      this.notifyMessagesChanged();
       await nextTick();
       if (shouldAutoScroll) {
-        this.scrollToBottom();
+        this.scrollToBottomPinned();
       } else {
         this.updateScrollDownVisibility();
       }
+
+      if (!ownMessage && addressedToMe) {
+        const isActuallyVisible = shouldAutoScroll && !this.isWindowInactive();
+        if (!isActuallyVisible) {
+          this.addNotificationFromMessage(normalized, {showToast: true});
+        }
+      }
+      this.markVisibleMessageNotificationsRead();
+
       if (ownMessage) {
         this.forceOwnScrollDown = false;
       }
@@ -1972,6 +2309,7 @@ export default {
       }
 
       this.messages = [];
+      this.notifyMessagesChanged();
       this.cancelMessageEdit();
       this.reactionPickerMessageId = null;
       this.reactionTooltipVisible = false;
@@ -2009,22 +2347,28 @@ export default {
 
     onWindowResize(this: any) {
       const nextCompact = window.innerWidth < 1100;
-      if (nextCompact === this.isCompactLayout) return;
+      if (nextCompact === this.isCompactLayout) {
+        this.scheduleVirtualSync();
+        return;
+      }
       this.isCompactLayout = nextCompact;
       if (nextCompact) {
         this.leftMenuOpen = false;
         this.rightMenuOpen = false;
+        this.scheduleVirtualSync();
         return;
       }
 
       this.leftMenuOpen = false;
       this.rightMenuOpen = false;
+      this.scheduleVirtualSync();
     },
 
     onWindowFocus(this: any) {
       this.windowFocused = true;
       if (this.documentVisible) {
         this.clearInactiveTabUnread();
+        this.markVisibleMessageNotificationsRead();
       }
     },
 
@@ -2036,6 +2380,7 @@ export default {
       this.documentVisible = !document.hidden;
       if (this.documentVisible && this.windowFocused) {
         this.clearInactiveTabUnread();
+        this.markVisibleMessageNotificationsRead();
       }
     },
   },
@@ -2095,6 +2440,7 @@ export default {
     if (this.generalDialog) {
       await this.selectDialog(this.generalDialog);
     }
+    this.scheduleVirtualSync();
   },
 
   beforeUnmount(this: any) {

@@ -95,11 +95,14 @@ export default {
     'reaction-mouseenter',
     'reaction-mousemove',
     'reaction-mouseleave',
+    'height-change',
   ],
 
   setup() {
     return {
       showHiddenText: ref(false),
+      rootEl: ref<HTMLElement | null>(null),
+      resizeObserver: null as ResizeObserver | null,
     };
   },
 
@@ -190,5 +193,33 @@ export default {
     onReactionMouseLeave(this: any) {
       this.$emit('reaction-mouseleave');
     },
+
+    emitHeight(this: any) {
+      const root = this.rootEl as HTMLElement | null;
+      if (!root) return;
+      const styles = window.getComputedStyle(root);
+      const marginTop = Number.parseFloat(styles.marginTop || '0') || 0;
+      const marginBottom = Number.parseFloat(styles.marginBottom || '0') || 0;
+      this.$emit('height-change', this.message.id, root.offsetHeight + marginTop + marginBottom);
+    },
+  },
+
+  mounted(this: any) {
+    this.emitHeight();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const root = this.rootEl as HTMLElement | null;
+    if (!root) return;
+
+    this.resizeObserver = new ResizeObserver(() => {
+      this.emitHeight();
+    });
+    this.resizeObserver.observe(root);
+  },
+
+  beforeUnmount(this: any) {
+    if (!this.resizeObserver) return;
+    this.resizeObserver.disconnect();
+    this.resizeObserver = null;
   },
 };

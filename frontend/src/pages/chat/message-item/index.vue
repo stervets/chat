@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="rootEl"
     class="message chat-message-item"
     :class="{
       'message-own': isOwnMessage(),

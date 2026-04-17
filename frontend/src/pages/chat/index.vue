@@ -164,24 +164,29 @@
             <div v-if="historyLoading" class="hint">Загрузка...</div>
             <div v-else-if="!messages.length" class="hint">Нет сообщений</div>
             <div v-if="historyLoadingMore && messages.length" class="hint">Загружаю ещё...</div>
+            <div
+              v-if="virtualTopSpacerHeight > 0"
+              class="chat-feed-spacer"
+              :style="{height: `${virtualTopSpacerHeight}px`}"
+            />
             <ChatMessageItem
-              v-for="(message, messageIndex) in messages"
-              :key="message.id"
-              :message="message"
-              :message-index="messageIndex"
+              v-for="item in virtualMessages"
+              :key="item.message.id"
+              :message="item.message"
+              :message-index="item.sourceIndex"
               :me-id="me?.id || null"
-              :is-mentioned-for-me="isMentionedForMe(message)"
-              :is-blink-target="blinkMessageId === message.id"
-              :is-editing="editingMessageId === message.id"
+              :is-mentioned-for-me="isMentionedForMe(item.message)"
+              :is-blink-target="blinkMessageId === item.message.id"
+              :is-editing="editingMessageId === item.message.id"
               :editing-message-text="editingMessageText"
               :message-action-pending-id="messageActionPendingId"
-              :can-open-direct="canOpenDirectFromMessage(message)"
-              :author-style="getAuthorStyle(message)"
-              :formatted-username="formatUsername(message.authorNickname)"
-              :formatted-time="formatMessageTime(message.createdAt)"
-              :rendered-html="getRenderedMessageHtml(message, messageIndex)"
-              :extra-previews="getMessageExtraPreviews(message)"
-              :reaction-picker-open="reactionPickerMessageId === message.id"
+              :can-open-direct="canOpenDirectFromMessage(item.message)"
+              :author-style="getAuthorStyle(item.message)"
+              :formatted-username="formatUsername(item.message.authorNickname)"
+              :formatted-time="formatMessageTime(item.message.createdAt)"
+              :rendered-html="getRenderedMessageHtml(item.message, item.sourceIndex)"
+              :extra-previews="getMessageExtraPreviews(item.message)"
+              :reaction-picker-open="reactionPickerMessageId === item.message.id"
               :reaction-palette="reactionPalette()"
               @update:editing-message-text="onEditingMessageTextUpdate"
               @author-click="onAuthorClick"
@@ -201,6 +206,12 @@
               @reaction-mouseenter="onReactionMouseEnter"
               @reaction-mousemove="onReactionMouseMove"
               @reaction-mouseleave="onReactionMouseLeave"
+              @height-change="onVirtualItemHeight"
+            />
+            <div
+              v-if="virtualBottomSpacerHeight > 0"
+              class="chat-feed-spacer"
+              :style="{height: `${virtualBottomSpacerHeight}px`}"
             />
             <div v-if="error" class="error">{{ error }}</div>
           </div>
