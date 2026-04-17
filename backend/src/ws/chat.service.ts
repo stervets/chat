@@ -18,7 +18,12 @@ import {
 } from '../common/auth.js';
 import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
 import {isValidNickname, normalizeNickname} from '../common/nickname.js';
-import {compileMessageFormat} from '../common/message-format.js';
+import {
+  compileMessageFormat,
+  extractMessageFormatTokens,
+  type CompileMessageFormatOptions,
+  type MessageLinkPreview,
+} from '../common/message-format.js';
 import {deleteUploadFile, sanitizeUploadName} from '../common/uploads.js';
 import type {SocketState} from './protocol.js';
 
@@ -77,6 +82,23 @@ type MessageReactionUser = {
 type MessageReaction = {
   emoji: string;
   users: MessageReactionUser[];
+};
+
+type TimeRefCandidate = {
+  id: number;
+  index: number;
+  tooltip: string;
+};
+
+type DialogMessageRenderContext = {
+  mentionsByNickname: Map<string, {
+    nickname: string;
+    name: string;
+    nicknameColor: string | null;
+  }>;
+  timeCandidatesByLabel: Map<string, TimeRefCandidate[]>;
+  messageIndexById: Map<number, number>;
+  timelineSize: number;
 };
 
 function isUniqueError(err: unknown) {
@@ -225,6 +247,179 @@ export class ChatService {
       nicknameColor: user.nicknameColor || DEFAULT_NICKNAME_COLOR,
       donationBadgeUntil: this.normalizeDonationBadgeUntil(user.donationBadgeUntil),
     };
+  }
+
+  private formatUsername(nicknameRaw: unknown) {
+    const nickname = String(nicknameRaw || '').trim();
+    if (!nickname) return '@deleted';
+    return `@${nickname}`;
+  }
+
+  private formatMessageTime(createdAtRaw: Date | string | null | undefined) {
+    if (!createdAtRaw) return '00:00:00';
+    const date = createdAtRaw instanceof Date
+      ? createdAtRaw
+      : new Date(String(createdAtRaw));
+    if (Number.isNaN(date.getTime())) return '00:00:00';
+
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}`;
+  }
+
+  private buildTimeReferenceTooltip(rawTextRaw: unknown, authorNicknameRaw: unknown) {
+    const rawText = String(rawTextRaw || '');
+    const normalized = rawText.replace(/\s+/g, ' ').trim();
+    const preview = normalized.length > 100 ? `${normalized.slice(0, 97)}...` : normalized;
+    return `${this.formatUsername(authorNicknameRaw)}: ${preview || '(пусто)'}`;
+  }
+
+  private async buildDialogMessageRenderContext(dialogId: number, rawTexts: string[]) {
+    const mentionNicknames = new Set<string>();
+    const timeLabels = new Set<string>();
+
+    rawTexts.forEach((rawText) => {
+      const tokens = extractMessageFormatTokens(rawText);
+      tokens.mentionNicknames.forEach((nickname) => mentionNicknames.add(nickname));
+      tokens.timeLabels.forEach((timeLabel) => timeLabels.add(timeLabel));
+    });
+
+    const mentionsByNickname = new Map<string, {
+      nickname: string;
+      name: string;
+      nicknameColor: string | null;
+    }>();
+
+    if (mentionNicknames.size > 0) {
+      const mentionRows = await db.user.findMany({
+        where: {
+          nickname: {
+            in: Array.from(mentionNicknames),
+          },
+        },
+        select: {
+          nickname: true,
+          name: true,
+          nicknameColor: true,
+        },
+      });
+
+      mentionRows.forEach((row) => {
+        mentionsByNickname.set(row.nickname, {
+          nickname: row.nickname,
+          name: row.name?.trim() ? row.name.trim() : row.nickname,
+          nicknameColor: row.nicknameColor || DEFAULT_NICKNAME_COLOR,
+        });
+      });
+    }
+
+    const timeCandidatesByLabel = new Map<string, TimeRefCandidate[]>();
+    const messageIndexById = new Map<number, number>();
+    let timelineSize = 0;
+
+    if (timeLabels.size > 0) {
+      const timelineRows = await db.message.findMany({
+        where: {
+          dialogId,
+          createdAt: {
+            gte: this.messagesCutoffDate(),
+          },
+        },
+        orderBy: [
+          {createdAt: 'asc'},
+          {id: 'asc'},
+        ],
+        select: {
+          id: true,
+          rawText: true,
+          createdAt: true,
+          sender: {
+            select: {
+              nickname: true,
+            },
+          },
+        },
+      });
+
+      timelineSize = timelineRows.length;
+
+      timelineRows.forEach((row, index) => {
+        messageIndexById.set(row.id, index);
+
+        const timeLabel = this.formatMessageTime(row.createdAt);
+        if (!timeLabels.has(timeLabel)) return;
+
+        const tooltip = this.buildTimeReferenceTooltip(row.rawText, row.sender?.nickname || 'deleted');
+        const candidates = timeCandidatesByLabel.get(timeLabel) || [];
+        candidates.push({
+          id: row.id,
+          index,
+          tooltip,
+        });
+        timeCandidatesByLabel.set(timeLabel, candidates);
+      });
+    }
+
+    const context: DialogMessageRenderContext = {
+      mentionsByNickname,
+      timeCandidatesByLabel,
+      messageIndexById,
+      timelineSize,
+    };
+
+    return context;
+  }
+
+  private buildCompileMessageOptions(context: DialogMessageRenderContext, sourceMessageId: number | null) {
+    const sourceIndex = sourceMessageId && context.messageIndexById.has(sourceMessageId)
+      ? Number(context.messageIndexById.get(sourceMessageId))
+      : Number(context.timelineSize || 0);
+
+    const options: CompileMessageFormatOptions = {
+      resolveMention: (nicknameRaw: string) => {
+        const nickname = String(nicknameRaw || '').trim().toLowerCase();
+        if (!nickname) return null;
+        return context.mentionsByNickname.get(nickname) || null;
+      },
+      resolveTimeReference: (timeLabelRaw: string) => {
+        const timeLabel = String(timeLabelRaw || '').trim();
+        if (!timeLabel) return null;
+
+        const candidates = context.timeCandidatesByLabel.get(timeLabel) || [];
+        if (!candidates.length) return null;
+
+        let bestCandidate = candidates[0];
+        let bestDistance = Math.abs(bestCandidate.index - sourceIndex);
+
+        for (const candidate of candidates) {
+          const distance = Math.abs(candidate.index - sourceIndex);
+          if (distance > bestDistance) continue;
+          if (distance === bestDistance && candidate.id < bestCandidate.id) continue;
+          bestCandidate = candidate;
+          bestDistance = distance;
+        }
+
+        return {
+          messageId: bestCandidate.id,
+          tooltip: bestCandidate.tooltip,
+        };
+      },
+    };
+
+    return options;
+  }
+
+  private compileMessageWithContext(rawText: string, context: DialogMessageRenderContext, sourceMessageId: number | null) {
+    return compileMessageFormat(
+      rawText,
+      this.buildCompileMessageOptions(context, sourceMessageId),
+    );
+  }
+
+  private async compileMessageForDialog(dialogId: number, rawText: string, sourceMessageId: number | null = null) {
+    const context = await this.buildDialogMessageRenderContext(dialogId, [rawText]);
+    return this.compileMessageWithContext(rawText, context, sourceMessageId);
   }
 
   private parseReactionEmoji(raw: unknown) {
@@ -1087,18 +1282,32 @@ export class ChatService {
       },
     });
 
-    const ordered = result.reverse().map((row) => ({
-      id: row.id,
-      dialogId: row.dialogId,
-      authorId: row.sender?.id || row.senderId || 0,
-      authorNickname: row.sender?.nickname || 'deleted',
-      authorName: row.sender?.name || row.sender?.nickname || 'deleted',
-      authorNicknameColor: row.sender?.nicknameColor || DEFAULT_NICKNAME_COLOR,
-      authorDonationBadgeUntil: this.normalizeDonationBadgeUntil(row.sender?.donationBadgeUntil || null),
-      rawText: row.rawText || '',
-      renderedHtml: row.renderedHtml || '',
-      createdAt: row.createdAt.toISOString(),
-    }));
+    const renderContext = await this.buildDialogMessageRenderContext(
+      dialogId,
+      result.map((row) => String(row.rawText || '')),
+    );
+
+    const ordered = result.reverse().map((row) => {
+      const compiled = this.compileMessageWithContext(
+        String(row.rawText || ''),
+        renderContext,
+        row.id,
+      );
+
+      return {
+        id: row.id,
+        dialogId: row.dialogId,
+        authorId: row.sender?.id || row.senderId || 0,
+        authorNickname: row.sender?.nickname || 'deleted',
+        authorName: row.sender?.name || row.sender?.nickname || 'deleted',
+        authorNicknameColor: row.sender?.nicknameColor || DEFAULT_NICKNAME_COLOR,
+        authorDonationBadgeUntil: this.normalizeDonationBadgeUntil(row.sender?.donationBadgeUntil || null),
+        rawText: compiled.rawText,
+        renderedHtml: compiled.renderedHtml,
+        renderedPreviews: compiled.renderedPreviews,
+        createdAt: row.createdAt.toISOString(),
+      };
+    });
 
     return this.attachMessageReactions(ordered);
   }
@@ -1136,6 +1345,7 @@ export class ChatService {
       authorDonationBadgeUntil: string | null;
       rawText: string;
       renderedHtml: string;
+      renderedPreviews: MessageLinkPreview[];
       createdAt: string;
       reactions: MessageReaction[];
     };
@@ -1161,7 +1371,7 @@ export class ChatService {
     const rawText = trimmed.length > MAX_MESSAGE_LENGTH
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
-    const compiled = compileMessageFormat(rawText);
+    const compiled = await this.compileMessageForDialog(dialogId, rawText);
 
     await this.pruneExpiredMessages();
     const created = await db.message.create({
@@ -1190,6 +1400,7 @@ export class ChatService {
         authorDonationBadgeUntil: state.user!.donationBadgeUntil,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
+        renderedPreviews: compiled.renderedPreviews,
         createdAt: created.createdAt.toISOString(),
         reactions: [],
       },
@@ -1208,6 +1419,7 @@ export class ChatService {
       authorDonationBadgeUntil: string | null;
       rawText: string;
       renderedHtml: string;
+      renderedPreviews: MessageLinkPreview[];
       createdAt: string;
       reactions: MessageReaction[];
     };
@@ -1254,7 +1466,7 @@ export class ChatService {
     const rawText = trimmed.length > MAX_MESSAGE_LENGTH
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
-    const compiled = compileMessageFormat(rawText);
+    const compiled = await this.compileMessageForDialog(existing.dialogId, rawText, existing.id);
 
     const changed = compiled.rawText !== (existing.rawText || '') || compiled.renderedHtml !== (existing.renderedHtml || '');
     if (changed) {
@@ -1280,6 +1492,7 @@ export class ChatService {
         authorDonationBadgeUntil: state.user!.donationBadgeUntil,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
+        renderedPreviews: compiled.renderedPreviews,
         createdAt: existing.createdAt.toISOString(),
         reactions: await this.loadMessageReactions(messageId),
       },

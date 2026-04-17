@@ -1,6 +1,5 @@
 import {ref, nextTick} from 'vue';
 import type {Dialog, Message, MessageReaction, User} from '@/composables/types';
-import {linkify} from '@/composables/utils';
 import {ws} from '@/composables/classes/ws';
 import {on, off} from '@/composables/event-bus';
 import {getApiBase} from '@/composables/api';
@@ -69,8 +68,6 @@ type RouteMode = 'push' | 'replace' | 'none';
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const MENTION_TAG_RE = /@([a-zA-Z0-9._-]+)/g;
-const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
-const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)$/i;
 const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '🤔', '☹️', '😡', '👎', '😢'];
 const MAX_PASTE_IMAGE_BYTES = 1024 * 1024;
 const HISTORY_BATCH_SIZE = 100;
@@ -151,8 +148,6 @@ export default {
       reactionTooltipX: ref(0),
       reactionTooltipY: ref(0),
       reactionPickerMessageId: ref<number | null>(null),
-      messagePreviewCache: ref<Record<string, LinkPreview[]>>({}),
-      messageHtmlCache: ref<Record<string, string>>({}),
       faviconBlinkTimer: ref<number | null>(null),
       faviconBlinkAlertFrame: ref(false),
       inactiveTabUnread: ref(false),
@@ -210,8 +205,6 @@ export default {
       windowFocusHandler: ref<Function | null>(null),
       windowBlurHandler: ref<Function | null>(null),
       visibilityChangeHandler: ref<Function | null>(null),
-
-      linkify,
     };
   },
 
@@ -906,6 +899,7 @@ export default {
 
     normalizeMessage(this: any, message: any): Message {
       const rawText = String(message?.rawText ?? message?.body ?? '');
+      const renderedPreviews = Array.isArray(message?.renderedPreviews) ? message.renderedPreviews : [];
       return {
         ...message,
         rawText,
@@ -913,6 +907,7 @@ export default {
           ? String(message.authorDonationBadgeUntil)
           : null,
         renderedHtml: String(message?.renderedHtml ?? ''),
+        renderedPreviews,
         reactions: Array.isArray(message?.reactions) ? message.reactions : [],
       } as Message;
     },
@@ -921,13 +916,8 @@ export default {
       return String(messageRaw?.rawText ?? messageRaw?.body ?? '');
     },
 
-    messagePreviewCacheKey(this: any, message: Message) {
-      return `${message.id}:${this.getMessageRawText(message)}:${String(message.renderedHtml || '')}`;
-    },
-
     resetMessagePreviewCache(this: any) {
-      this.messagePreviewCache = {};
-      this.messageHtmlCache = {};
+      // server-side rendering: no frontend message html/preview cache
     },
 
     formatMessageTime(this: any, createdAt: string) {
@@ -1757,12 +1747,6 @@ export default {
       this.closeNotificationsMenu();
     },
 
-    buildTimeTagTooltip(this: any, message: Message) {
-      const normalized = this.getMessageRawText(message).replace(/\s+/g, ' ').trim();
-      const preview = normalized.length > 100 ? `${normalized.slice(0, 97)}...` : normalized;
-      return `${this.formatUsername(message.authorNickname)}: ${preview || '(пусто)'}`;
-    },
-
     escapeHtml(this: any, valueRaw: unknown) {
       return String(valueRaw ?? '')
         .replace(/&/g, '&amp;')
@@ -1781,124 +1765,10 @@ export default {
         .replace(/&amp;/g, '&');
     },
 
-    renderTextChunkHtml(this: any, rawChunkRaw: unknown, sourceIndex: number) {
-      const rawChunk = String(rawChunkRaw ?? '');
-      const parts = this.linkify(rawChunk);
-      let html = '';
-
-      for (const part of parts) {
-        if (part.type === 'link') {
-          const normalizedUrl = this.normalizeMessageLink(part.value);
-          const escapedUrl = this.escapeHtml(normalizedUrl);
-          const preview = this.buildLinkPreview(normalizedUrl);
-          if (preview?.type === 'image') {
-            html += `<a class="inline-image-link" href="${escapedUrl}" target="_blank" rel="noopener noreferrer"><img class="preview-media preview-image preview-inline-image" src="${escapedUrl}" alt="image preview" loading="lazy" decoding="async"></a>`;
-          } else {
-            html += `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a>`;
-          }
-          continue;
-        }
-
-        const text = String(part.value || '');
-        const tokenRe = /@([a-zA-Z0-9._-]+)|\[(\d{2}:\d{2}:\d{2})\]/g;
-        let lastIndex = 0;
-        for (const match of text.matchAll(tokenRe)) {
-          if (match.index === undefined) continue;
-          if (match.index > lastIndex) {
-            html += this.escapeHtml(text.slice(lastIndex, match.index));
-          }
-
-          if (match[1]) {
-            const nickname = String(match[1] || '').trim();
-            const user = this.findMentionUser(nickname);
-            if (!user) {
-              html += this.escapeHtml(`@${nickname}`);
-            } else {
-              const username = this.formatUsername(user.nickname);
-              const escapedUsername = this.escapeHtml(username);
-              const escapedName = this.escapeHtml(user.name);
-              const style = user.nicknameColor ? ` style="color:${this.escapeHtml(user.nicknameColor)}"` : '';
-              html += `<span class="mention-token" data-mention="${escapedUsername}" title="${escapedUsername}"${style}>${escapedName}</span>`;
-            }
-          } else {
-            const timeLabel = String(match[2] || '');
-            const target = this.findClosestMessageByTime(sourceIndex, timeLabel);
-            const tooltip = target ? this.buildTimeTagTooltip(target) : 'Сообщение с этим временем не найдено';
-            const targetAttr = target?.id ? ` data-target-message-id="${target.id}"` : '';
-            html += `<span class="time-reference" data-time-tooltip="${this.escapeHtml(tooltip)}"${targetAttr}>[${this.escapeHtml(timeLabel)}]</span>`;
-          }
-
-          lastIndex = match.index + match[0].length;
-        }
-
-        if (lastIndex < text.length) {
-          html += this.escapeHtml(text.slice(lastIndex));
-        }
-      }
-
-      return html;
-    },
-
-    decorateRenderedHtml(this: any, sourceHtmlRaw: unknown, sourceIndex: number) {
-      const sourceHtml = String(sourceHtmlRaw ?? '');
-      if (!sourceHtml) return '';
-
-      let html = '';
-      let index = 0;
-      let insideCode = false;
-
-      while (index < sourceHtml.length) {
-        if (sourceHtml[index] === '<') {
-          const closeIndex = sourceHtml.indexOf('>', index);
-          if (closeIndex < 0) {
-            html += this.escapeHtml(this.decodeHtmlEntities(sourceHtml.slice(index)));
-            break;
-          }
-
-          const tag = sourceHtml.slice(index, closeIndex + 1);
-          const tagLower = tag.toLowerCase();
-          if (tagLower === '<code>') insideCode = true;
-          if (tagLower === '</code>') insideCode = false;
-          html += tag;
-          index = closeIndex + 1;
-          continue;
-        }
-
-        const nextTagIndex = sourceHtml.indexOf('<', index);
-        const chunk = nextTagIndex < 0
-          ? sourceHtml.slice(index)
-          : sourceHtml.slice(index, nextTagIndex);
-
-        if (insideCode) {
-          html += chunk;
-        } else {
-          const decodedChunk = this.decodeHtmlEntities(chunk);
-          html += this.renderTextChunkHtml(decodedChunk, sourceIndex);
-        }
-
-        if (nextTagIndex < 0) break;
-        index = nextTagIndex;
-      }
-
-      return html;
-    },
-
-    getRenderedMessageHtml(this: any, message: Message, sourceIndex: number) {
-      const cacheKey = this.messagePreviewCacheKey(message);
-      const cached = this.messageHtmlCache[cacheKey];
-      if (cached !== undefined) return cached;
-
-      const rendered = String(message.renderedHtml || '').trim();
-      const html = rendered
-        ? this.decorateRenderedHtml(rendered, sourceIndex)
-        : this.renderTextChunkHtml(this.getMessageRawText(message), sourceIndex);
-
-      this.messageHtmlCache = {
-        ...this.messageHtmlCache,
-        [cacheKey]: html,
-      };
-
-      return html;
+    getRenderedMessageHtml(this: any, message: Message, _sourceIndex: number) {
+      const rendered = String(message?.renderedHtml || '').trim();
+      if (rendered) return rendered;
+      return this.escapeHtml(this.getMessageRawText(message));
     },
 
     onMessageBodyClick(this: any, event: MouseEvent, _message: Message, _sourceIndex: number) {
@@ -1955,44 +1825,6 @@ export default {
       this.timeTooltipVisible = false;
     },
 
-    findClosestMessageByTime(this: any, sourceIndex: number, timeLabel: string) {
-      let bestMessage: Message | null = null;
-      let bestDistance = Number.POSITIVE_INFINITY;
-
-      this.messages.forEach((message: Message, index: number) => {
-        if (this.formatMessageTime(message.createdAt) !== timeLabel) return;
-        const distance = Math.abs(index - sourceIndex);
-        if (distance >= bestDistance) return;
-        bestDistance = distance;
-        bestMessage = message;
-      });
-
-      return bestMessage;
-    },
-
-    normalizeMessageLink(this: any, rawUrl: string) {
-      return String(rawUrl || '').replace(/[),.;!?]+$/g, '');
-    },
-
-    findMentionUser(this: any, nicknameRaw: unknown) {
-      const nickname = String(nicknameRaw || '').trim().toLowerCase();
-      if (!nickname) return null;
-
-      if (String(this.me?.nickname || '').toLowerCase() === nickname) {
-        return this.me as User;
-      }
-
-      const byUsers = this.users.find((user: User) => user.nickname.toLowerCase() === nickname);
-      if (byUsers) return byUsers;
-
-      const byDialogs = this.directDialogs
-        .map((dialog: DirectDialog) => dialog.targetUser)
-        .find((user: User) => user.nickname.toLowerCase() === nickname);
-      if (byDialogs) return byDialogs;
-
-      return null;
-    },
-
     async scrollToMessageById(this: any, messageId: number) {
       if (!this.messagesEl) return false;
 
@@ -2027,125 +1859,9 @@ export default {
       return true;
     },
 
-    parseUrl(this: any, raw: string) {
-      try {
-        return new URL(raw);
-      } catch {
-        return null;
-      }
-    },
-
-    extractYouTubeId(this: any, url: URL) {
-      const host = url.hostname.toLowerCase();
-      if (host.includes('youtu.be')) {
-        const id = url.pathname.split('/').filter(Boolean)[0] || '';
-        return id || null;
-      }
-      if (!host.includes('youtube.com')) return null;
-
-      if (url.pathname.startsWith('/watch')) {
-        const id = url.searchParams.get('v') || '';
-        return id || null;
-      }
-
-      const parts = url.pathname.split('/').filter(Boolean);
-      if (parts[0] === 'shorts' || parts[0] === 'embed') {
-        return parts[1] || null;
-      }
-      return null;
-    },
-
-    extractVkVideo(this: any, url: URL) {
-      const host = url.hostname.toLowerCase();
-      if (!host.includes('vkvideo.ru') && !host.includes('vk.com')) return null;
-
-      const joined = `${url.pathname}${url.search}`;
-      const match = joined.match(/video(-?\d+)_([0-9]+)/i);
-      if (!match) return null;
-
-      return {
-        oid: match[1],
-        id: match[2],
-      };
-    },
-
-    buildLinkPreview(this: any, linkUrl: string): LinkPreview | null {
-      const url = this.parseUrl(linkUrl);
-      if (!url) return null;
-
-      const path = url.pathname.toLowerCase();
-
-      if (IMAGE_EXT_RE.test(path)) {
-        return {
-          key: `img:${linkUrl}`,
-          type: 'image',
-          src: linkUrl,
-        };
-      }
-
-      if (VIDEO_EXT_RE.test(path)) {
-        return {
-          key: `video:${linkUrl}`,
-          type: 'video',
-          src: linkUrl,
-        };
-      }
-
-      const youtubeId = this.extractYouTubeId(url);
-      if (youtubeId) {
-        return {
-          key: `yt:${youtubeId}`,
-          type: 'youtube',
-          src: `https://www.youtube.com/embed/${youtubeId}`,
-        };
-      }
-
-      const vkVideo = this.extractVkVideo(url);
-      if (vkVideo) {
-        return {
-          key: `vk:${vkVideo.oid}_${vkVideo.id}`,
-          type: 'embed',
-          src: `https://vk.com/video_ext.php?oid=${vkVideo.oid}&id=${vkVideo.id}&hd=2`,
-        };
-      }
-
-      return null;
-    },
-
-    extractMessageLinks(this: any, bodyRaw: string) {
-      const body = String(bodyRaw || '');
-      const matches = body.match(/https?:\/\/[^\s]+/gi) || [];
-      return matches
-        .map((url) => this.normalizeMessageLink(url))
-        .filter(Boolean);
-    },
-
-    getMessagePreviews(this: any, message: Message) {
-      const cacheKey = this.messagePreviewCacheKey(message);
-      const cached = this.messagePreviewCache[cacheKey];
-      if (cached) return cached;
-
-      const previews: LinkPreview[] = [];
-      const seen = new Set<string>();
-
-      for (const linkUrl of this.extractMessageLinks(this.getMessageRawText(message))) {
-        const preview = this.buildLinkPreview(linkUrl);
-        if (!preview) continue;
-        if (seen.has(preview.key)) continue;
-
-        seen.add(preview.key);
-        previews.push(preview);
-      }
-
-      this.messagePreviewCache = {
-        ...this.messagePreviewCache,
-        [cacheKey]: previews,
-      };
-      return previews;
-    },
-
     getMessageExtraPreviews(this: any, message: Message) {
-      return this.getMessagePreviews(message).filter((preview: LinkPreview) => preview.type !== 'image');
+      const previews = Array.isArray(message?.renderedPreviews) ? message.renderedPreviews : [];
+      return previews.filter((preview: LinkPreview) => preview.type !== 'image');
     },
 
     reactionPalette(this: any) {

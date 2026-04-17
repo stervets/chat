@@ -36,6 +36,12 @@ export type Message = {
   authorDonationBadgeUntil?: string | null;
   rawText: string;
   renderedHtml: string;
+  renderedPreviews?: Array<{
+    key: string;
+    type: 'image' | 'video' | 'embed' | 'youtube';
+    src: string;
+    href?: string;
+  }>;
   body?: string;
   createdAt: string;
   reactions: MessageReaction[];

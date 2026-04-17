@@ -23,6 +23,12 @@ export type Message = {
   senderId: Id;
   rawText: string;
   renderedHtml: string;
+  renderedPreviews?: Array<{
+    key: string;
+    type: 'image' | 'video' | 'embed' | 'youtube';
+    src: string;
+    href?: string;
+  }>;
   createdAt: string;
   expiresAt: string;
 };
