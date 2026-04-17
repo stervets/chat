@@ -14,6 +14,10 @@ type ConfigFile = {
     path?: string;
     maxBytes?: number;
   };
+  vpn?: {
+    donationPhone?: string;
+    donationBank?: string;
+  };
   db?: {
     url?: string;
   };
@@ -64,5 +68,9 @@ export const config = {
   uploads: {
     path: fileConfig.uploads?.path || './data/uploads',
     maxBytes: Math.max(64 * 1024, Number(fileConfig.uploads?.maxBytes || 1024 * 1024)),
+  },
+  vpn: {
+    donationPhone: String(fileConfig.vpn?.donationPhone || '').trim(),
+    donationBank: String(fileConfig.vpn?.donationBank || '').trim(),
   },
 };

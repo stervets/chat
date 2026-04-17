@@ -9,6 +9,7 @@ export type ResolvedSession = {
     nickname: string;
     name: string;
     nicknameColor: string | null;
+    donationBadgeUntil: string | null;
   };
   token: string;
   expiresAt: string;
@@ -59,6 +60,7 @@ export async function resolveSession(token: string): Promise<ResolvedSession | n
           nickname: true,
           name: true,
           nicknameColor: true,
+          donationBadgeUntil: true,
         },
       },
     },
@@ -74,6 +76,7 @@ export async function resolveSession(token: string): Promise<ResolvedSession | n
       nickname: row.user.nickname,
       name: row.user.name || row.user.nickname,
       nicknameColor: row.user.nicknameColor || DEFAULT_NICKNAME_COLOR,
+      donationBadgeUntil: row.user.donationBadgeUntil ? row.user.donationBadgeUntil.toISOString() : null,
     },
   };
 }

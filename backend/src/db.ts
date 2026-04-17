@@ -11,6 +11,7 @@ export const db = new PrismaClient({
 
 let runtimeIndexesReady = false;
 let nicknameModelReady = false;
+let donationBadgeModelReady = false;
 
 async function ensureNicknameModel() {
   if (nicknameModelReady) return;
@@ -103,9 +104,21 @@ async function ensureRuntimeIndexes() {
   runtimeIndexesReady = true;
 }
 
+async function ensureDonationBadgeModel() {
+  if (donationBadgeModelReady) return;
+
+  await db.$executeRawUnsafe(
+    `alter table users
+     add column if not exists donation_badge_until timestamptz(3)`
+  );
+
+  donationBadgeModelReady = true;
+}
+
 export async function checkDb() {
   await db.$queryRawUnsafe('select 1 as ok');
   await ensureNicknameModel();
+  await ensureDonationBadgeModel();
   await ensureRuntimeIndexes();
 }
 

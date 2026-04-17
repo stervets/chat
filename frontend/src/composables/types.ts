@@ -5,6 +5,7 @@ export type User = {
   nickname: string;
   name: string;
   nicknameColor: string | null;
+  donationBadgeUntil?: string | null;
 };
 
 export type Invite = {
@@ -32,6 +33,7 @@ export type Message = {
   authorNickname: string;
   authorName: string;
   authorNicknameColor: string | null;
+  authorDonationBadgeUntil?: string | null;
   rawText: string;
   renderedHtml: string;
   body?: string;
@@ -44,6 +46,7 @@ export type MessageReactionUser = {
   nickname: string;
   name: string;
   nicknameColor: string | null;
+  donationBadgeUntil?: string | null;
 };
 
 export type MessageReaction = {

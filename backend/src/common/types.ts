@@ -5,6 +5,7 @@ export type User = {
   nickname: string;
   name: string;
   nicknameColor: string | null;
+  donationBadgeUntil: string | null;
 };
 
 export type DialogKind = 'general' | 'private';

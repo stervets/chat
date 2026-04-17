@@ -200,6 +200,13 @@
     margin: 0 auto;
   }
 
+  .vpn-icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+    margin: 0 auto;
+  }
+
   .notify-badge {
     position: absolute;
     top: -5px;
@@ -320,6 +327,9 @@
   .notification-author {
     font-size: 12px;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
 
   .notification-body {
@@ -892,6 +902,9 @@
     line-height: 1.2;
     color: var(--text);
     word-break: break-word;
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
 
   .drawer-profile-username {
@@ -1018,6 +1031,17 @@
     font-weight: 600;
     color: var(--text);
     line-height: 1.2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .donation-star {
+    font-size: 12px;
+    line-height: 1;
+    user-select: none;
+    transition: opacity 0.3s ease;
+    flex-shrink: 0;
   }
 
   .menu-item .nickname {

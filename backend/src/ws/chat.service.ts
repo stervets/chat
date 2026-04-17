@@ -27,6 +27,7 @@ const MAX_USER_NAME_LENGTH = 80;
 const MAX_PASSWORD_LENGTH = 256;
 const MIN_PASSWORD_LENGTH = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DONATION_BADGE_TTL_DAYS = 30;
 const MAX_MESSAGES_PAGE_LIMIT = 100;
 const MAX_MESSAGES_PER_DIALOG = 5000;
 const SYSTEM_NICKNAME = 'marx';
@@ -54,6 +55,7 @@ type PublicUser = {
   nickname: string;
   name: string;
   nicknameColor: string | null;
+  donationBadgeUntil: string | null;
 };
 
 type UserRow = {
@@ -61,6 +63,7 @@ type UserRow = {
   nickname: string;
   name: string | null;
   nicknameColor: string | null;
+  donationBadgeUntil?: Date | null;
 };
 
 type MessageReactionUser = {
@@ -68,6 +71,7 @@ type MessageReactionUser = {
   nickname: string;
   name: string;
   nicknameColor: string | null;
+  donationBadgeUntil: string | null;
 };
 
 type MessageReaction = {
@@ -203,12 +207,23 @@ export class ChatService {
     return {ok: true, value: value.toLowerCase()};
   }
 
+  private normalizeDonationBadgeUntil(raw: Date | string | null | undefined) {
+    if (!raw) return null;
+    if (raw instanceof Date) {
+      return Number.isNaN(raw.getTime()) ? null : raw.toISOString();
+    }
+    const parsed = new Date(String(raw));
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  }
+
   private toPublicUser(user: UserRow): PublicUser {
     return {
       id: user.id,
       nickname: user.nickname,
       name: user.name?.trim() ? user.name.trim() : user.nickname,
       nicknameColor: user.nicknameColor || DEFAULT_NICKNAME_COLOR,
+      donationBadgeUntil: this.normalizeDonationBadgeUntil(user.donationBadgeUntil),
     };
   }
 
@@ -277,6 +292,7 @@ export class ChatService {
             nickname: true,
             name: true,
             nicknameColor: true,
+            donationBadgeUntil: true,
           },
         },
       },
@@ -290,6 +306,7 @@ export class ChatService {
         nickname: row.user.nickname,
         name: row.user.name?.trim() ? row.user.name.trim() : row.user.nickname,
         nicknameColor: row.user.nicknameColor || DEFAULT_NICKNAME_COLOR,
+        donationBadgeUntil: this.normalizeDonationBadgeUntil(row.user.donationBadgeUntil),
       });
       grouped.set(row.reaction, users);
     }
@@ -319,6 +336,7 @@ export class ChatService {
             nickname: true,
             name: true,
             nicknameColor: true,
+            donationBadgeUntil: true,
           },
         },
       },
@@ -338,6 +356,7 @@ export class ChatService {
         nickname: row.user.nickname,
         name: row.user.name?.trim() ? row.user.name.trim() : row.user.nickname,
         nicknameColor: row.user.nicknameColor || DEFAULT_NICKNAME_COLOR,
+        donationBadgeUntil: this.normalizeDonationBadgeUntil(row.user.donationBadgeUntil),
       });
       byEmoji.set(row.reaction, users);
     }
@@ -376,6 +395,7 @@ export class ChatService {
         nickname: true,
         name: true,
         nicknameColor: true,
+        donationBadgeUntil: true,
         passwordHash: true,
       },
     });
@@ -436,6 +456,7 @@ export class ChatService {
       nickname: state.user.nickname,
       name: state.user.name,
       nicknameColor: state.user.nicknameColor,
+      donationBadgeUntil: state.user.donationBadgeUntil,
     };
   }
 
@@ -494,6 +515,7 @@ export class ChatService {
         nickname: true,
         name: true,
         nicknameColor: true,
+        donationBadgeUntil: true,
       },
     });
 
@@ -543,6 +565,7 @@ export class ChatService {
         nickname: true,
         name: true,
         nicknameColor: true,
+        donationBadgeUntil: true,
       },
     });
 
@@ -567,6 +590,7 @@ export class ChatService {
             nickname: true,
             name: true,
             nicknameColor: true,
+            donationBadgeUntil: true,
           },
         },
       },
@@ -583,6 +607,7 @@ export class ChatService {
           nickname: row.usedBy.nickname,
           name: row.usedBy.name || row.usedBy.nickname,
           nicknameColor: row.usedBy.nicknameColor || DEFAULT_NICKNAME_COLOR,
+          donationBadgeUntil: this.normalizeDonationBadgeUntil(row.usedBy.donationBadgeUntil),
         }
         : null,
       isUsed: Boolean(row.usedAt),
@@ -657,6 +682,47 @@ export class ChatService {
     };
   }
 
+  publicVpnInfo(_state: SocketState): ApiOk<{
+    donationPhone: string;
+    donationBank: string;
+  }> {
+    return {
+      ok: true,
+      donationPhone: String(config.vpn.donationPhone || ''),
+      donationBank: String(config.vpn.donationBank || ''),
+    };
+  }
+
+  async publicVpnDonation(state: SocketState, payload: any): Promise<ApiError | ApiOk<{user: PublicUser}>> {
+    const authError = this.requireAuth(state);
+    if (authError) return authError;
+
+    const hasSent = Object.prototype.hasOwnProperty.call(payload || {}, 'sent');
+    if (!hasSent) {
+      return {ok: false, error: 'invalid_input'};
+    }
+
+    const sent = Boolean(payload?.sent);
+    const donationBadgeUntil = sent
+      ? new Date(Date.now() + DONATION_BADGE_TTL_DAYS * DAY_MS)
+      : null;
+
+    const updatedUser = await db.user.update({
+      where: {id: state.user!.id},
+      data: {donationBadgeUntil},
+      select: {
+        id: true,
+        nickname: true,
+        name: true,
+        nicknameColor: true,
+        donationBadgeUntil: true,
+      },
+    });
+
+    state.user = this.toPublicUser(updatedUser);
+    return {ok: true, user: state.user};
+  }
+
   async invitesRedeem(state: SocketState, payload: any): Promise<ApiError | ApiOk<{
     token: string;
     expiresAt: string;
@@ -718,6 +784,7 @@ export class ChatService {
             nickname: true,
             name: true,
             nicknameColor: true,
+            donationBadgeUntil: true,
           },
         });
 
@@ -838,6 +905,7 @@ export class ChatService {
         nickname: true,
         name: true,
         nicknameColor: true,
+        donationBadgeUntil: true,
       },
     });
 
@@ -887,6 +955,7 @@ export class ChatService {
             nickname: true,
             name: true,
             nicknameColor: true,
+            donationBadgeUntil: true,
           },
         },
         memberB: {
@@ -895,6 +964,7 @@ export class ChatService {
             nickname: true,
             name: true,
             nicknameColor: true,
+            donationBadgeUntil: true,
           },
         },
         messages: {
@@ -942,6 +1012,7 @@ export class ChatService {
         nickname: true,
         name: true,
         nicknameColor: true,
+        donationBadgeUntil: true,
       },
     });
 
@@ -1010,6 +1081,7 @@ export class ChatService {
             nickname: true,
             name: true,
             nicknameColor: true,
+            donationBadgeUntil: true,
           },
         },
       },
@@ -1022,6 +1094,7 @@ export class ChatService {
       authorNickname: row.sender?.nickname || 'deleted',
       authorName: row.sender?.name || row.sender?.nickname || 'deleted',
       authorNicknameColor: row.sender?.nicknameColor || DEFAULT_NICKNAME_COLOR,
+      authorDonationBadgeUntil: this.normalizeDonationBadgeUntil(row.sender?.donationBadgeUntil || null),
       rawText: row.rawText || '',
       renderedHtml: row.renderedHtml || '',
       createdAt: row.createdAt.toISOString(),
@@ -1060,6 +1133,7 @@ export class ChatService {
       authorNickname: string;
       authorName: string;
       authorNicknameColor: string | null;
+      authorDonationBadgeUntil: string | null;
       rawText: string;
       renderedHtml: string;
       createdAt: string;
@@ -1113,6 +1187,7 @@ export class ChatService {
         authorNickname: state.user!.nickname,
         authorName: state.user!.name,
         authorNicknameColor: state.user!.nicknameColor,
+        authorDonationBadgeUntil: state.user!.donationBadgeUntil,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         createdAt: created.createdAt.toISOString(),
@@ -1130,6 +1205,7 @@ export class ChatService {
       authorNickname: string;
       authorName: string;
       authorNicknameColor: string | null;
+      authorDonationBadgeUntil: string | null;
       rawText: string;
       renderedHtml: string;
       createdAt: string;
@@ -1201,6 +1277,7 @@ export class ChatService {
         authorNickname: state.user!.nickname,
         authorName: state.user!.name,
         authorNicknameColor: state.user!.nicknameColor,
+        authorDonationBadgeUntil: state.user!.donationBadgeUntil,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         createdAt: existing.createdAt.toISOString(),
@@ -1449,6 +1526,7 @@ export class ChatService {
             nickname: state.user!.nickname,
             name: state.user!.name,
             nicknameColor: state.user!.nicknameColor,
+            donationBadgeUntil: state.user!.donationBadgeUntil,
           },
           messageBody: message.rawText || '',
           createdAt: now.toISOString(),

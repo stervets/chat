@@ -17,6 +17,7 @@ model User {
   nickname           String            @unique @db.VarChar(32)
   name               String            @db.VarChar(80)
   nicknameColor      String?           @map("nickname_color") @db.VarChar(7)
+  donationBadgeUntil DateTime?         @map("donation_badge_until") @db.Timestamptz(3)
   passwordHash       String            @map("password_hash")
   createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)

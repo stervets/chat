@@ -39,7 +39,7 @@ HTTP используется только для upload/download файлов.
 - `auth:session` args: `[token]`
   success: `{ok:true, token, expiresAt, user}`
 - `auth:me` args: `[]`
-  success: `{id, nickname, name, nicknameColor}`
+  success: `{id, nickname, name, nicknameColor, donationBadgeUntil}`
 - `auth:logout` args: `[]`
   success: `{ok:true}`
 - `auth:updateProfile` args: `[{name?, nicknameColor?}]`
@@ -58,6 +58,10 @@ HTTP используется только для upload/download файлов.
   success: `{ok:true, code}`
 - `invites:redeem` args: `[{code, nickname, password, name?}]`
   success: `{ok:true, token, expiresAt, user}`
+- `public:vpnInfo` args: `[]`
+  success: `{ok:true, donationPhone, donationBank}`
+- `public:vpnDonation` args: `[{sent:boolean}]`
+  success: `{ok:true, user}`
 
 - `dialogs:general` args: `[]`
   success: `{dialogId, type:'general', title}`
@@ -82,7 +86,7 @@ HTTP используется только для upload/download файлов.
   success: `{ok:true, changed, dialogId, messageId, reactions, notify?}`
 
 `Message` содержит минимум:
-- `id`, `dialogId`, `authorId`, `authorNickname`, `authorName`, `authorNicknameColor`
+- `id`, `dialogId`, `authorId`, `authorNickname`, `authorName`, `authorNicknameColor`, `authorDonationBadgeUntil`
 - `rawText` (исходник для редактирования)
 - `renderedHtml` (серверно скомпилированный безопасный HTML для рендера)
 - `createdAt`, `reactions[]`
@@ -97,6 +101,7 @@ HTTP используется только для upload/download файлов.
 - `chat:reactions` args: `[{dialogId, messageId, reactions}]`
 - `chat:reaction-notify` args: `[payload]`
 - `dialogs:deleted` args: `[{dialogId, kind}]`
+- `users:updated` args: `[user]`
 - `ws:connected` / `ws:disconnected` на фронте пробрасываются через event-bus клиентом.
 
 ## HTTP upload/download

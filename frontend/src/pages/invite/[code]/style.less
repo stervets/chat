@@ -20,10 +20,11 @@
   .content {
     text-align: center;
     width: min(92vw, 360px);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(35, 43, 56, 0.96) 0%, rgba(25, 31, 40, 0.98) 100%);
+    border: 1px solid rgba(123, 151, 188, 0.34);
     border-radius: 12px;
     padding: 20px;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.32);
   }
 
   .project-logo {
@@ -74,12 +75,17 @@
   .btn {
     width: 100%;
     border-radius: 8px;
-    background: var(--accent);
-    color: #10131a;
+    border: 1px solid rgba(119, 157, 192, 0.38);
+    background: linear-gradient(180deg, #4f8abd 0%, #3c6d99 100%);
+    color: #e2ecfa;
     padding: 10px 12px;
     font-weight: 600;
-    border: none;
     cursor: pointer;
+  }
+
+  .btn:hover:not(:disabled) {
+    border-color: rgba(145, 181, 214, 0.52);
+    background: linear-gradient(180deg, #5c96c8 0%, #477aa6 100%);
   }
 
   .btn:disabled {

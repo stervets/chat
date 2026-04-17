@@ -36,7 +36,10 @@
 
         <div class="drawer-layout">
           <div v-if="me" class="drawer-profile">
-            <div class="drawer-profile-name" :style="getUserNameStyle(me)">{{ me.name }}</div>
+            <div class="drawer-profile-name" :style="getUserNameStyle(me)">
+              <span v-if="hasDonationBadge(me)" class="donation-star" :style="getDonationBadgeStyle(me)">⭐</span>
+              {{ me.name }}
+            </div>
             <div class="drawer-profile-username">{{ formatUsername(me.nickname) }}</div>
           </div>
 
@@ -63,7 +66,14 @@
                   }"
                   @click="selectDirectDialog(dialog)"
                 >
-                  <span class="name" :style="getUserNameStyle(dialog.targetUser)">{{ dialog.targetUser.name }}</span>
+                  <span class="name" :style="getUserNameStyle(dialog.targetUser)">
+                    <span
+                      v-if="hasDonationBadge(dialog.targetUser)"
+                      class="donation-star"
+                      :style="getDonationBadgeStyle(dialog.targetUser)"
+                    >⭐</span>
+                    {{ dialog.targetUser.name }}
+                  </span>
                   <span class="nickname">{{ formatUsername(dialog.targetUser.nickname) }}</span>
                   <span v-if="isDirectDialogUnread(dialog.dialogId)" class="direct-unread-dot"/>
                 </button>
@@ -88,7 +98,10 @@
                 :class="{active: activeDialog?.kind === 'private' && activeDialog?.targetUser?.id === user.id}"
                 @click="selectUser(user)"
               >
-                <span class="name" :style="getUserNameStyle(user)">{{ user.name }}</span>
+                <span class="name" :style="getUserNameStyle(user)">
+                  <span v-if="hasDonationBadge(user)" class="donation-star" :style="getDonationBadgeStyle(user)">⭐</span>
+                  {{ user.name }}
+                </span>
                 <span class="nickname">{{ formatUsername(user.nickname) }}</span>
               </button>
             </div>
@@ -143,6 +156,36 @@
             @click="onDeleteActiveDirect"
           >
             🗑
+          </button>
+          <button
+            class="icon-btn vpn-btn"
+            title="VPN и прокси"
+            @click="onOpenVpnPage"
+          >
+            <svg class="vpn-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M4 9.2a12.8 12.8 0 0 1 16 0"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              />
+              <path
+                d="M7.2 12.6a8.2 8.2 0 0 1 9.6 0"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              />
+              <path
+                d="M10.4 16a3.6 3.6 0 0 1 3.2 0"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              />
+              <circle cx="12" cy="19" r="1.2" fill="currentColor"/>
+            </svg>
           </button>
           <button
             ref="notificationButtonEl"
@@ -200,6 +243,11 @@
                 <span class="notification-time">{{ formatMessageTime(notification.createdAt) }}</span>
               </div>
               <div class="notification-author" :style="{color: notification.authorNicknameColor || undefined}">
+                <span
+                  v-if="hasNotificationAuthorDonationBadge(notification)"
+                  class="donation-star"
+                  :style="getNotificationAuthorDonationBadgeStyle(notification)"
+                >⭐</span>
                 {{ notification.authorName }}
               </div>
               <div class="notification-body">{{ getNotificationBodyPreview(notification) }}</div>
@@ -239,6 +287,8 @@
               :message-action-pending-id="messageActionPendingId"
               :can-open-direct="canOpenDirectFromMessage(item.message)"
               :author-style="getAuthorStyle(item.message)"
+              :show-author-badge="hasMessageAuthorDonationBadge(item.message)"
+              :author-badge-opacity="getMessageAuthorDonationBadgeOpacity(item.message)"
               :formatted-username="formatUsername(item.message.authorNickname)"
               :formatted-time="formatMessageTime(item.message.createdAt)"
               :rendered-html="getRenderedMessageHtml(item.message, item.sourceIndex)"

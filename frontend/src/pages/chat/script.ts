@@ -50,6 +50,7 @@ type NotificationItem = {
   authorName: string;
   authorNickname: string;
   authorNicknameColor: string | null;
+  authorDonationBadgeUntil: string | null;
   body: string;
   createdAt: string;
   unread: boolean;
@@ -91,6 +92,7 @@ const COMPOSER_EMOJIS = ['🙂', '😀', '😉', '😎', '🤔', '😴', '🥳',
 const HANDLED_MESSAGE_IDS_SAVE_DELAY_MS = 180;
 const NOTIFICATION_SOUND_VOLUME = 0.35;
 const MAX_ACTIVE_BROWSER_NOTIFICATIONS = 6;
+const DONATION_BADGE_FADE_MS = 5 * 24 * 60 * 60 * 1000;
 
 type SoundRuntimeState = {
   overlayHandled: boolean;
@@ -164,6 +166,8 @@ export default {
       notificationsMenuOpen: ref(false),
       notifications: ref<NotificationItem[]>([]),
       notificationsSeq: ref(1),
+      badgeNowTs: ref(Date.now()),
+      badgeTickTimer: ref<number | null>(null),
       handledMessageNotificationIds: ref<Record<number, true>>({}),
       handledMessageNotificationSaveTimer: ref<number | null>(null),
       notificationMenuEl: ref<HTMLElement | null>(null),
@@ -197,6 +201,7 @@ export default {
       chatReactionsHandler: ref<Function | null>(null),
       dialogsDeletedHandler: ref<Function | null>(null),
       chatReactionNotifyHandler: ref<Function | null>(null),
+      usersUpdatedHandler: ref<Function | null>(null),
       disconnectedHandler: ref<Function | null>(null),
       reconnectedHandler: ref<Function | null>(null),
       sessionExpiredHandler: ref<Function | null>(null),
@@ -843,6 +848,52 @@ export default {
       return `@${nickname}`;
     },
 
+    parseDonationBadgeUntilTs(this: any, raw: unknown) {
+      const value = String(raw || '').trim();
+      if (!value) return 0;
+      const ts = Date.parse(value);
+      return Number.isFinite(ts) ? ts : 0;
+    },
+
+    getDonationBadgeOpacity(this: any, raw: unknown) {
+      const untilTs = this.parseDonationBadgeUntilTs(raw);
+      if (!untilTs) return 0;
+
+      const nowTs = Number(this.badgeNowTs || Date.now());
+      const remaining = untilTs - nowTs;
+      if (remaining <= 0) return 0;
+      if (remaining >= DONATION_BADGE_FADE_MS) return 1;
+      return Math.max(0, Math.min(1, remaining / DONATION_BADGE_FADE_MS));
+    },
+
+    hasDonationBadge(this: any, user: User | null) {
+      return this.getDonationBadgeOpacity(user?.donationBadgeUntil) > 0;
+    },
+
+    getDonationBadgeStyle(this: any, user: User | null) {
+      return {
+        opacity: this.getDonationBadgeOpacity(user?.donationBadgeUntil),
+      };
+    },
+
+    hasMessageAuthorDonationBadge(this: any, message: Message) {
+      return this.getDonationBadgeOpacity(message?.authorDonationBadgeUntil) > 0;
+    },
+
+    getMessageAuthorDonationBadgeOpacity(this: any, message: Message) {
+      return this.getDonationBadgeOpacity(message?.authorDonationBadgeUntil);
+    },
+
+    hasNotificationAuthorDonationBadge(this: any, notification: NotificationItem) {
+      return this.getDonationBadgeOpacity(notification?.authorDonationBadgeUntil) > 0;
+    },
+
+    getNotificationAuthorDonationBadgeStyle(this: any, notification: NotificationItem) {
+      return {
+        opacity: this.getDonationBadgeOpacity(notification?.authorDonationBadgeUntil),
+      };
+    },
+
     getUserNameStyle(this: any, user: User | null) {
       if (!user?.nicknameColor) return {};
       return {color: user.nicknameColor};
@@ -858,6 +909,9 @@ export default {
       return {
         ...message,
         rawText,
+        authorDonationBadgeUntil: message?.authorDonationBadgeUntil
+          ? String(message.authorDonationBadgeUntil)
+          : null,
         renderedHtml: String(message?.renderedHtml ?? ''),
         reactions: Array.isArray(message?.reactions) ? message.reactions : [],
       } as Message;
@@ -1129,6 +1183,7 @@ export default {
         nickname: message.authorNickname,
         name: message.authorName,
         nicknameColor: message.authorNicknameColor,
+        donationBadgeUntil: message.authorDonationBadgeUntil || null,
       } as User);
     },
 
@@ -1430,6 +1485,7 @@ export default {
           nickname: message.authorNickname,
           name: message.authorName,
           nicknameColor: message.authorNicknameColor,
+          donationBadgeUntil: message.authorDonationBadgeUntil || null,
         } as User;
 
       const notification: NotificationItem = {
@@ -1441,6 +1497,7 @@ export default {
         authorName: message.authorName,
         authorNickname: message.authorNickname,
         authorNicknameColor: message.authorNicknameColor,
+        authorDonationBadgeUntil: message.authorDonationBadgeUntil || null,
         body: this.getMessageRawText(message),
         createdAt: message.createdAt,
         unread: true,
@@ -1470,6 +1527,7 @@ export default {
           nickname: actor.nickname,
           name: actor.name,
           nicknameColor: actor.nicknameColor || null,
+          donationBadgeUntil: actor.donationBadgeUntil || null,
         } as User;
 
       const sourceBody = String(payload?.messageBody || '').replace(/\s+/g, ' ').trim();
@@ -1488,6 +1546,7 @@ export default {
         authorName: actor.name,
         authorNickname: actor.nickname,
         authorNicknameColor: actor.nicknameColor || null,
+        authorDonationBadgeUntil: actor.donationBadgeUntil || null,
         body,
         createdAt: String(payload?.createdAt || new Date().toISOString()),
         unread: true,
@@ -2235,6 +2294,90 @@ export default {
       this.profileColorPicker = me.nicknameColor || '#61afef';
     },
 
+    normalizeUser(this: any, raw: any): User | null {
+      const id = Number(raw?.id || 0);
+      if (!Number.isFinite(id) || id <= 0) return null;
+      return {
+        id,
+        nickname: String(raw?.nickname || '').trim(),
+        name: String(raw?.name || raw?.nickname || '').trim(),
+        nicknameColor: raw?.nicknameColor ? String(raw.nicknameColor) : null,
+        donationBadgeUntil: raw?.donationBadgeUntil ? String(raw.donationBadgeUntil) : null,
+      };
+    },
+
+    onUsersUpdated(this: any, userRaw: any) {
+      const user = this.normalizeUser(userRaw);
+      if (!user) return;
+
+      if (this.me?.id === user.id) {
+        this.applyMe(user);
+      }
+
+      this.users = this.users.map((item: User) => {
+        if (item.id !== user.id) return item;
+        return {
+          ...item,
+          ...user,
+        };
+      });
+
+      this.directDialogs = this.directDialogs.map((dialog: DirectDialog) => {
+        if (dialog.targetUser.id !== user.id) return dialog;
+        return {
+          ...dialog,
+          targetUser: {
+            ...dialog.targetUser,
+            ...user,
+          },
+        };
+      });
+
+      if (this.activeDialog?.kind === 'private' && this.activeDialog?.targetUser?.id === user.id) {
+        this.activeDialog = {
+          ...this.activeDialog,
+          targetUser: {
+            ...this.activeDialog.targetUser,
+            ...user,
+          },
+          title: user.name,
+        };
+      }
+
+      this.messages = this.messages.map((message: Message) => {
+        if (message.authorId !== user.id) return message;
+        return {
+          ...message,
+          authorName: user.name,
+          authorNickname: user.nickname,
+          authorNicknameColor: user.nicknameColor,
+          authorDonationBadgeUntil: user.donationBadgeUntil || null,
+        };
+      });
+
+      this.notifications = this.notifications.map((notification: NotificationItem) => {
+        const matchesAuthor = notification.authorId === user.id;
+        const matchesTarget = notification.targetUser?.id === user.id;
+        if (!matchesAuthor && !matchesTarget) return notification;
+
+        return {
+          ...notification,
+          authorName: matchesAuthor ? user.name : notification.authorName,
+          authorNickname: matchesAuthor ? user.nickname : notification.authorNickname,
+          authorNicknameColor: matchesAuthor ? user.nicknameColor : notification.authorNicknameColor,
+          authorDonationBadgeUntil: matchesAuthor
+            ? (user.donationBadgeUntil || null)
+            : notification.authorDonationBadgeUntil,
+          targetUser: matchesTarget
+            ? {
+              ...notification.targetUser!,
+              ...user,
+            }
+            : notification.targetUser,
+        };
+      });
+    },
+
     async ensureAuth(this: any) {
       const session = await restoreSession();
       if (!(session as any)?.ok) {
@@ -2256,7 +2399,9 @@ export default {
     async fetchUsers(this: any) {
       const result = await ws.request('users:list');
       if (Array.isArray(result)) {
-        this.users = result;
+        this.users = result
+          .map((row: any) => this.normalizeUser(row))
+          .filter(Boolean) as User[];
       }
     },
 
@@ -2402,6 +2547,13 @@ export default {
       await this.selectGeneral();
     },
 
+    async onOpenVpnPage(this: any) {
+      this.notificationsMenuOpen = false;
+      this.leftMenuOpen = false;
+      this.rightMenuOpen = false;
+      await this.router.push('/vpn');
+    },
+
     async selectPrivate(this: any, user: User, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; refreshDirects?: boolean}) {
       const dialog = await this.fetchPrivateDialog(user);
       if (!dialog) return;
@@ -2520,6 +2672,7 @@ export default {
             ...message,
             authorName: this.me!.name,
             authorNicknameColor: this.me!.nicknameColor,
+            authorDonationBadgeUntil: this.me!.donationBadgeUntil || null,
           };
         });
         this.notifyMessagesChanged();
@@ -2992,6 +3145,9 @@ export default {
     this.chatReactionNotifyHandler = (payload: any) => {
       this.onChatReactionNotify(payload);
     };
+    this.usersUpdatedHandler = (user: User) => {
+      this.onUsersUpdated(user);
+    };
     this.disconnectedHandler = () => this.onDisconnected();
     this.reconnectedHandler = () => {
       void this.onWsReconnected();
@@ -3012,6 +3168,7 @@ export default {
     on('chat:reactions', this.chatReactionsHandler);
     on('dialogs:deleted', this.dialogsDeletedHandler);
     on('chat:reaction-notify', this.chatReactionNotifyHandler);
+    on('users:updated', this.usersUpdatedHandler);
     on('ws:disconnected', this.disconnectedHandler);
     on('ws:reconnected', this.reconnectedHandler);
     on('ws:session-expired', this.sessionExpiredHandler);
@@ -3025,6 +3182,10 @@ export default {
     this.initLayout();
     this.windowFocused = typeof document !== 'undefined' ? document.hasFocus() : true;
     this.documentVisible = typeof document !== 'undefined' ? !document.hidden : true;
+    this.badgeNowTs = Date.now();
+    this.badgeTickTimer = window.setInterval(() => {
+      this.badgeNowTs = Date.now();
+    }, 60 * 1000);
     this.stopFaviconBlink();
     this.generalDialog = await this.fetchGeneralDialog();
     await this.fetchUsers();
@@ -3042,6 +3203,7 @@ export default {
     this.chatReactionsHandler && off('chat:reactions', this.chatReactionsHandler);
     this.dialogsDeletedHandler && off('dialogs:deleted', this.dialogsDeletedHandler);
     this.chatReactionNotifyHandler && off('chat:reaction-notify', this.chatReactionNotifyHandler);
+    this.usersUpdatedHandler && off('users:updated', this.usersUpdatedHandler);
     this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
     this.reconnectedHandler && off('ws:reconnected', this.reconnectedHandler);
     this.sessionExpiredHandler && off('ws:session-expired', this.sessionExpiredHandler);
@@ -3066,6 +3228,10 @@ export default {
       this.notificationAudioEl.pause();
       this.notificationAudioEl.currentTime = 0;
       this.notificationAudioEl = null;
+    }
+    if (this.badgeTickTimer) {
+      clearInterval(this.badgeTickTimer);
+      this.badgeTickTimer = null;
     }
     if (Array.isArray(this.activeBrowserNotifications) && this.activeBrowserNotifications.length) {
       this.activeBrowserNotifications.forEach((item: Notification) => item.close());

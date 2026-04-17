@@ -10,6 +10,10 @@
     "path": "./data/uploads",
     "maxBytes": 1048576
   },
+  "vpn": {
+    "donationPhone": "+7-999-999-9999",
+    "donationBank": "Райффайзенбанк"
+  },
   "db": {
     "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"
   }

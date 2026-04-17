@@ -50,6 +50,14 @@ export default {
       type: Object as PropType<Record<string, string>>,
       default: () => ({}),
     },
+    showAuthorBadge: {
+      type: Boolean,
+      required: true,
+    },
+    authorBadgeOpacity: {
+      type: Number,
+      default: 1,
+    },
     formattedUsername: {
       type: String,
       required: true,

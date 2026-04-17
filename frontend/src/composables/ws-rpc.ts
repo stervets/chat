@@ -274,3 +274,9 @@ export async function wsChangePassword(newPassword: string) {
   if (!(connected as any).ok) return connected;
   return ws.request('auth:changePassword', {newPassword});
 }
+
+export async function wsSetVpnDonation(sent: boolean) {
+  const session = await restoreSession();
+  if (!(session as any)?.ok) return session;
+  return ws.request('public:vpnDonation', {sent: !!sent});
+}

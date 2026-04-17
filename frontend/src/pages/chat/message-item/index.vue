@@ -11,6 +11,13 @@
   >
     <div class="message-meta">
       <span
+        v-if="showAuthorBadge"
+        class="author-badge"
+        :style="{opacity: authorBadgeOpacity}"
+      >
+        ⭐
+      </span>
+      <span
         class="author message-meta-action"
         :style="authorStyle"
         @click="onAuthorClick"

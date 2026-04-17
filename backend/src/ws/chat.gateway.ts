@@ -153,6 +153,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  private broadcastToAuthorized(com: string, ...args: any[]) {
+    for (const rawClient of this.server.clients) {
+      const client = rawClient as ClientSocket;
+      if (!client.state?.user) continue;
+      this.sendEvent(client, com, ...args);
+    }
+  }
+
   private closeDialogSubscriptions(dialogId: number) {
     const set = this.subscriptions.get(dialogId);
     if (set) {
@@ -190,6 +198,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'invites:create') return this.chatService.invitesCreate(client.state);
     if (com === 'invites:check') return this.chatService.invitesCheck(client.state, args[0]);
     if (com === 'invites:redeem') return this.chatService.invitesRedeem(client.state, args[0]);
+    if (com === 'public:vpnInfo') return this.chatService.publicVpnInfo(client.state);
+    if (com === 'public:vpnDonation') {
+      const result = await this.chatService.publicVpnDonation(client.state, args[0]);
+      if ((result as any)?.ok && (result as any)?.user) {
+        this.broadcastToAuthorized('users:updated', (result as any).user);
+      }
+      return result;
+    }
 
     if (com === 'dialogs:general') return this.chatService.dialogsGeneral(client.state);
     if (com === 'dialogs:private') return this.chatService.dialogsPrivate(client.state, args[0]);
