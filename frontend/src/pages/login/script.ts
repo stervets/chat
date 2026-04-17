@@ -18,15 +18,21 @@ export default {
     methods: {
         async onLogin(this: any) {
             this.error = '';
-            if (!this.nickname || !this.password) {
+            const nickname = String(this.nickname || '').trim().toLowerCase();
+            const password = String(this.password || '');
+            if (!nickname || !password) {
                 this.error = 'Введите nickname и пароль.';
                 return;
             }
 
             this.loading = true;
             try {
-                const result = await wsLogin(this.nickname, this.password);
+                const result = await wsLogin(nickname, password);
                 if (!(result as any)?.ok) {
+                    if ((result as any)?.error === 'invalid_nickname') {
+                        this.error = 'Никнейм: только a-z, 0-9, _ и -, длина 3-32.';
+                        return;
+                    }
                     this.error = 'Неверный nickname или пароль.';
                     return;
                 }

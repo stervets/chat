@@ -1,6 +1,19 @@
-# API (WebSocket only)
+# API
 
-HTTP REST эндпоинтов больше нет. Весь транспорт идёт через `ws://<backend-host>:8816/ws`.
+Основной транспорт: WebSocket (`ws://<backend-host>:8816/ws`).
+HTTP используется только для upload/download файлов.
+
+## Auth модель
+
+- JWT нет.
+- Cookie-session нет.
+- Session token выдаётся в `auth:login` и `invites:redeem`.
+- Клиент хранит token в `localStorage` (`marx_session_token`).
+- Восстановление сессии: WS-команда `auth:session`.
+- Upload использует `Authorization: Bearer <token>`.
+- `nickname` всегда приводится к lowercase.
+- Регистронезависимость: `USER` и `user` — один пользователь.
+- Валидный формат nickname: `^[a-z0-9_-]{3,32}$`.
 
 ## Формат пакета
 
@@ -19,31 +32,79 @@ HTTP REST эндпоинтов больше нет. Весь транспорт 
 ["chat:message", [payload], "backend", "<client-id>"]
 ```
 
-## Команды
+## Команды (WS)
 
-- `auth:login` args: `[{nickname, password}]`  
-  result: `{ok, token?, expiresAt?, user?, error?}`
-- `auth:session` args: `[token]`  
-  result: `{ok, token?, expiresAt?, user?, error?}`
-- `auth:me` args: `[]`  
-  result: `{id, nickname}` или `{ok:false,error}`
+- `auth:login` args: `[{nickname, password}]`
+  success: `{ok:true, token, expiresAt, user}`
+- `auth:session` args: `[token]`
+  success: `{ok:true, token, expiresAt, user}`
+- `auth:me` args: `[]`
+  success: `{id, nickname, name, nicknameColor}`
 - `auth:logout` args: `[]`
-- `auth:changePassword` args: `[{oldPassword, newPassword}]`
+  success: `{ok:true}`
+- `auth:updateProfile` args: `[{name?, nicknameColor?}]`
+  success: `{ok:true, user}`
+- `auth:changePassword` args: `[{newPassword}]`
+  success: `{ok:true}`
 
 - `users:list` args: `[]`
+  success: `User[]`
 
 - `invites:list` args: `[]`
+  success: `Invite[]`
 - `invites:create` args: `[]`
-- `invites:redeem` args: `[{code, nickname, password}]`
+  success: `{id, code, createdAt}`
+- `invites:check` args: `[{code}]`
+  success: `{ok:true, code}`
+- `invites:redeem` args: `[{code, nickname, password, name?}]`
+  success: `{ok:true, token, expiresAt, user}`
 
 - `dialogs:general` args: `[]`
+  success: `{dialogId, type:'general', title}`
 - `dialogs:private` args: `[userId]`
-- `dialogs:messages` args: `[dialogId, limit]`
+  success: `{dialogId, type:'private', targetUser}`
+- `dialogs:directs` args: `[]`
+  success: `[{dialogId, targetUser, lastMessageAt}]`
+- `dialogs:messages` args: `[dialogId, limit?, beforeMessageId?]`
+  success: `Message[]` (в порядке старые → новые)
+- `dialogs:delete` args: `[dialogId]`
+  success: `{ok:true, changed, dialogId, kind:'private'}`
 
 - `chat:join` args: `[dialogId]`
+  success: `{ok:true, dialogId}`
 - `chat:send` args: `[dialogId, body]`
+  success: `{ok:true, message}`
+- `chat:edit` args: `[messageId, body]`
+  success: `{ok:true, changed, message}`
+- `chat:delete` args: `[messageId]`
+  success: `{ok:true, changed, dialogId, messageId}`
+- `chat:react` args: `[messageId, emoji | null]`
+  success: `{ok:true, changed, dialogId, messageId, reactions, notify?}`
+
+`Message` содержит минимум:
+- `id`, `dialogId`, `authorId`, `authorNickname`, `authorName`, `authorNicknameColor`
+- `rawText` (исходник для редактирования)
+- `renderedHtml` (серверно скомпилированный безопасный HTML для рендера)
+- `createdAt`, `reactions[]`
+
+Ошибки команд возвращаются в виде `{ok:false, error:'...'}`.
 
 ## Push-события
 
 - `chat:message` args: `[message]`
+- `chat:message-updated` args: `[message]`
+- `chat:message-deleted` args: `[{dialogId, messageId}]`
+- `chat:reactions` args: `[{dialogId, messageId, reactions}]`
+- `chat:reaction-notify` args: `[payload]`
+- `dialogs:deleted` args: `[{dialogId, kind}]`
 - `ws:connected` / `ws:disconnected` на фронте пробрасываются через event-bus клиентом.
+
+## HTTP upload/download
+
+- `POST /upload/image`
+  - auth: `Authorization: Bearer <session_token>`
+  - multipart field: `file`
+  - принимает только `image/*`, проверяет размер
+  - success: `{ok:true, path, url, mime, size, uploadedBy}`
+- `GET /uploads/:name`
+  - отдаёт ранее загруженный файл

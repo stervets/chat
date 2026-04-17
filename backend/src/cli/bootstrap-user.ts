@@ -1,5 +1,6 @@
 import {hashPassword} from '../common/auth.js';
 import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
+import {isValidNickname, normalizeNickname} from '../common/nickname.js';
 import {db, closeDb} from '../db.js';
 
 const getArg = (name: string) => {
@@ -11,11 +12,15 @@ const getArg = (name: string) => {
 };
 
 const run = async () => {
-  const nickname = getArg('nickname').trim().toLowerCase();
+  const nickname = normalizeNickname(getArg('nickname'));
   const password = getArg('password');
 
   if (!nickname || !password) {
     process.stderr.write('Usage: yarn run user:bootstrap -- --nickname <name> --password <pass>\n');
+    process.exit(1);
+  }
+  if (!isValidNickname(nickname)) {
+    process.stderr.write('Nickname must match ^[a-z0-9_-]{3,32}$\n');
     process.exit(1);
   }
 
@@ -29,7 +34,6 @@ const run = async () => {
   const created = await db.user.create({
     data: {
       nickname,
-      nicknameNormalized: nickname,
       name: nickname,
       nicknameColor: DEFAULT_NICKNAME_COLOR,
       passwordHash,

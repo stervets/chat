@@ -122,8 +122,17 @@
             <div class="title">
               {{ activeDialog?.kind === 'general' ? 'Общий чат' : (activeDialog?.title || 'Чат') }}
             </div>
-            <div class="subtitle" v-if="activeDialog?.kind === 'private'">
-              директ
+            <div class="subtitle-row">
+              <div class="subtitle" v-if="activeDialog?.kind === 'private'">
+                директ
+              </div>
+              <div
+                v-if="wsOffline"
+                class="ws-status"
+                :class="`ws-status-${wsConnectionState}`"
+              >
+                {{ wsStatusText }}
+              </div>
             </div>
           </div>
           <button

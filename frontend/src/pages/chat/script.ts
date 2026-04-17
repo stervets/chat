@@ -7,11 +7,26 @@ import {getApiBase} from '@/composables/api';
 import {
   getSessionToken,
   restoreSession,
+  setWsReconnectDialogResolver,
+  wsConnectionState,
   wsChangePassword,
   wsLogout,
   wsUpdateProfile,
 } from '@/composables/ws-rpc';
 import ChatMessageItem from './message-item/index.vue';
+import {
+  BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY,
+  HANDLED_MESSAGE_IDS_LIMIT,
+  SOUND_ENABLED_STORAGE_KEY,
+  SOUND_OVERLAY_SKIP_ONCE_KEY,
+  consumeSessionFlagOnce,
+  getHandledMessageIdsStorageKey,
+  loadBooleanSetting,
+  loadHandledMessageIds,
+  normalizeHandledMessageIdsMap,
+  persistBooleanSetting,
+  persistHandledMessageIds,
+} from './helpers/storage';
 
 type DirectDialog = {
   dialogId: number;
@@ -73,13 +88,8 @@ const COMPOSER_NAMED_COLORS = [
   {name: 'purple', swatch: '#be8cff'},
 ];
 const COMPOSER_EMOJIS = ['🙂', '😀', '😉', '😎', '🤔', '😴', '🥳', '🔥', '💬', '✅', '❤️', '👍', '👎', '😢', '😡', '😂'];
-const HANDLED_MESSAGE_IDS_STORAGE_PREFIX = 'chat:handled-message-notification-ids:v1';
-const HANDLED_MESSAGE_IDS_LIMIT = 8000;
 const HANDLED_MESSAGE_IDS_SAVE_DELAY_MS = 180;
-const SOUND_ENABLED_STORAGE_KEY = 'chat:notifications-sound-enabled:v1';
-const SOUND_OVERLAY_SKIP_ONCE_KEY = 'chat:sound-overlay-skip-once:v1';
 const NOTIFICATION_SOUND_VOLUME = 0.35;
-const BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY = 'chat:browser-notifications-enabled:v1';
 const MAX_ACTIVE_BROWSER_NOTIFICATIONS = 6;
 
 type SoundRuntimeState = {
@@ -176,6 +186,7 @@ export default {
       browserNotificationPermission: ref<'default' | 'denied' | 'granted'>('default'),
       activeBrowserNotifications: ref<Notification[]>([]),
       routeSyncReady: ref(false),
+      wsConnectionState,
 
       newPassword: ref(''),
       pasteUploading: ref(false),
@@ -187,6 +198,8 @@ export default {
       dialogsDeletedHandler: ref<Function | null>(null),
       chatReactionNotifyHandler: ref<Function | null>(null),
       disconnectedHandler: ref<Function | null>(null),
+      reconnectedHandler: ref<Function | null>(null),
+      sessionExpiredHandler: ref<Function | null>(null),
       windowKeydownHandler: ref<Function | null>(null),
       windowResizeHandler: ref<Function | null>(null),
       windowFocusHandler: ref<Function | null>(null),
@@ -212,6 +225,16 @@ export default {
       return this.notifications.reduce((count: number, notification: NotificationItem) => {
         return notification.unread ? count + 1 : count;
       }, 0);
+    },
+
+    wsOffline(this: any) {
+      return this.wsConnectionState !== 'connected';
+    },
+
+    wsStatusText(this: any) {
+      if (this.wsConnectionState === 'connecting') return 'connecting...';
+      if (this.wsConnectionState === 'disconnected') return 'offline';
+      return '';
     },
 
     unreadDirectDialogIds(this: any) {
@@ -281,78 +304,23 @@ export default {
   },
 
   methods: {
-    getHandledMessageIdsStorageKey(this: any) {
-      const userId = Number(this.me?.id || 0);
-      if (!Number.isFinite(userId) || userId <= 0) return '';
-      return `${HANDLED_MESSAGE_IDS_STORAGE_PREFIX}:${userId}`;
-    },
-
     loadHandledMessageNotificationIds(this: any) {
-      if (typeof window === 'undefined') return;
-
-      const storageKey = this.getHandledMessageIdsStorageKey();
+      const storageKey = getHandledMessageIdsStorageKey(this.me?.id);
       if (!storageKey) {
         this.handledMessageNotificationIds = {};
         return;
       }
 
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) {
-        this.handledMessageNotificationIds = {};
-        return;
-      }
-
-      let parsed: unknown = null;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        this.handledMessageNotificationIds = {};
-        return;
-      }
-
-      if (!Array.isArray(parsed)) {
-        this.handledMessageNotificationIds = {};
-        return;
-      }
-
-      const ids: number[] = [];
-      const seen = new Set<number>();
-      for (const value of parsed) {
-        const id = Number.parseInt(String(value ?? ''), 10);
-        if (!Number.isFinite(id) || id <= 0 || seen.has(id)) continue;
-        ids.push(id);
-        seen.add(id);
-        if (ids.length >= HANDLED_MESSAGE_IDS_LIMIT) break;
-      }
-
-      const next: Record<number, true> = {};
-      ids.forEach((id: number) => {
-        next[id] = true;
-      });
-      this.handledMessageNotificationIds = next;
+      this.handledMessageNotificationIds = loadHandledMessageIds(storageKey, HANDLED_MESSAGE_IDS_LIMIT);
     },
 
     persistHandledMessageNotificationIds(this: any) {
-      if (typeof window === 'undefined') return;
-
-      const storageKey = this.getHandledMessageIdsStorageKey();
+      const storageKey = getHandledMessageIdsStorageKey(this.me?.id);
       if (!storageKey) return;
 
-      const ids = Object.keys(this.handledMessageNotificationIds)
-        .map((key: string) => Number.parseInt(key, 10))
-        .filter((id: number) => Number.isFinite(id) && id > 0)
-        .sort((left: number, right: number) => right - left)
-        .slice(0, HANDLED_MESSAGE_IDS_LIMIT);
-
-      const normalized: Record<number, true> = {};
-      ids.forEach((id: number) => {
-        normalized[id] = true;
-      });
-      this.handledMessageNotificationIds = normalized;
-
-      try {
-        window.localStorage.setItem(storageKey, JSON.stringify(ids));
-      } catch {}
+      const normalized = normalizeHandledMessageIdsMap(this.handledMessageNotificationIds, HANDLED_MESSAGE_IDS_LIMIT);
+      this.handledMessageNotificationIds = normalized.normalizedMap;
+      persistHandledMessageIds(storageKey, normalized.ids);
     },
 
     scheduleHandledMessageNotificationIdsSave(this: any) {
@@ -369,18 +337,11 @@ export default {
     },
 
     loadSoundEnabledSetting(this: any) {
-      if (typeof window === 'undefined') {
-        this.soundEnabled = true;
-        return;
-      }
-
-      const raw = window.localStorage.getItem(SOUND_ENABLED_STORAGE_KEY);
-      this.soundEnabled = raw !== '0';
+      this.soundEnabled = loadBooleanSetting(SOUND_ENABLED_STORAGE_KEY, true);
     },
 
     persistSoundEnabledSetting(this: any) {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SOUND_ENABLED_STORAGE_KEY, this.soundEnabled ? '1' : '0');
+      persistBooleanSetting(SOUND_ENABLED_STORAGE_KEY, !!this.soundEnabled);
     },
 
     getSoundRuntimeState(this: any): SoundRuntimeState {
@@ -404,11 +365,7 @@ export default {
     },
 
     consumeSoundOverlaySkipOnce(this: any) {
-      if (typeof window === 'undefined') return false;
-      const raw = window.sessionStorage.getItem(SOUND_OVERLAY_SKIP_ONCE_KEY);
-      if (raw !== '1') return false;
-      window.sessionStorage.removeItem(SOUND_OVERLAY_SKIP_ONCE_KEY);
-      return true;
+      return consumeSessionFlagOnce(SOUND_OVERLAY_SKIP_ONCE_KEY, '1');
     },
 
     ensureNotificationAudio(this: any) {
@@ -517,21 +474,11 @@ export default {
     },
 
     loadBrowserNotificationsEnabledSetting(this: any) {
-      if (typeof window === 'undefined') {
-        this.browserNotificationsEnabled = true;
-        return;
-      }
-
-      const raw = window.localStorage.getItem(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY);
-      this.browserNotificationsEnabled = raw !== '0';
+      this.browserNotificationsEnabled = loadBooleanSetting(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY, true);
     },
 
     persistBrowserNotificationsEnabledSetting(this: any) {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(
-        BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY,
-        this.browserNotificationsEnabled ? '1' : '0'
-      );
+      persistBooleanSetting(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY, !!this.browserNotificationsEnabled);
     },
 
     async requestBrowserNotificationPermission(this: any) {
@@ -2727,6 +2674,12 @@ export default {
 
     async sendMessageBody(this: any, textRaw: string) {
       if (!this.activeDialog) return false;
+      if (this.wsConnectionState !== 'connected') {
+        this.error = this.wsConnectionState === 'connecting'
+          ? 'Подключение восстанавливается. Сообщение не отправлено.'
+          : 'Оффлайн. Сообщение не отправлено.';
+        return false;
+      }
 
       const text = String(textRaw || '').trim();
       if (!text) return false;
@@ -2838,6 +2791,11 @@ export default {
 
     async onChatMessage(this: any, message: Message) {
       const normalized = this.normalizeMessage(message);
+      if (this.messages.some((item: Message) => Number(item.id) === Number(normalized.id))) {
+        this.applyMessageUpdate(normalized);
+        return;
+      }
+
       const ownMessage = normalized.authorId === this.me?.id;
       const isCurrentDialogMessage = this.activeDialog?.id === normalized.dialogId;
       const addressedToMe = this.isMessageAddressedToMe(normalized);
@@ -2928,7 +2886,24 @@ export default {
     },
 
     onDisconnected(this: any) {
-      this.error = 'Соединение потеряно. Перезайди в чат.';
+      if (!this.error || this.error.startsWith('Соединение потеряно.')) {
+        this.error = 'Соединение потеряно. Переподключаюсь...';
+      }
+    },
+
+    async onWsReconnected(this: any) {
+      if (this.error.startsWith('Соединение потеряно.')) {
+        this.error = '';
+      }
+      if (this.activeDialog?.kind === 'private') {
+        await this.fetchDirectDialogs();
+      }
+      this.markVisibleMessageNotificationsRead();
+    },
+
+    async onWsSessionExpired(this: any) {
+      this.error = 'Сессия истекла. Войди заново.';
+      await this.router.push('/login');
     },
 
     onWindowKeydown(this: any, event: KeyboardEvent) {
@@ -2992,6 +2967,10 @@ export default {
   async mounted(this: any) {
     const ok = await this.ensureAuth();
     if (!ok) return;
+    setWsReconnectDialogResolver(() => {
+      const dialogId = Number(this.activeDialog?.id || 0);
+      return Number.isFinite(dialogId) && dialogId > 0 ? dialogId : null;
+    });
     this.resolveSoundStartupState();
     this.initBrowserNotifications();
 
@@ -3014,6 +2993,12 @@ export default {
       this.onChatReactionNotify(payload);
     };
     this.disconnectedHandler = () => this.onDisconnected();
+    this.reconnectedHandler = () => {
+      void this.onWsReconnected();
+    };
+    this.sessionExpiredHandler = () => {
+      void this.onWsSessionExpired();
+    };
     this.windowKeydownHandler = (event: KeyboardEvent) => this.onWindowKeydown(event);
     this.windowResizeHandler = () => this.onWindowResize();
     this.windowClickHandler = (event: MouseEvent) => this.onWindowClick(event);
@@ -3028,6 +3013,8 @@ export default {
     on('dialogs:deleted', this.dialogsDeletedHandler);
     on('chat:reaction-notify', this.chatReactionNotifyHandler);
     on('ws:disconnected', this.disconnectedHandler);
+    on('ws:reconnected', this.reconnectedHandler);
+    on('ws:session-expired', this.sessionExpiredHandler);
     window.addEventListener('keydown', this.windowKeydownHandler);
     window.addEventListener('resize', this.windowResizeHandler);
     window.addEventListener('click', this.windowClickHandler);
@@ -3056,6 +3043,8 @@ export default {
     this.dialogsDeletedHandler && off('dialogs:deleted', this.dialogsDeletedHandler);
     this.chatReactionNotifyHandler && off('chat:reaction-notify', this.chatReactionNotifyHandler);
     this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
+    this.reconnectedHandler && off('ws:reconnected', this.reconnectedHandler);
+    this.sessionExpiredHandler && off('ws:session-expired', this.sessionExpiredHandler);
     this.windowKeydownHandler && window.removeEventListener('keydown', this.windowKeydownHandler);
     this.windowResizeHandler && window.removeEventListener('resize', this.windowResizeHandler);
     this.windowClickHandler && window.removeEventListener('click', this.windowClickHandler);
@@ -3082,6 +3071,7 @@ export default {
       this.activeBrowserNotifications.forEach((item: Notification) => item.close());
       this.activeBrowserNotifications = [];
     }
+    setWsReconnectDialogResolver(null);
     this.persistHandledMessageNotificationIds();
   },
 };

@@ -118,7 +118,6 @@ async function seedInitialData(connectionString: string) {
     const systemUser = await prisma.user.create({
       data: {
         nickname: SYSTEM_NICKNAME,
-        nicknameNormalized: SYSTEM_NICKNAME,
         name: SYSTEM_NAME,
         nicknameColor: DEFAULT_NICKNAME_COLOR,
         passwordHash: systemHash,
@@ -129,7 +128,6 @@ async function seedInitialData(connectionString: string) {
     const ownerUser = await prisma.user.create({
       data: {
         nickname: OWNER_NICKNAME,
-        nicknameNormalized: OWNER_NICKNAME,
         name: OWNER_NAME,
         nicknameColor: DEFAULT_NICKNAME_COLOR,
         passwordHash: ownerHash,

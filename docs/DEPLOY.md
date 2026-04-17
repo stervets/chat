@@ -26,3 +26,22 @@ Caddy завершает HTTPS и проксирует:
 `backend/config.example.json` → `backend/config.json`, затем отредактируй под прод.
 
 В `backend/config.json` обязательно укажи `db.url` до PostgreSQL.
+
+## Что backend делает на старте
+
+- проверяет подключение к PostgreSQL;
+- создаёт runtime partial unique indexes (если их нет):
+  - `dialogs_general_unique`
+  - `dialogs_private_unique`
+- запускает cleanup сообщений/uploads сразу при старте.
+
+Важно: runtime indexes создаются кодом (`backend/src/db.ts`) как safety-step.
+Это не Prisma migration.
+
+## Cleanup scheduler
+
+- после старта cleanup запускается раз в час;
+- привязки к timezone нет;
+- удаляются сообщения старше `messagesTtlDays`;
+- дополнительно держится лимит `5000` сообщений на диалог;
+- prune uploads старше TTL.

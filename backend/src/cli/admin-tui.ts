@@ -3,6 +3,7 @@ import {stdin as input, stdout as output} from 'node:process';
 import {randomBytes} from 'node:crypto';
 import {hashPassword} from '../common/auth.js';
 import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
+import {isValidNickname, normalizeNickname} from '../common/nickname.js';
 import {config} from '../config.js';
 import {db, closeDb} from '../db.js';
 
@@ -31,7 +32,6 @@ const rl = createInterface({input, output});
 
 const clearScreen = () => output.write('\x1Bc');
 const normalize = (value: string) => value.trim();
-const normalizeNickname = (value: string) => normalize(value).toLowerCase();
 const printable = (value: string | number | null) => (value === null ? '-' : String(value));
 const isYes = (value: string) => ['y', 'yes', 'д', 'да'].includes(value.toLowerCase());
 const inviteLink = (code: string) => `${config.inviteBaseUrl}/invite/${encodeURIComponent(code)}`;
@@ -195,13 +195,17 @@ async function addUserAction() {
     await pause();
     return;
   }
+  if (!isValidNickname(nickname)) {
+    output.write('\nNickname must match ^[a-z0-9_-]{3,32}$.\n');
+    await pause();
+    return;
+  }
 
   try {
     const passwordHash = await hashPassword(password);
     const created = await db.user.create({
       data: {
         nickname,
-        nicknameNormalized: nickname,
         name: name || nickname,
         nicknameColor: DEFAULT_NICKNAME_COLOR,
         passwordHash,
@@ -248,8 +252,12 @@ async function editUserAction() {
     const data: Record<string, unknown> = {};
 
     if (nextNickname) {
+      if (!isValidNickname(nextNickname)) {
+        output.write('\nNickname must match ^[a-z0-9_-]{3,32}$.\n');
+        await pause();
+        return;
+      }
       data.nickname = nextNickname;
-      data.nicknameNormalized = nextNickname;
     }
 
     if (nextName) {

@@ -17,6 +17,7 @@ import {
   verifyPassword,
 } from '../common/auth.js';
 import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
+import {isValidNickname, normalizeNickname} from '../common/nickname.js';
 import {compileMessageFormat} from '../common/message-format.js';
 import {deleteUploadFile, sanitizeUploadName} from '../common/uploads.js';
 import type {SocketState} from './protocol.js';
@@ -28,7 +29,7 @@ const MIN_PASSWORD_LENGTH = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_MESSAGES_PAGE_LIMIT = 100;
 const MAX_MESSAGES_PER_DIALOG = 5000;
-const SYSTEM_NICKNAME_NORMALIZED = 'marx';
+const SYSTEM_NICKNAME = 'marx';
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const UPLOAD_LINK_RE = /\/uploads\/([a-zA-Z0-9._-]+)/gi;
@@ -176,14 +177,18 @@ export class ChatService {
     }
   }
 
-  private normalizeNickname(nicknameRaw: unknown) {
-    return String(nicknameRaw ?? '').trim().toLowerCase();
-  }
-
   private normalizeName(nameRaw: unknown, fallbackNickname: string) {
     const name = String(nameRaw ?? '').trim();
     if (!name) return fallbackNickname;
     return name.slice(0, MAX_USER_NAME_LENGTH);
+  }
+
+  private parseNickname(nicknameRaw: unknown) {
+    const nickname = normalizeNickname(nicknameRaw);
+    if (!isValidNickname(nickname)) {
+      return {ok: false, error: 'invalid_nickname'} as const;
+    }
+    return {ok: true, nickname} as const;
   }
 
   private parseNicknameColor(raw: unknown) {
@@ -226,7 +231,7 @@ export class ChatService {
   private async findSystemUserId() {
     const systemUser = await db.user.findUnique({
       where: {
-        nicknameNormalized: SYSTEM_NICKNAME_NORMALIZED,
+        nickname: SYSTEM_NICKNAME,
       },
       select: {id: true},
     });
@@ -354,14 +359,18 @@ export class ChatService {
     expiresAt: string;
     user: PublicUser;
   }>> {
-    const nickname = this.normalizeNickname(payload?.nickname);
+    const nicknameParsed = this.parseNickname(payload?.nickname);
+    if (!nicknameParsed.ok) {
+      return {ok: false, error: nicknameParsed.error};
+    }
+    const nickname = nicknameParsed.nickname;
     const password = (payload?.password || '').toString();
-    if (!nickname || !password) {
+    if (!password) {
       return {ok: false, error: 'invalid_input'};
     }
 
     const user = await db.user.findUnique({
-      where: {nicknameNormalized: nickname},
+      where: {nickname},
       select: {
         id: true,
         nickname: true,
@@ -654,10 +663,14 @@ export class ChatService {
     user: PublicUser;
   }>> {
     const code = (payload?.code || '').toString().trim();
-    const nickname = this.normalizeNickname(payload?.nickname);
+    const nicknameParsed = this.parseNickname(payload?.nickname);
+    if (!nicknameParsed.ok) {
+      return {ok: false, error: nicknameParsed.error};
+    }
+    const nickname = nicknameParsed.nickname;
     const password = (payload?.password || '').toString();
 
-    if (!code || !nickname || !password) {
+    if (!code || !password) {
       return {ok: false, error: 'invalid_input'};
     }
 
@@ -686,7 +699,7 @@ export class ChatService {
         }
 
         const existingUser = await tx.user.findUnique({
-          where: {nicknameNormalized: nickname},
+          where: {nickname},
           select: {id: true},
         });
         if (existingUser) {
@@ -696,7 +709,6 @@ export class ChatService {
         const user = await tx.user.create({
           data: {
             nickname,
-            nicknameNormalized: nickname,
             name,
             nicknameColor: DEFAULT_NICKNAME_COLOR,
             passwordHash,
@@ -726,7 +738,7 @@ export class ChatService {
 
         const systemUser = await tx.user.findUnique({
           where: {
-            nicknameNormalized: SYSTEM_NICKNAME_NORMALIZED,
+            nickname: SYSTEM_NICKNAME,
           },
           select: {id: true},
         });
@@ -923,7 +935,7 @@ export class ChatService {
 
     const systemUser = await db.user.findUnique({
       where: {
-        nicknameNormalized: SYSTEM_NICKNAME_NORMALIZED,
+        nickname: SYSTEM_NICKNAME,
       },
       select: {
         id: true,

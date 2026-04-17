@@ -3,9 +3,8 @@ import {Prisma} from '@prisma/client';
 import {db} from '../db.js';
 import {pruneExpiredUploads} from '../common/uploads.js';
 
-const MOSCOW_UTC_OFFSET_MS = 3 * 60 * 60 * 1000;
-const MOSCOW_CLEANUP_HOUR = 3;
 const MAX_MESSAGES_PER_DIALOG = 5000;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 type CleanupLogger = {
   info: (obj: Record<string, unknown>, msg: string) => void;
@@ -52,28 +51,9 @@ export async function runMessagesCleanup(logger: CleanupLogger = console as Clea
   }
 }
 
-function msUntilNextMoscowCleanup(nowMs = Date.now()) {
-  const nowMoscow = new Date(nowMs + MOSCOW_UTC_OFFSET_MS);
-  const nextMoscow = new Date(nowMoscow);
-  nextMoscow.setHours(MOSCOW_CLEANUP_HOUR, 0, 0, 0);
-  if (nextMoscow.getTime() <= nowMoscow.getTime()) {
-    nextMoscow.setDate(nextMoscow.getDate() + 1);
-  }
-
-  const nextUtcMs = nextMoscow.getTime() - MOSCOW_UTC_OFFSET_MS;
-  return Math.max(1000, nextUtcMs - nowMs);
-}
-
 export function registerCleanupJob(logger: CleanupLogger = console as CleanupLogger) {
-  const scheduleNext = () => {
-    const delayMs = msUntilNextMoscowCleanup();
-    const timer = setTimeout(() => {
-      void runMessagesCleanup(logger).finally(() => {
-        scheduleNext();
-      });
-    }, delayMs);
-    timer.unref();
-  };
-
-  scheduleNext();
+  const timer = setInterval(() => {
+    void runMessagesCleanup(logger);
+  }, CLEANUP_INTERVAL_MS);
+  timer.unref();
 }

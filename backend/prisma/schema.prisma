@@ -14,8 +14,7 @@ enum DialogKind {
 
 model User {
   id                 Int               @id @default(autoincrement())
-  nickname           String            @db.VarChar(64)
-  nicknameNormalized String            @unique @map("nickname_normalized") @db.VarChar(64)
+  nickname           String            @unique @db.VarChar(32)
   name               String            @db.VarChar(80)
   nicknameColor      String?           @map("nickname_color") @db.VarChar(7)
   passwordHash       String            @map("password_hash")
@@ -29,7 +28,6 @@ model User {
   sessions           Session[]
   reactions          MessageReaction[]
 
-  @@index([nickname])
   @@map("users")
 }
 
