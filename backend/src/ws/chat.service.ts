@@ -25,6 +25,8 @@ const MAX_USER_NAME_LENGTH = 80;
 const MAX_PASSWORD_LENGTH = 256;
 const MIN_PASSWORD_LENGTH = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_MESSAGES_PAGE_LIMIT = 100;
+const MAX_MESSAGES_PER_DIALOG = 5000;
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const UPLOAD_LINK_RE = /\/uploads\/([a-zA-Z0-9._-]+)/gi;
@@ -87,7 +89,14 @@ export class ChatService {
 
   private parseLimit(value: unknown) {
     const parsed = Number.parseInt(String(value ?? ''), 10);
-    return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 200) : 100;
+    return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), MAX_MESSAGES_PAGE_LIMIT) : 100;
+  }
+
+  private parseBeforeMessageId(value: unknown) {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = Number.parseInt(String(value), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
   }
 
   private messagesCutoffIso() {
@@ -97,6 +106,20 @@ export class ChatService {
 
   private pruneExpiredMessages() {
     db.prepare('delete from messages where created_at < ?').run(this.messagesCutoffIso());
+  }
+
+  private pruneDialogOverflow(dialogId: number) {
+    db.prepare(
+      `delete from messages
+       where dialog_id = ?
+         and id not in (
+           select id
+           from messages
+           where dialog_id = ?
+           order by created_at desc, id desc
+           limit ?
+         )`
+    ).run(dialogId, dialogId, MAX_MESSAGES_PER_DIALOG);
   }
 
   private extractUploadNamesFromRawText(rawTextRaw: unknown) {
@@ -746,7 +769,12 @@ export class ChatService {
     }));
   }
 
-  async dialogsMessages(state: SocketState, dialogIdRaw: unknown, limitRaw?: unknown): Promise<ApiError | any[]> {
+  async dialogsMessages(
+    state: SocketState,
+    dialogIdRaw: unknown,
+    limitRaw?: unknown,
+    beforeMessageIdRaw?: unknown,
+  ): Promise<ApiError | any[]> {
     const authError = this.requireAuth(state);
     if (authError) return authError;
     this.pruneExpiredMessages();
@@ -765,8 +793,14 @@ export class ChatService {
       return {ok: false, error: 'forbidden'};
     }
 
+    this.pruneDialogOverflow(dialogId);
     const limit = this.parseLimit(limitRaw);
     const cutoff = this.messagesCutoffIso();
+    const beforeMessageId = this.parseBeforeMessageId(beforeMessageIdRaw);
+    const beforeSql = beforeMessageId ? 'and m.id < ?' : '';
+    const params = beforeMessageId
+      ? [dialogId, cutoff, beforeMessageId, limit]
+      : [dialogId, cutoff, limit];
 
     const result = db.prepare(
       `select * from (
@@ -784,11 +818,12 @@ export class ChatService {
          left join users u on u.id = m.sender_id
          where m.dialog_id = ?
            and m.created_at >= ?
-         order by m.created_at desc
+           ${beforeSql}
+         order by m.created_at desc, m.id desc
          limit ?
        ) t
-       order by t."createdAt" asc`
-    ).all(dialogId, cutoff, limit);
+       order by t."createdAt" asc, t.id asc`
+    ).all(...params);
 
     return this.attachMessageReactions(result as any[]);
   }
@@ -857,6 +892,7 @@ export class ChatService {
     const insert = db.prepare(
       'insert into messages (dialog_id, sender_id, raw_text, rendered_html, created_at) values (?, ?, ?, ?, ?)'
     ).run(dialogId, state.user!.id, compiled.rawText, compiled.renderedHtml, createdAt);
+    this.pruneDialogOverflow(dialogId);
 
     return {
       ok: true,

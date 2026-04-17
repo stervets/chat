@@ -8,7 +8,8 @@
     "frontend:dev": "cd frontend && yarn run dev",
     "backend:dev": "cd backend && yarn run dev",
     "smoke": "node scripts/smoke-e2e.js",
-    "test:login": "playwright test tests/login.spec.ts --config=playwright.config.ts --project=chromium"
+    "test:login": "playwright test tests/login.spec.ts --config=playwright.config.ts --project=chromium",
+    "stress:seed": "node scripts/stress-seed.js"
   },
   "dependencies": {
     "@playwright/test": "^1.58.2"

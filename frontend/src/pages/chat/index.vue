@@ -163,6 +163,7 @@
           <div class="chat-feed">
             <div v-if="historyLoading" class="hint">Загрузка...</div>
             <div v-else-if="!messages.length" class="hint">Нет сообщений</div>
+            <div v-if="historyLoadingMore && messages.length" class="hint">Загружаю ещё...</div>
             <ChatMessageItem
               v-for="(message, messageIndex) in messages"
               :key="message.id"

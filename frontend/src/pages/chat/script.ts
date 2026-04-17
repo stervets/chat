@@ -55,6 +55,7 @@ const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)$/i;
 const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '☹️', '😡', '👎', '😢'];
 const MAX_PASTE_IMAGE_BYTES = 1024 * 1024;
+const HISTORY_BATCH_SIZE = 100;
 const COLOR_HEX_FULL_RE = /^#[0-9a-fA-F]{6}$/;
 const COMPOSER_NAMED_COLORS = [
   {name: 'red', swatch: '#ff5d5d'},
@@ -94,6 +95,8 @@ export default {
       messageActionPendingId: ref<number | null>(null),
       error: ref(''),
       historyLoading: ref(false),
+      historyLoadingMore: ref(false),
+      historyHasMore: ref(true),
       historyLoadSeq: ref(0),
       messagesEl: ref<HTMLDivElement | null>(null),
       messageInputEl: ref<HTMLTextAreaElement | null>(null),
@@ -1453,25 +1456,66 @@ export default {
       } as Dialog;
     },
 
-    async loadHistory(this: any, dialogId: number, seq: number) {
+    async loadHistory(this: any, dialogId: number, seq: number, beforeMessageId: number | null = null) {
+      const isInitialLoad = !beforeMessageId;
       if (seq === this.historyLoadSeq) {
-        this.historyLoading = true;
+        if (isInitialLoad) {
+          this.historyLoading = true;
+        } else {
+          this.historyLoadingMore = true;
+        }
       }
+
+      const prevScrollTop = this.messagesEl?.scrollTop || 0;
+      const prevScrollHeight = this.messagesEl?.scrollHeight || 0;
+
       try {
-        const result = await ws.request('dialogs:messages', dialogId, 100);
+        const result = await ws.request('dialogs:messages', dialogId, HISTORY_BATCH_SIZE, beforeMessageId);
         if (seq !== this.historyLoadSeq) return;
         if (!Array.isArray(result)) {
           this.error = 'Не удалось загрузить историю.';
           return;
         }
-        this.messages = result.map((message: any) => this.normalizeMessage(message));
+
+        const nextChunk = result.map((message: any) => this.normalizeMessage(message));
+        this.historyHasMore = nextChunk.length >= HISTORY_BATCH_SIZE;
+
+        if (isInitialLoad) {
+          this.messages = nextChunk;
+          await nextTick();
+          this.scrollToBottom();
+          return;
+        }
+
+        if (!nextChunk.length) {
+          this.historyHasMore = false;
+          return;
+        }
+
+        this.messages = [...nextChunk, ...this.messages];
         await nextTick();
-        this.scrollToBottom();
+        if (!this.messagesEl) return;
+        const nextScrollHeight = this.messagesEl.scrollHeight;
+        this.messagesEl.scrollTop = Math.max(0, nextScrollHeight - prevScrollHeight + prevScrollTop);
       } finally {
         if (seq === this.historyLoadSeq) {
           this.historyLoading = false;
+          this.historyLoadingMore = false;
         }
       }
+    },
+
+    async loadOlderHistory(this: any) {
+      if (this.historyLoading || this.historyLoadingMore || !this.historyHasMore) return;
+      if (!this.activeDialog || !this.messages.length) return;
+
+      const oldestMessage = this.messages[0];
+      if (!oldestMessage?.id) {
+        this.historyHasMore = false;
+        return;
+      }
+
+      await this.loadHistory(this.activeDialog.id, this.historyLoadSeq, oldestMessage.id);
     },
 
     async joinDialog(this: any, dialogId: number) {
@@ -1486,6 +1530,8 @@ export default {
       this.historyLoadSeq = seq;
       this.activeDialog = dialog;
       this.messages = [];
+      this.historyHasMore = true;
+      this.historyLoadingMore = false;
       this.resetMessagePreviewCache();
       this.error = '';
       this.notificationsMenuOpen = false;
@@ -1843,6 +1889,9 @@ export default {
 
     onMessagesScroll(this: any) {
       this.updateScrollDownVisibility();
+      if (!this.messagesEl) return;
+      if (this.messagesEl.scrollTop > 80) return;
+      void this.loadOlderHistory();
     },
 
     onScrollDownClick(this: any) {

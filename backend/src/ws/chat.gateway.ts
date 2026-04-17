@@ -194,7 +194,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'dialogs:general') return this.chatService.dialogsGeneral(client.state);
     if (com === 'dialogs:private') return this.chatService.dialogsPrivate(client.state, args[0]);
     if (com === 'dialogs:directs') return this.chatService.dialogsDirects(client.state);
-    if (com === 'dialogs:messages') return this.chatService.dialogsMessages(client.state, args[0], args[1]);
+    if (com === 'dialogs:messages') return this.chatService.dialogsMessages(client.state, args[0], args[1], args[2]);
     if (com === 'dialogs:delete') {
       const dialogBeforeDelete = await getDialogById(Number.parseInt(String(args[0] ?? ''), 10));
       const result = await this.chatService.dialogsDelete(client.state, args[0]);
