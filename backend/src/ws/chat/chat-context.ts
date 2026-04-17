@@ -1,7 +1,6 @@
 import {Prisma} from '@prisma/client';
 import {db} from '../../db.js';
 import {config} from '../../config.js';
-import {getOrCreatePrivateDialog} from '../../common/dialogs.js';
 import {DEFAULT_NICKNAME_COLOR} from '../../common/const.js';
 import {isValidNickname, normalizeNickname} from '../../common/nickname.js';
 import {

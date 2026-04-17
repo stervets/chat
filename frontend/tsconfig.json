@@ -7,13 +7,12 @@
     },
     "strictNullChecks": false,
     "noImplicitAny": false,
-    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "resolveJsonModule": true,
     "noEmit": true,
     "types": [
       "vue",
       "nuxt",
-      "@nuxt/types",
       "@types/node"
     ]
   },

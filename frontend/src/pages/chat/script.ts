@@ -231,7 +231,9 @@ export default {
       clearTimeout(this.blinkTimer);
       this.blinkTimer = null;
     }
-    Object.values(this.toastTimerById).forEach((timerId: number) => clearTimeout(timerId));
+    Object.values(this.toastTimerById as Record<number, number>).forEach((timerId) => {
+      clearTimeout(Number(timerId));
+    });
     this.toastTimerById = {};
     if (this.handledMessageNotificationSaveTimer) {
       clearTimeout(this.handledMessageNotificationSaveTimer);

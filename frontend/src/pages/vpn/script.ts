@@ -55,8 +55,8 @@ export default {
 
     donationButtonText(this: any) {
       return this.donationButtonUndoMode
-        ? 'Ой, т.е. не отправлено!'
-        : 'Пожертвование отправлено!';
+        ? 'Ой, т.е. не отправил...'
+        : 'Я отправил пожертвование!';
     },
   },
 

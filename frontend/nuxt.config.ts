@@ -53,9 +53,6 @@ export default defineNuxtConfig({
 
   vite: {
     server: {
-      host: '0.0.0.0',
-      port: 8815,
-      strictPort: true,
       proxy: {
         [wsPath]: {
           target: apiUrl,
