@@ -1046,16 +1046,6 @@ export default {
       this.updateFaviconBlinkByUnread();
     },
 
-    markReactionNotificationsRead(this: any) {
-      const before = this.notifications.length;
-      this.notifications = this.notifications.filter((notification: NotificationItem) => {
-        return notification.notificationType !== 'reaction';
-      });
-      const changed = this.notifications.length !== before;
-      if (!changed) return;
-      this.updateFaviconBlinkByUnread();
-    },
-
     markVisibleMessageNotificationsRead(this: any) {
       if (!this.messagesEl || !this.activeDialog) return;
 
@@ -1099,7 +1089,6 @@ export default {
     toggleNotificationsMenu(this: any) {
       this.notificationsMenuOpen = !this.notificationsMenuOpen;
       if (this.notificationsMenuOpen) {
-        this.markReactionNotificationsRead();
         this.rightMenuOpen = false;
         this.leftMenuOpen = false;
       }
