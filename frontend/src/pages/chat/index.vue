@@ -129,7 +129,16 @@
             class="notifications-menu"
             @click.stop
           >
-            <div class="notifications-head">Уведомления</div>
+            <div class="notifications-head-row">
+              <div class="notifications-head">Уведомления</div>
+              <button
+                class="notifications-clear-btn"
+                :disabled="!notifications.length"
+                @click="clearNotifications"
+              >
+                Очистить
+              </button>
+            </div>
             <div v-if="!notifications.length" class="hint">Пока пусто</div>
             <button
               v-for="notification in notifications"

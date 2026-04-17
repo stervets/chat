@@ -145,6 +145,40 @@
     color: var(--text-muted);
   }
 
+  .notifications-head-row {
+    position: sticky;
+    top: -10px;
+    z-index: 2;
+    background: #121924;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0 8px;
+  }
+
+  .notifications-clear-btn {
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: #1a2331;
+    color: #d4dfef;
+    font-size: 11px;
+    line-height: 1;
+    padding: 6px 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .notifications-clear-btn:hover {
+    border-color: var(--accent-strong);
+    color: #eef5ff;
+  }
+
+  .notifications-clear-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
   .notification-item {
     width: 100%;
     border-radius: 8px;

@@ -138,6 +138,7 @@ export default {
       notificationsMenuOpen: ref(false),
       notifications: ref<NotificationItem[]>([]),
       notificationsSeq: ref(1),
+      handledMessageNotificationIds: ref<Record<number, true>>({}),
       notificationMenuEl: ref<HTMLElement | null>(null),
       notificationButtonEl: ref<HTMLElement | null>(null),
       windowClickHandler: ref<Function | null>(null),
@@ -913,6 +914,22 @@ export default {
       });
     },
 
+    isMessageNotificationHandled(this: any, messageIdRaw: unknown) {
+      const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
+      if (!Number.isFinite(messageId) || messageId <= 0) return false;
+      return !!this.handledMessageNotificationIds[messageId];
+    },
+
+    markMessageNotificationHandled(this: any, messageIdRaw: unknown) {
+      const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+      if (this.handledMessageNotificationIds[messageId]) return;
+      this.handledMessageNotificationIds = {
+        ...this.handledMessageNotificationIds,
+        [messageId]: true,
+      };
+    },
+
     pushNotification(this: any, notification: NotificationItem, showToast: boolean) {
       this.notifications = [notification, ...this.notifications].slice(0, 500);
       if (showToast) {
@@ -927,6 +944,7 @@ export default {
     addNotificationFromMessage(this: any, messageRaw: Message, optionsRaw?: {showToast?: boolean}) {
       const message = this.normalizeMessage(messageRaw);
       if (!this.isMessageAddressedToMe(message)) return;
+      if (this.isMessageNotificationHandled(message.id)) return;
       if (this.hasMessageNotification(message.id)) return;
 
       const notificationId = this.notificationsSeq;
@@ -1013,29 +1031,27 @@ export default {
     markNotificationRead(this: any, notificationIdRaw: unknown) {
       const notificationId = Number.parseInt(String(notificationIdRaw ?? ''), 10);
       if (!Number.isFinite(notificationId) || notificationId <= 0) return;
-      let changed = false;
-      this.notifications = this.notifications.map((notification: NotificationItem) => {
-        if (notification.id !== notificationId || !notification.unread) return notification;
-        changed = true;
-        return {
-          ...notification,
-          unread: false,
-        };
+
+      const target = this.notifications.find((notification: NotificationItem) => notification.id === notificationId);
+      if (target?.notificationType === 'message' && target.targetMessageId) {
+        this.markMessageNotificationHandled(target.targetMessageId);
+      }
+
+      const before = this.notifications.length;
+      this.notifications = this.notifications.filter((notification: NotificationItem) => {
+        return notification.id !== notificationId;
       });
+      const changed = this.notifications.length !== before;
       if (!changed) return;
       this.updateFaviconBlinkByUnread();
     },
 
     markReactionNotificationsRead(this: any) {
-      let changed = false;
-      this.notifications = this.notifications.map((notification: NotificationItem) => {
-        if (!notification.unread || notification.notificationType !== 'reaction') return notification;
-        changed = true;
-        return {
-          ...notification,
-          unread: false,
-        };
+      const before = this.notifications.length;
+      this.notifications = this.notifications.filter((notification: NotificationItem) => {
+        return notification.notificationType !== 'reaction';
       });
+      const changed = this.notifications.length !== before;
       if (!changed) return;
       this.updateFaviconBlinkByUnread();
     },
@@ -1046,33 +1062,30 @@ export default {
       const viewportRect = this.messagesEl.getBoundingClientRect();
       if (viewportRect.height <= 0) return;
 
-      let changed = false;
-      this.notifications = this.notifications.map((notification: NotificationItem) => {
-        if (!notification.unread || notification.notificationType !== 'message') return notification;
-        if (notification.dialogId !== this.activeDialog.id) return notification;
+      const before = this.notifications.length;
+      this.notifications = this.notifications.filter((notification: NotificationItem) => {
+        if (notification.notificationType !== 'message') return true;
+        if (notification.dialogId !== this.activeDialog.id) return true;
 
         const targetMessageId = Number(notification.targetMessageId || 0);
-        if (!Number.isFinite(targetMessageId) || targetMessageId <= 0) return notification;
+        if (!Number.isFinite(targetMessageId) || targetMessageId <= 0) return true;
 
         const messageEl = this.messagesEl.querySelector(
           `[data-message-id="${targetMessageId}"]`
         ) as HTMLElement | null;
-        if (!messageEl) return notification;
+        if (!messageEl) return true;
 
         const messageRect = messageEl.getBoundingClientRect();
         const overlapTop = Math.max(viewportRect.top, messageRect.top);
         const overlapBottom = Math.min(viewportRect.bottom, messageRect.bottom);
         const visibleHeight = overlapBottom - overlapTop;
         const minVisible = Math.min(30, Math.max(10, messageRect.height * 0.35));
-        if (visibleHeight < minVisible) return notification;
+        if (visibleHeight < minVisible) return true;
 
-        changed = true;
-        return {
-          ...notification,
-          unread: false,
-        };
+        this.markMessageNotificationHandled(targetMessageId);
+        return false;
       });
-
+      const changed = this.notifications.length !== before;
       if (!changed) return;
       this.updateFaviconBlinkByUnread();
     },
@@ -1090,6 +1103,17 @@ export default {
         this.rightMenuOpen = false;
         this.leftMenuOpen = false;
       }
+    },
+
+    clearNotifications(this: any) {
+      this.notifications.forEach((notification: NotificationItem) => {
+        if (notification.notificationType === 'message' && notification.targetMessageId) {
+          this.markMessageNotificationHandled(notification.targetMessageId);
+        }
+      });
+      this.notifications = [];
+      this.inactiveTabUnread = false;
+      this.updateFaviconBlinkByUnread();
     },
 
     closeNotificationsMenu(this: any) {
@@ -1121,6 +1145,28 @@ export default {
       this.closeNotificationsMenu();
     },
 
+    async ensureMessageLoadedById(this: any, messageIdRaw: unknown) {
+      const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
+      if (!Number.isFinite(messageId) || messageId <= 0) return false;
+      if (this.messages.some((message: Message) => Number(message.id) === messageId)) {
+        return true;
+      }
+
+      let guard = 0;
+      while (this.historyHasMore && guard < 80) {
+        const beforeLen = this.messages.length;
+        await this.loadOlderHistory();
+        guard += 1;
+
+        if (this.messages.some((message: Message) => Number(message.id) === messageId)) {
+          return true;
+        }
+        if (this.messages.length <= beforeLen) break;
+      }
+
+      return this.messages.some((message: Message) => Number(message.id) === messageId);
+    },
+
     async openNotification(this: any, notification: NotificationItem) {
       const targetMessageId = Number(notification.targetMessageId || 0) || null;
       if (notification.notificationType === 'reaction' || !targetMessageId) {
@@ -1128,29 +1174,45 @@ export default {
       }
 
       if (notification.dialogKind === 'general' && this.generalDialog) {
-        await this.selectDialog(this.generalDialog);
+        if (this.activeDialog?.id !== this.generalDialog.id) {
+          await this.selectDialog(this.generalDialog);
+        }
         this.closeNotificationsMenu();
         if (targetMessageId) {
-          await nextTick();
-          this.scrollToMessageById(targetMessageId);
-          window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
+          const loaded = await this.ensureMessageLoadedById(targetMessageId);
+          if (loaded) {
+            const jumped = await this.scrollToMessageById(targetMessageId);
+            if (jumped) {
+              this.markNotificationRead(notification.id);
+              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
+              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 640);
+            }
+          }
         }
         return;
       }
 
       const direct = this.directDialogs.find((dialog: DirectDialog) => dialog.dialogId === notification.dialogId);
       if (direct) {
-        await this.selectDialog({
-          id: direct.dialogId,
-          kind: 'private',
-          targetUser: direct.targetUser,
-          title: direct.targetUser.name,
-        });
+        if (this.activeDialog?.id !== direct.dialogId) {
+          await this.selectDialog({
+            id: direct.dialogId,
+            kind: 'private',
+            targetUser: direct.targetUser,
+            title: direct.targetUser.name,
+          });
+        }
         this.closeNotificationsMenu();
         if (targetMessageId) {
-          await nextTick();
-          this.scrollToMessageById(targetMessageId);
-          window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
+          const loaded = await this.ensureMessageLoadedById(targetMessageId);
+          if (loaded) {
+            const jumped = await this.scrollToMessageById(targetMessageId);
+            if (jumped) {
+              this.markNotificationRead(notification.id);
+              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
+              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 640);
+            }
+          }
         }
         return;
       }
@@ -1158,9 +1220,15 @@ export default {
       if (notification.targetUser && notification.dialogKind !== 'general') {
         await this.selectPrivate(notification.targetUser);
         if (targetMessageId) {
-          await nextTick();
-          this.scrollToMessageById(targetMessageId);
-          window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
+          const loaded = await this.ensureMessageLoadedById(targetMessageId);
+          if (loaded) {
+            const jumped = await this.scrollToMessageById(targetMessageId);
+            if (jumped) {
+              this.markNotificationRead(notification.id);
+              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
+              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 640);
+            }
+          }
         }
       }
       this.closeNotificationsMenu();
@@ -1333,7 +1401,7 @@ export default {
         this.timeTooltipVisible = false;
         const targetMessageId = Number.parseInt(timeRefEl.dataset.targetMessageId, 10);
         if (Number.isFinite(targetMessageId) && targetMessageId > 0) {
-          this.scrollToMessageById(targetMessageId);
+          void this.scrollToMessageById(targetMessageId);
         }
         return;
       }
@@ -1402,29 +1470,38 @@ export default {
       return null;
     },
 
-    scrollToMessageById(this: any, messageId: number) {
-      if (!this.messagesEl) return;
+    async scrollToMessageById(this: any, messageId: number) {
+      if (!this.messagesEl) return false;
 
       const targetIndex = this.messages.findIndex((message: Message) => message.id === messageId);
-      if (targetIndex < 0) return;
+      if (targetIndex < 0) return false;
 
-      this.syncVirtualWindowFromScroll();
+      this.rebuildVirtualPrefix();
       const prefix = this.virtualPrefixHeights;
       const topOffset = Array.isArray(prefix) ? Number(prefix[targetIndex] || 0) : 0;
       const clientHeight = Number(this.messagesEl.clientHeight || 0);
       this.messagesEl.scrollTo({
         top: Math.max(0, topOffset - Math.floor(clientHeight / 2)),
-        behavior: 'smooth',
+        behavior: 'auto',
       });
-      this.scheduleVirtualSync();
 
-      nextTick(() => {
-        const target = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
-        if (target) {
-          target.scrollIntoView({behavior: 'smooth', block: 'center'});
-        }
-        this.triggerMessageBlink(messageId);
-      });
+      this.syncVirtualWindowFromScroll();
+      await nextTick();
+
+      let target = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
+      if (!target) {
+        const start = Math.max(0, targetIndex - Math.floor(VIRTUAL_MAX_ITEMS / 2));
+        this.virtualRangeStart = start;
+        this.virtualRangeEnd = Math.min(this.messages.length, start + VIRTUAL_MAX_ITEMS);
+        await nextTick();
+        target = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
+      }
+      if (!target) return false;
+
+      target.scrollIntoView({behavior: 'smooth', block: 'center'});
+      this.scheduleVirtualSync();
+      this.triggerMessageBlink(messageId);
+      return true;
     },
 
     parseUrl(this: any, raw: string) {
@@ -1772,7 +1849,9 @@ export default {
 
         const nextChunk = result.map((message: any) => this.normalizeMessage(message));
         this.historyHasMore = nextChunk.length >= HISTORY_BATCH_SIZE;
-        this.seedNotificationsFromMessages(nextChunk);
+        if (isInitialLoad) {
+          this.seedNotificationsFromMessages(nextChunk);
+        }
 
         if (isInitialLoad) {
           this.messages = nextChunk;
