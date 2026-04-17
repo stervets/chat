@@ -225,12 +225,81 @@
         </div>
 
         <div class="chat-input">
+          <div class="composer-tools" @click.stop>
+            <button
+              class="composer-tools-toggle"
+              :class="{open: composerToolsOpen}"
+              title="Форматирование и эмодзи"
+              aria-label="Форматирование и эмодзи"
+              @click="toggleComposerTools"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <circle cx="9" cy="10" r="1.1" fill="currentColor" stroke="none"/>
+                <circle cx="15" cy="10" r="1.1" fill="currentColor" stroke="none"/>
+                <path d="M8 14.2c.9 1.3 2.3 2 4 2s3.1-.7 4-2"/>
+              </svg>
+            </button>
+            <div v-if="composerToolsOpen" class="composer-tools-panel">
+              <div class="composer-section">
+                <div class="composer-section-title">Формат</div>
+                <div class="composer-format-buttons">
+                  <button class="composer-format-btn composer-format-btn-bold" @click="applyFormatWrapper('b')">B</button>
+                  <button class="composer-format-btn composer-format-btn-underline" @click="applyFormatWrapper('u')">U</button>
+                  <button class="composer-format-btn composer-format-btn-strike" @click="applyFormatWrapper('s')">S</button>
+                  <button class="composer-format-btn" @click="applyFormatWrapper('h')">Скрыть</button>
+                  <button class="composer-format-btn composer-format-btn-mono" @click="applyFormatWrapper('m')">Mono</button>
+                </div>
+                <div class="composer-color-grid">
+                  <button
+                    v-for="named in composerNamedColors()"
+                    :key="`format-color-${named.name}`"
+                    class="composer-color-btn"
+                    :title="`c#${named.name}(... )`"
+                    @click="applyNamedColorWrapper(named.name)"
+                  >
+                    <span class="composer-color-dot" :style="{background: named.swatch}"/>
+                    <span class="composer-color-label">{{ named.name }}</span>
+                  </button>
+                </div>
+                <div class="composer-custom-color">
+                  <input
+                    v-model="composerColorPicker"
+                    class="composer-color-picker"
+                    type="color"
+                  />
+                  <button class="composer-format-btn composer-format-btn-color" @click="applyCustomColorWrapper">
+                    c{{ composerColorPicker.toUpperCase() }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="composer-section">
+                <div class="composer-section-title">Эмодзи</div>
+                <div class="composer-emoji-grid">
+                  <button
+                    v-for="emoji in composerEmojis()"
+                    :key="`composer-emoji-${emoji}`"
+                    class="composer-emoji-btn"
+                    @click="onComposerEmojiClick(emoji)"
+                  >
+                    {{ emoji }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <textarea
             v-model="messageText"
             ref="messageInputEl"
             class="input"
             rows="2"
             placeholder="Сообщение..."
+            @focus="captureInputSelection"
+            @click="captureInputSelection"
+            @select="captureInputSelection"
+            @keyup="captureInputSelection"
             @keydown="onKeydown"
             @paste="onInputPaste"
           />

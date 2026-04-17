@@ -55,6 +55,19 @@ const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)$/i;
 const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '☹️', '😡', '👎', '😢'];
 const MAX_PASTE_IMAGE_BYTES = 1024 * 1024;
+const COLOR_HEX_FULL_RE = /^#[0-9a-fA-F]{6}$/;
+const COMPOSER_NAMED_COLORS = [
+  {name: 'red', swatch: '#ff5d5d'},
+  {name: 'green', swatch: '#79d279'},
+  {name: 'blue', swatch: '#6aa8ff'},
+  {name: 'yellow', swatch: '#ffd75f'},
+  {name: 'orange', swatch: '#ff9f43'},
+  {name: 'gray', swatch: '#9ba7b8'},
+  {name: 'grey', swatch: '#8e99aa'},
+  {name: 'cyan', swatch: '#56d7ff'},
+  {name: 'purple', swatch: '#be8cff'},
+];
+const COMPOSER_EMOJIS = ['🙂', '😀', '😉', '😎', '🤔', '😴', '🥳', '🔥', '💬', '✅', '❤️', '👍', '👎', '😢', '😡', '😂'];
 
 export default {
   components: {
@@ -73,6 +86,10 @@ export default {
 
       messages: ref<Message[]>([]),
       messageText: ref(''),
+      composerToolsOpen: ref(false),
+      composerColorPicker: ref('#61afef'),
+      composerSelectionStart: ref(0),
+      composerSelectionEnd: ref(0),
       editingMessageId: ref<number | null>(null),
       editingMessageText: ref(''),
       messageActionPendingId: ref<number | null>(null),
@@ -231,6 +248,114 @@ export default {
       const needsSpace = current.length > 0 && !/\s$/.test(current);
       this.messageText = needsSpace ? `${current} ${text}` : `${current}${text}`;
       this.focusMessageInputToEnd();
+    },
+
+    composerNamedColors(this: any) {
+      return COMPOSER_NAMED_COLORS;
+    },
+
+    composerEmojis(this: any) {
+      return COMPOSER_EMOJIS;
+    },
+
+    toggleComposerTools(this: any) {
+      this.composerToolsOpen = !this.composerToolsOpen;
+      if (this.composerToolsOpen) {
+        this.captureInputSelection();
+      }
+    },
+
+    closeComposerTools(this: any) {
+      this.composerToolsOpen = false;
+    },
+
+    captureInputSelection(this: any) {
+      const input = this.messageInputEl as HTMLTextAreaElement | null;
+      if (!input) return;
+      const start = Number.isFinite(input.selectionStart) ? Number(input.selectionStart) : 0;
+      const end = Number.isFinite(input.selectionEnd) ? Number(input.selectionEnd) : start;
+      this.composerSelectionStart = Math.max(0, start);
+      this.composerSelectionEnd = Math.max(this.composerSelectionStart, end);
+    },
+
+    getMessageInputRange(this: any) {
+      const textLength = String(this.messageText || '').length;
+      const input = this.messageInputEl as HTMLTextAreaElement | null;
+      const inputFocused = !!input && document.activeElement === input;
+      const activeStart = inputFocused && Number.isFinite(input.selectionStart) ? Number(input.selectionStart) : null;
+      const activeEnd = inputFocused && Number.isFinite(input.selectionEnd) ? Number(input.selectionEnd) : null;
+      const startBase = activeStart !== null ? activeStart : Number(this.composerSelectionStart || 0);
+      const endBase = activeEnd !== null ? activeEnd : Number(this.composerSelectionEnd || startBase);
+      const start = Math.min(Math.max(0, startBase), textLength);
+      const end = Math.min(Math.max(start, endBase), textLength);
+      return {start, end};
+    },
+
+    setMessageInputSelection(this: any, startRaw: number, endRaw: number) {
+      const start = Math.max(0, Number(startRaw || 0));
+      const end = Math.max(start, Number(endRaw || start));
+      this.composerSelectionStart = start;
+      this.composerSelectionEnd = end;
+
+      nextTick(() => {
+        const input = this.messageInputEl as HTMLTextAreaElement | null;
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(start, end);
+      });
+    },
+
+    applyWrapperToSelection(this: any, prefixRaw: string, suffixRaw = ')') {
+      const prefix = String(prefixRaw || '');
+      const suffix = String(suffixRaw || '');
+      if (!prefix) return;
+
+      const current = String(this.messageText || '');
+      const {start, end} = this.getMessageInputRange();
+      const selected = current.slice(start, end);
+      const next = `${current.slice(0, start)}${prefix}${selected}${suffix}${current.slice(end)}`;
+      this.messageText = next;
+      const hasSelection = end > start;
+      const cursorStart = start + prefix.length;
+      const cursorEnd = hasSelection ? cursorStart + selected.length : cursorStart;
+      this.setMessageInputSelection(cursorStart, cursorEnd);
+    },
+
+    applyNamedColorWrapper(this: any, colorNameRaw: unknown) {
+      const colorName = String(colorNameRaw || '').trim().toLowerCase();
+      if (!colorName) return;
+      this.applyWrapperToSelection(`c#${colorName}(`);
+    },
+
+    applyCustomColorWrapper(this: any) {
+      const color = String(this.composerColorPicker || '').trim();
+      if (!COLOR_HEX_FULL_RE.test(color)) return;
+      const normalized = color.toUpperCase();
+      this.composerColorPicker = normalized;
+      this.applyWrapperToSelection(`c${normalized}(`);
+    },
+
+    applyFormatWrapper(this: any, tagRaw: unknown) {
+      const tag = String(tagRaw || '').trim().toLowerCase();
+      if (!['b', 'u', 's', 'h', 'm'].includes(tag)) return;
+      this.applyWrapperToSelection(`${tag}(`);
+    },
+
+    insertComposerText(this: any, textRaw: unknown) {
+      const insertText = String(textRaw ?? '');
+      if (!insertText) return;
+
+      const current = String(this.messageText || '');
+      const {start, end} = this.getMessageInputRange();
+      this.messageText = `${current.slice(0, start)}${insertText}${current.slice(end)}`;
+      const cursor = start + insertText.length;
+      this.setMessageInputSelection(cursor, cursor);
+    },
+
+    onComposerEmojiClick(this: any, emojiRaw: unknown) {
+      const emoji = String(emojiRaw || '');
+      if (!emoji) return;
+      this.insertComposerText(emoji);
     },
 
     async copyTextToClipboard(this: any, textRaw: unknown) {
@@ -637,6 +762,11 @@ export default {
       if (!inReactionControls) {
         this.reactionPickerMessageId = null;
         this.reactionTooltipVisible = false;
+      }
+
+      const inComposerTools = !!targetEl?.closest('.composer-tools');
+      if (!inComposerTools) {
+        this.composerToolsOpen = false;
       }
 
       if (!this.notificationsMenuOpen) return;
@@ -1593,6 +1723,9 @@ export default {
       const ok = await this.sendMessageBody(text);
       if (ok) {
         this.messageText = '';
+        this.composerSelectionStart = 0;
+        this.composerSelectionEnd = 0;
+        this.captureInputSelection();
       }
     },
 
