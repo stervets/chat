@@ -243,11 +243,27 @@
                 >
                   {{ segment.value }}
                 </a>
+                <a
+                  v-else-if="segment.type === 'inlineImagePreview'"
+                  class="inline-image-link"
+                  :href="segment.src"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    class="preview-media preview-image preview-inline-image"
+                    :src="segment.src"
+                    alt="image preview"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </a>
                 <span
                   v-else-if="segment.type === 'mention'"
                   class="mention-token"
                   :title="segment.username || ''"
                   :style="segment.color ? {color: segment.color} : undefined"
+                  @click="onMentionTokenClick(segment)"
                 >
                   {{ segment.value }}
                 </span>
@@ -264,26 +280,11 @@
                 <span v-else>{{ segment.value }}</span>
               </template>
             </div>
-            <div v-if="editingMessageId !== message.id && getMessagePreviews(message).length" class="message-previews">
-              <template v-for="preview in getMessagePreviews(message)" :key="preview.key">
+            <div v-if="editingMessageId !== message.id && getMessageExtraPreviews(message).length" class="message-previews">
+              <template v-for="preview in getMessageExtraPreviews(message)" :key="preview.key">
                 <div class="preview-item">
-                  <a
-                    v-if="preview.type === 'image'"
-                    class="preview-link preview-link-image"
-                    :href="preview.src"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <img
-                      class="preview-media preview-image"
-                      :src="preview.src"
-                      alt="image preview"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </a>
                   <video
-                    v-else-if="preview.type === 'video'"
+                    v-if="preview.type === 'video'"
                     class="preview-media preview-video"
                     :src="preview.src"
                     controls
@@ -370,7 +371,9 @@
             @keydown="onKeydown"
             @paste="onInputPaste"
           />
-          <button class="btn" @click="onSend">Отправить</button>
+          <button class="btn send-btn" aria-label="Отправить сообщение" title="Отправить сообщение" @click="onSend">
+            ⮞
+          </button>
         </div>
         <div v-if="pasteUploading" class="upload-hint">Загружаю картинку...</div>
       </main>

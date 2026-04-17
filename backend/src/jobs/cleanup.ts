@@ -2,7 +2,8 @@ import {config} from '../config.js';
 import type {DatabaseSync} from 'node:sqlite';
 import {pruneExpiredUploads} from '../common/uploads.js';
 
-const ONE_HOUR_MS = 60 * 60 * 1000;
+const MOSCOW_UTC_OFFSET_MS = 3 * 60 * 60 * 1000;
+const MOSCOW_CLEANUP_HOUR = 3;
 
 type CleanupLogger = {
   info: (obj: Record<string, unknown>, msg: string) => void;
@@ -24,9 +25,28 @@ export async function runMessagesCleanup(db: DatabaseSync, logger: CleanupLogger
   }
 }
 
+function msUntilNextMoscowCleanup(nowMs = Date.now()) {
+  const nowMoscow = new Date(nowMs + MOSCOW_UTC_OFFSET_MS);
+  const nextMoscow = new Date(nowMoscow);
+  nextMoscow.setHours(MOSCOW_CLEANUP_HOUR, 0, 0, 0);
+  if (nextMoscow.getTime() <= nowMoscow.getTime()) {
+    nextMoscow.setDate(nextMoscow.getDate() + 1);
+  }
+
+  const nextUtcMs = nextMoscow.getTime() - MOSCOW_UTC_OFFSET_MS;
+  return Math.max(1000, nextUtcMs - nowMs);
+}
+
 export function registerCleanupJob(db: DatabaseSync, logger: CleanupLogger = console as CleanupLogger) {
-  const timer = setInterval(() => {
-    void runMessagesCleanup(db, logger);
-  }, ONE_HOUR_MS);
-  timer.unref();
+  const scheduleNext = () => {
+    const delayMs = msUntilNextMoscowCleanup();
+    const timer = setTimeout(() => {
+      void runMessagesCleanup(db, logger).finally(() => {
+        scheduleNext();
+      });
+    }, delayMs);
+    timer.unref();
+  };
+
+  scheduleNext();
 }

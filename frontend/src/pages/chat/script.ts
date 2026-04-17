@@ -228,6 +228,12 @@ export default {
       this.appendToInput(`${this.formatUsername(message.authorNickname)} [${this.formatMessageTime(message.createdAt)}], `);
     },
 
+    onMentionTokenClick(this: any, segment: any) {
+      const username = String(segment?.username || '').trim();
+      if (!username) return;
+      this.appendToInput(`${username}, `);
+    },
+
     canOpenDirectFromMessage(this: any, message: Message) {
       if (!this.me) return false;
       if (this.activeDialog?.kind === 'private') return false;
@@ -743,7 +749,15 @@ export default {
 
       for (const part of this.linkify(message.body)) {
         if (part.type === 'link') {
-          if (this.shouldHideImageLink(part.value)) {
+          const normalizedUrl = this.normalizeMessageLink(part.value);
+          if (this.shouldHideImageLink(normalizedUrl)) {
+            const preview = this.buildLinkPreview(normalizedUrl);
+            if (preview?.type === 'image') {
+              segments.push({
+                type: 'inlineImagePreview',
+                src: preview.src,
+              });
+            }
             hiddenImageLink = true;
             continue;
           }
@@ -909,6 +923,10 @@ export default {
         [cacheKey]: previews,
       };
       return previews;
+    },
+
+    getMessageExtraPreviews(this: any, message: Message) {
+      return this.getMessagePreviews(message).filter((preview: LinkPreview) => preview.type !== 'image');
     },
 
     reactionPalette(this: any) {
@@ -1502,7 +1520,12 @@ export default {
             continue;
           }
 
-          await this.sendMessageBody((uploadResult as any).url);
+          const url = String((uploadResult as any).url || '').trim();
+          if (!url) {
+            this.error = 'Не удалось загрузить картинку.';
+            continue;
+          }
+          this.appendToInput(url);
         }
       } finally {
         this.pasteUploading = false;

@@ -934,11 +934,7 @@ export class ChatService {
 
     const changed = body !== existing.body;
     if (changed) {
-      const oldUploadNames = this.extractUploadNamesFromBody(existing.body);
-      const newUploadNames = this.extractUploadNamesFromBody(body);
-      const removedUploadNames = oldUploadNames.filter((name) => !newUploadNames.includes(name));
       db.prepare('update messages set body = ? where id = ?').run(body, messageId);
-      this.cleanupUnusedUploads(removedUploadNames);
     }
 
     return {
