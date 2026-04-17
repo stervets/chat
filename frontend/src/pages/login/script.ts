@@ -1,6 +1,8 @@
 import { ref } from 'vue';
 import { wsLogin } from '@/composables/ws-rpc';
 
+const SOUND_OVERLAY_SKIP_ONCE_KEY = 'chat:sound-overlay-skip-once:v1';
+
 export default {
     async setup() {
         const router = useRouter();
@@ -29,6 +31,9 @@ export default {
                     return;
                 }
 
+                if (typeof window !== 'undefined') {
+                    window.sessionStorage.setItem(SOUND_OVERLAY_SKIP_ONCE_KEY, '1');
+                }
                 await this.router.push('/chat');
             } catch (e) {
                 this.error = 'Сервер недоступен.';

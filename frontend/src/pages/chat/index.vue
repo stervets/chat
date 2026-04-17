@@ -1,5 +1,23 @@
 <template>
   <div class="page page-chat">
+    <div v-if="soundOverlayVisible" class="sound-overlay">
+      <div class="sound-overlay-card">
+        <img
+          class="sound-overlay-logo"
+          src="/marx_logo.png"
+          alt="MARX logo"
+          loading="eager"
+          decoding="async"
+        />
+        <div class="sound-overlay-title">MARX</div>
+        <div class="sound-overlay-subtitle">наднациональный мессенджер</div>
+        <div class="sound-overlay-actions">
+          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">СОЛИДАРНОСТЬ</button>
+          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">РАВЕНСТВО</button>
+          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">СВОБОДА</button>
+        </div>
+      </div>
+    </div>
     <div class="chat-shell">
       <aside class="drawer drawer-left" :class="{open: leftMenuOpen}">
         <div class="drawer-head">
@@ -282,7 +300,7 @@
                   <button class="composer-format-btn composer-format-btn-bold" @click="applyFormatWrapper('b')">B</button>
                   <button class="composer-format-btn composer-format-btn-underline" @click="applyFormatWrapper('u')">U</button>
                   <button class="composer-format-btn composer-format-btn-strike" @click="applyFormatWrapper('s')">S</button>
-                  <button class="composer-format-btn" @click="applyFormatWrapper('h')">Скрыть</button>
+                  <button class="composer-format-btn" @click="applyFormatWrapper('h')">Hidden</button>
                   <button class="composer-format-btn composer-format-btn-mono" @click="applyFormatWrapper('m')">Mono</button>
                 </div>
                 <div class="composer-color-grid">
@@ -297,7 +315,7 @@
                     <span class="composer-color-label">{{ named.name }}</span>
                   </button>
                 </div>
-                <div class="composer-custom-color">
+                <!--div class="composer-custom-color">
                   <input
                     v-model="composerColorPicker"
                     class="composer-color-picker"
@@ -306,10 +324,10 @@
                   <button class="composer-format-btn composer-format-btn-color" @click="applyCustomColorWrapper">
                     c{{ composerColorPicker.toUpperCase() }}
                   </button>
-                </div>
+                </div-->
                 <div class="composer-upload-row">
                   <button class="composer-format-btn composer-format-btn-upload" @click="openGalleryPicker">
-                    Из галереи
+                    Upload img
                   </button>
                 </div>
               </div>
@@ -390,6 +408,16 @@
         <div class="color-value">
           {{ profileNicknameColor || 'без цвета' }}
         </div>
+
+        <div class="section-title">Уведомления</div>
+        <label class="sound-toggle">
+          <input
+            v-model="soundEnabled"
+            type="checkbox"
+            @change="onSoundEnabledChange"
+          />
+          <span>Звук уведомлений</span>
+        </label>
 
         <div class="section-title">Новый пароль</div>
         <input

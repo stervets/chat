@@ -36,6 +36,7 @@ const ALLOWED_REACTIONS = new Set([
   '😂',
   '🔥',
   '❤️',
+  '🤔',
   '☹️',
   '😡',
   '👎',

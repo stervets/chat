@@ -1,4 +1,4 @@
-import {ref, type PropType} from 'vue';
+import {nextTick, ref, type PropType} from 'vue';
 import type {Message, MessageReaction} from '@/composables/types';
 
 type LinkPreview = {
@@ -102,8 +102,21 @@ export default {
     return {
       showHiddenText: ref(false),
       rootEl: ref<HTMLElement | null>(null),
+      reactionControlsEl: ref<HTMLElement | null>(null),
+      reactionPickerEl: ref<HTMLElement | null>(null),
+      reactionPickerDirection: ref<'up' | 'down'>('down'),
+      reactionPickerMaxHeight: ref(220),
       resizeObserver: null as ResizeObserver | null,
     };
+  },
+
+  watch: {
+    reactionPickerOpen(this: any, isOpen: boolean) {
+      if (!isOpen) return;
+      nextTick(() => {
+        this.updateReactionPickerPlacement();
+      });
+    },
   },
 
   methods: {
@@ -172,6 +185,9 @@ export default {
 
     onToggleReactionPicker(this: any) {
       this.$emit('toggle-reaction-picker', this.message);
+      nextTick(() => {
+        this.updateReactionPickerPlacement();
+      });
     },
 
     onReactionSelect(this: any, emoji: string) {
@@ -201,6 +217,34 @@ export default {
       const marginTop = Number.parseFloat(styles.marginTop || '0') || 0;
       const marginBottom = Number.parseFloat(styles.marginBottom || '0') || 0;
       this.$emit('height-change', this.message.id, root.offsetHeight + marginTop + marginBottom);
+    },
+
+    updateReactionPickerPlacement(this: any) {
+      if (!this.reactionPickerOpen) return;
+
+      const controlsEl = this.reactionControlsEl as HTMLElement | null;
+      const pickerEl = this.reactionPickerEl as HTMLElement | null;
+      if (!controlsEl || !pickerEl) return;
+
+      const scrollHostEl = controlsEl.closest('.chat-body') as HTMLElement | null;
+      const controlsRect = controlsEl.getBoundingClientRect();
+      const pickerRect = pickerEl.getBoundingClientRect();
+      const boundaryRect = scrollHostEl
+        ? scrollHostEl.getBoundingClientRect()
+        : {
+          top: 0,
+          bottom: Number(window.innerHeight || 0),
+        };
+      const spaceBelow = boundaryRect.bottom - controlsRect.bottom - 10;
+      const spaceAbove = controlsRect.top - boundaryRect.top - 10;
+      const pickerNeed = pickerRect.height + 8;
+
+      const preferUp = spaceBelow < pickerNeed && spaceAbove > spaceBelow;
+      this.reactionPickerDirection = preferUp ? 'up' : 'down';
+
+      const available = preferUp ? spaceAbove : spaceBelow;
+      const clampedMaxHeight = Math.max(90, Math.min(320, Math.floor(available)));
+      this.reactionPickerMaxHeight = clampedMaxHeight;
     },
   },
 

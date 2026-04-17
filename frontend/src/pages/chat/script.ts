@@ -53,7 +53,7 @@ const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const MENTION_TAG_RE = /@([a-zA-Z0-9._-]+)/g;
 const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)$/i;
-const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '☹️', '😡', '👎', '😢'];
+const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '🤔', '☹️', '😡', '👎', '😢'];
 const MAX_PASTE_IMAGE_BYTES = 1024 * 1024;
 const HISTORY_BATCH_SIZE = 100;
 const VIRTUAL_MAX_ITEMS = 300;
@@ -74,6 +74,9 @@ const COMPOSER_EMOJIS = ['🙂', '😀', '😉', '😎', '🤔', '😴', '🥳',
 const HANDLED_MESSAGE_IDS_STORAGE_PREFIX = 'chat:handled-message-notification-ids:v1';
 const HANDLED_MESSAGE_IDS_LIMIT = 8000;
 const HANDLED_MESSAGE_IDS_SAVE_DELAY_MS = 180;
+const SOUND_ENABLED_STORAGE_KEY = 'chat:notifications-sound-enabled:v1';
+const SOUND_OVERLAY_SKIP_ONCE_KEY = 'chat:sound-overlay-skip-once:v1';
+const NOTIFICATION_SOUND_VOLUME = 0.42;
 
 export default {
   components: {
@@ -155,6 +158,10 @@ export default {
       profileSaving: ref(false),
       profileError: ref(''),
       directDeletePending: ref(false),
+      soundEnabled: ref(true),
+      soundOverlayVisible: ref(false),
+      soundReady: ref(false),
+      notificationAudioEl: ref<HTMLAudioElement | null>(null),
 
       newPassword: ref(''),
       pasteUploading: ref(false),
@@ -338,6 +345,117 @@ export default {
         this.handledMessageNotificationSaveTimer = null;
         this.persistHandledMessageNotificationIds();
       }, HANDLED_MESSAGE_IDS_SAVE_DELAY_MS);
+    },
+
+    loadSoundEnabledSetting(this: any) {
+      if (typeof window === 'undefined') {
+        this.soundEnabled = true;
+        return;
+      }
+
+      const raw = window.localStorage.getItem(SOUND_ENABLED_STORAGE_KEY);
+      this.soundEnabled = raw !== '0';
+    },
+
+    persistSoundEnabledSetting(this: any) {
+      if (typeof window === 'undefined') return;
+      window.localStorage.setItem(SOUND_ENABLED_STORAGE_KEY, this.soundEnabled ? '1' : '0');
+    },
+
+    consumeSoundOverlaySkipOnce(this: any) {
+      if (typeof window === 'undefined') return false;
+      const raw = window.sessionStorage.getItem(SOUND_OVERLAY_SKIP_ONCE_KEY);
+      if (raw !== '1') return false;
+      window.sessionStorage.removeItem(SOUND_OVERLAY_SKIP_ONCE_KEY);
+      return true;
+    },
+
+    isReloadNavigation(this: any) {
+      if (typeof window === 'undefined') return false;
+      if (typeof performance === 'undefined') return false;
+
+      const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+      if (Array.isArray(navEntries) && navEntries.length) {
+        return navEntries[0]?.type === 'reload';
+      }
+
+      const legacyNavigation = (performance as any).navigation;
+      return Number(legacyNavigation?.type) === 1;
+    },
+
+    ensureNotificationAudio(this: any) {
+      if (typeof window === 'undefined') return null;
+      if (this.notificationAudioEl) return this.notificationAudioEl as HTMLAudioElement;
+
+      const audio = new Audio('/ping.mp3');
+      audio.preload = 'auto';
+      audio.volume = NOTIFICATION_SOUND_VOLUME;
+      this.notificationAudioEl = audio;
+      return audio;
+    },
+
+    markSoundReady(this: any) {
+      if (!this.soundEnabled) return;
+      this.soundReady = true;
+      this.ensureNotificationAudio();
+    },
+
+    resolveSoundStartupState(this: any) {
+      this.loadSoundEnabledSetting();
+      if (!this.soundEnabled) {
+        this.soundOverlayVisible = false;
+        this.soundReady = false;
+        return;
+      }
+
+      const skipOverlayOnce = this.consumeSoundOverlaySkipOnce();
+      if (skipOverlayOnce) {
+        this.soundOverlayVisible = false;
+        this.markSoundReady();
+        return;
+      }
+
+      if (this.isReloadNavigation()) {
+        this.soundOverlayVisible = true;
+        this.soundReady = false;
+        return;
+      }
+
+      this.soundOverlayVisible = false;
+      this.markSoundReady();
+    },
+
+    async playNotificationSound(this: any) {
+      if (!this.soundEnabled || !this.soundReady) return;
+
+      const audio = this.ensureNotificationAudio();
+      if (!audio) return;
+
+      audio.volume = NOTIFICATION_SOUND_VOLUME;
+
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+        await audio.play();
+      } catch {
+        this.soundReady = false;
+      }
+    },
+
+    onSoundOverlayConfirm(this: any) {
+      this.soundOverlayVisible = false;
+      this.markSoundReady();
+    },
+
+    onSoundEnabledChange(this: any) {
+      this.soundEnabled = !!this.soundEnabled;
+      this.persistSoundEnabledSetting();
+      if (!this.soundEnabled) {
+        this.soundOverlayVisible = false;
+        this.soundReady = false;
+        return;
+      }
+      this.markSoundReady();
     },
 
     isDirectDialogUnread(this: any, dialogIdRaw: unknown) {
@@ -1065,6 +1183,7 @@ export default {
           this.getNotificationDialogTitle(notification),
           `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`
         );
+        void this.playNotificationSound();
       }
       this.updateFaviconBlinkByUnread();
     },
@@ -1238,6 +1357,10 @@ export default {
     },
 
     onWindowClick(this: any, event: MouseEvent) {
+      if (this.soundEnabled && !this.soundReady && !this.soundOverlayVisible) {
+        this.markSoundReady();
+      }
+
       const target = event.target as Node | null;
       if (!target) return;
 
@@ -2585,6 +2708,7 @@ export default {
   async mounted(this: any) {
     const ok = await this.ensureAuth();
     if (!ok) return;
+    this.resolveSoundStartupState();
 
     this.chatMessageHandler = (message: Message) => {
       void this.onChatMessage(message);
@@ -2664,6 +2788,11 @@ export default {
     if (this.handledMessageNotificationSaveTimer) {
       clearTimeout(this.handledMessageNotificationSaveTimer);
       this.handledMessageNotificationSaveTimer = null;
+    }
+    if (this.notificationAudioEl) {
+      this.notificationAudioEl.pause();
+      this.notificationAudioEl.currentTime = 0;
+      this.notificationAudioEl = null;
     }
     this.persistHandledMessageNotificationIds();
   },

@@ -111,9 +111,18 @@
       </template>
     </div>
 
-    <div v-if="!isEditing" class="reaction-controls" @click.stop>
+    <div v-if="!isEditing" ref="reactionControlsEl" class="reaction-controls" @click.stop>
       <button class="reaction-add-btn" @click="onToggleReactionPicker">+</button>
-      <div v-if="reactionPickerOpen" class="reaction-picker">
+      <div
+        v-if="reactionPickerOpen"
+        ref="reactionPickerEl"
+        class="reaction-picker"
+        :class="{
+          'reaction-picker-up': reactionPickerDirection === 'up',
+          'reaction-picker-down': reactionPickerDirection === 'down',
+        }"
+        :style="{maxHeight: `${reactionPickerMaxHeight}px`}"
+      >
         <button
           v-for="emoji in reactionPalette"
           :key="`${message.id}-${emoji}`"
