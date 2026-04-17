@@ -382,8 +382,8 @@
   }
 
   .message-mention-me {
-    border-color: rgba(210, 255, 130, 0.45);
-    background: linear-gradient(180deg, rgba(20, 30, 40, .7) 0%, rgba(10, 20, 30, 1) 100%);
+    border-color: rgba(210, 255, 130, 0.6);
+    background: linear-gradient(180deg, rgba(30, 40, 50, .7) 0%, rgba(20, 30, 40, 1) 100%);
   }
 
   .message-blink-target {
@@ -468,7 +468,6 @@
   }
 
   .preview-media {
-    width: 100%;
     max-height: 280px;
     border-radius: 8px;
     border: 1px solid var(--border);
@@ -481,15 +480,29 @@
     text-decoration: none;
   }
 
+  .preview-link-image {
+    display: inline-block;
+    max-width: 100%;
+  }
+
   .preview-image {
+    width: auto;
+    max-width: 100%;
+    height: auto;
     object-fit: contain;
+    background: transparent;
+    cursor: pointer;
+    border: none;
   }
 
   .preview-video {
+    width: 100%;
+    height: auto;
     background: #06090f;
   }
 
   .preview-embed {
+    width: 100%;
     height: min(260px, 48vw);
   }
 

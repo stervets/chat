@@ -267,14 +267,21 @@
             <div v-if="editingMessageId !== message.id && getMessagePreviews(message).length" class="message-previews">
               <template v-for="preview in getMessagePreviews(message)" :key="preview.key">
                 <div class="preview-item">
-                  <img
+                  <a
                     v-if="preview.type === 'image'"
-                    class="preview-media preview-image"
-                    :src="preview.src"
-                    alt="image preview"
-                    loading="lazy"
-                    decoding="async"
-                  />
+                    class="preview-link preview-link-image"
+                    :href="preview.src"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <img
+                      class="preview-media preview-image"
+                      :src="preview.src"
+                      alt="image preview"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </a>
                   <video
                     v-else-if="preview.type === 'video'"
                     class="preview-media preview-video"
