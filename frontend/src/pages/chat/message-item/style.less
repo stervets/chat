@@ -1,21 +1,31 @@
 .chat-message-item {
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  //border: 1px solid var(--border);
+  border: 1px solid #0b2b49;
   border-radius: 10px;
-  background: linear-gradient(180deg, #1a2532 0%, #121d2a 100%);
+  //background: linear-gradient(180deg, #1a2532 0%, #121d2a 100%);
+  background: linear-gradient(180deg, #1A2530 0%, #0A1520 100%);
   margin-bottom: 10px;
-  margin-right: 22px;
+  margin-right: 12px;
+  margin-left: 12px;
 
   &.message-own {
     margin-left: 22px;
     margin-right: 0;
-    background: linear-gradient(180deg, #1f2d3c 0%, #172433 100%);
-    border-color: #3b5b79;
+    //background: linear-gradient(180deg, #1f2d3c 0%, #172433 100%);
+    background: linear-gradient(180deg, #1f2d3c 0%, #0f1d2c 100%);
+    //border-color: #3b5b79;
+    border: 1px solid #3b5b79;
   }
 
   &.message-mention-me {
-    border-color: #95aa61;
-    background: linear-gradient(180deg, #24313e 0%, #1a2734 100%);
+    //border-color: #95aa61;
+    margin-left: 0;
+    margin-right: 22px;
+    //border: 1px solid #95aa61;
+    border: 1px solid #5b9b99;
+    //background: linear-gradient(180deg, #24313e 0%, #1a2734 100%);
+    background: linear-gradient(180deg, #203040 0%, #102030 100%);
   }
 
   &.message-blink-target {
