@@ -164,29 +164,30 @@
   .message-body :deep(code) {
     display: inline-block;
     box-sizing: border-box;
-    border-radius: 6px;
-    border: 1px solid #a7b8cc;
-    outline: 1px solid rgba(226, 236, 248, 0.2);
-    box-shadow: inset 0 0 0 1px rgba(232, 240, 252, 0.1);
-    background: linear-gradient(180deg, rgba(50, 59, 74, 0.9) 0%, rgba(34, 42, 55, 0.96) 100%);
-    color: #dce7f7;
+    border-radius: 4px;
+    border: 1px solid #a7b8cc40;
+    //outline: 1px solid rgba(226, 236, 248, 0.2);
+    //box-shadow: inset 0 0 0 1px rgba(232, 240, 252, 0.1);
+    //background: linear-gradient(180deg, rgba(50, 59, 74, 0.9) 0%, rgba(34, 42, 55, 0.96) 100%);
+    //color: #dce7f7;
+    background-color: #40506040;
     font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
     font-size: 0.93em;
     line-height: 1.35;
     padding: 1px 7px;
     cursor: pointer;
+    transition: filter .2s ease;
+
   }
 
   .message-body :deep(code:hover) {
-    border-color: #d3dfed;
-    outline-color: rgba(244, 249, 255, 0.36);
-    background: linear-gradient(180deg, rgba(61, 71, 88, 0.95) 0%, rgba(42, 51, 66, 0.98) 100%);
+      filter: brightness(1.1);
   }
 
   .message-body :deep(.message-spoiler) {
     position: relative;
     display: inline-block;
-    border-radius: 6px;
+    border-radius: 2px;
     padding: 0 4px;
     color: transparent !important;
     -webkit-text-fill-color: transparent;
@@ -205,11 +206,11 @@
     position: absolute;
     inset: -1px;
     border-radius: inherit;
-    background:
-      linear-gradient(120deg, rgba(133, 145, 164, 0.8) 0%, rgba(162, 175, 195, 0.9) 45%, rgba(123, 136, 156, 0.82) 100%);
-    box-shadow: inset 0 0 0 1px rgba(184, 196, 215, 0.28);
+    background-color: #506070;
+    //background: linear-gradient(90deg, rgba(133, 145, 164, 0.0) 0%, rgba(162, 175, 195, 0.4) 45%, rgba(123, 136, 156, 0.2) 100%);
+    //box-shadow: inset 0 0 0 1px rgba(184, 196, 215, 0.28);
     pointer-events: none;
-    animation: spoiler-shimmer 1.65s linear infinite;
+    //animation: spoiler-shimmer 1.65s linear infinite;
     transition: opacity .18s ease;
   }
 

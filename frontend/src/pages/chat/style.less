@@ -79,12 +79,26 @@
     letter-spacing: 0.05em;
     padding: 10px 12px;
     cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
 
   .sound-overlay-btn:hover {
     border-color: rgba(148, 184, 227, 0.7);
     background: linear-gradient(180deg, #2c3c55 0%, #233247 100%);
     color: #eef5ff;
+  }
+
+  .sound-overlay-btn-label {
+    display: inline-block;
+    width: 14ch;
+    text-align: left;
+    color: #c5c7db
+  }
+
+  .sound-overlay-btn-label::first-letter {
+    color: #ff9494;
   }
 
   .chat-main {

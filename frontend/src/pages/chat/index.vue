@@ -12,9 +12,18 @@
         <div class="sound-overlay-title">MARX</div>
         <div class="sound-overlay-subtitle">наднациональный мессенджер</div>
         <div class="sound-overlay-actions">
-          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">СОЛИДАРНОСТЬ</button>
-          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">РАВЕНСТВО</button>
-          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">СВОБОДА</button>
+          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">
+            <span class="sound-overlay-btn-label">СВОБОДА</span>
+          </button>
+          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">
+            <span class="sound-overlay-btn-label">СПЛОЧЁННОСТЬ</span>
+          </button>
+          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">
+            <span class="sound-overlay-btn-label">СОЛИДАРНОСТЬ</span>
+          </button>
+          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">
+            <span class="sound-overlay-btn-label">РАВЕНСТВО</span>
+          </button>
         </div>
       </div>
     </div>
@@ -418,6 +427,24 @@
           />
           <span>Звук уведомлений</span>
         </label>
+        <label class="sound-toggle">
+          <input
+            v-model="browserNotificationsEnabled"
+            type="checkbox"
+            @change="onBrowserNotificationsEnabledChange"
+          />
+          <span>Уведомления браузера</span>
+        </label>
+        <div class="hint">
+          Статус: {{ browserNotificationPermission }}
+        </div>
+        <button
+          v-if="browserNotificationsEnabled && browserNotificationPermission !== 'granted'"
+          class="ghost-btn"
+          @click="requestBrowserNotificationPermission"
+        >
+          Разрешить уведомления
+        </button>
 
         <div class="section-title">Новый пароль</div>
         <input

@@ -76,7 +76,9 @@ const HANDLED_MESSAGE_IDS_LIMIT = 8000;
 const HANDLED_MESSAGE_IDS_SAVE_DELAY_MS = 180;
 const SOUND_ENABLED_STORAGE_KEY = 'chat:notifications-sound-enabled:v1';
 const SOUND_OVERLAY_SKIP_ONCE_KEY = 'chat:sound-overlay-skip-once:v1';
-const NOTIFICATION_SOUND_VOLUME = 0.42;
+const NOTIFICATION_SOUND_VOLUME = 0.35;
+const BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY = 'chat:browser-notifications-enabled:v1';
+const MAX_ACTIVE_BROWSER_NOTIFICATIONS = 6;
 
 export default {
   components: {
@@ -162,6 +164,9 @@ export default {
       soundOverlayVisible: ref(false),
       soundReady: ref(false),
       notificationAudioEl: ref<HTMLAudioElement | null>(null),
+      browserNotificationsEnabled: ref(true),
+      browserNotificationPermission: ref<'default' | 'denied' | 'granted'>('default'),
+      activeBrowserNotifications: ref<Notification[]>([]),
 
       newPassword: ref(''),
       pasteUploading: ref(false),
@@ -456,6 +461,114 @@ export default {
         return;
       }
       this.markSoundReady();
+    },
+
+    isBrowserNotificationsSupported(this: any) {
+      return typeof window !== 'undefined' && 'Notification' in window;
+    },
+
+    syncBrowserNotificationPermission(this: any) {
+      if (!this.isBrowserNotificationsSupported()) {
+        this.browserNotificationPermission = 'denied';
+        return;
+      }
+      this.browserNotificationPermission = Notification.permission;
+    },
+
+    loadBrowserNotificationsEnabledSetting(this: any) {
+      if (typeof window === 'undefined') {
+        this.browserNotificationsEnabled = true;
+        return;
+      }
+
+      const raw = window.localStorage.getItem(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY);
+      this.browserNotificationsEnabled = raw !== '0';
+    },
+
+    persistBrowserNotificationsEnabledSetting(this: any) {
+      if (typeof window === 'undefined') return;
+      window.localStorage.setItem(
+        BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY,
+        this.browserNotificationsEnabled ? '1' : '0'
+      );
+    },
+
+    async requestBrowserNotificationPermission(this: any) {
+      this.syncBrowserNotificationPermission();
+      if (!this.isBrowserNotificationsSupported()) return;
+      if (this.browserNotificationPermission === 'granted') return;
+
+      try {
+        const next = await Notification.requestPermission();
+        this.browserNotificationPermission = next;
+      } catch {
+        this.browserNotificationPermission = Notification.permission;
+      }
+    },
+
+    onBrowserNotificationsEnabledChange(this: any) {
+      this.browserNotificationsEnabled = !!this.browserNotificationsEnabled;
+      this.persistBrowserNotificationsEnabledSetting();
+      if (!this.browserNotificationsEnabled) return;
+      if (this.browserNotificationPermission === 'default') {
+        void this.requestBrowserNotificationPermission();
+      }
+    },
+
+    closeOldBrowserNotifications(this: any) {
+      if (!Array.isArray(this.activeBrowserNotifications) || this.activeBrowserNotifications.length <= MAX_ACTIVE_BROWSER_NOTIFICATIONS) {
+        return;
+      }
+
+      const overflow = this.activeBrowserNotifications.length - MAX_ACTIVE_BROWSER_NOTIFICATIONS;
+      const toClose = this.activeBrowserNotifications.slice(0, overflow);
+      toClose.forEach((item: Notification) => item.close());
+      this.activeBrowserNotifications = this.activeBrowserNotifications.slice(overflow);
+    },
+
+    showBrowserNotification(this: any, notification: NotificationItem) {
+      if (!this.browserNotificationsEnabled) return;
+      if (this.browserNotificationPermission !== 'granted') return;
+      if (!this.isWindowInactive()) return;
+      if (!this.isBrowserNotificationsSupported()) return;
+
+      const systemNotification = new Notification(
+        this.getNotificationDialogTitle(notification),
+        {
+          body: `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`,
+          icon: '/favicon-alert.png',
+          tag: `marx-${notification.notificationType}-${notification.id}`,
+          data: {
+            notificationId: notification.id,
+          },
+        }
+      );
+
+      systemNotification.onclick = () => {
+        try {
+          window.focus();
+        } catch {}
+        const target = this.notifications.find((item: NotificationItem) => item.id === notification.id);
+        if (target) {
+          void this.openNotification(target);
+        }
+        systemNotification.close();
+      };
+
+      systemNotification.onclose = () => {
+        this.activeBrowserNotifications = this.activeBrowserNotifications.filter((item: Notification) => item !== systemNotification);
+      };
+
+      this.activeBrowserNotifications = [...this.activeBrowserNotifications, systemNotification];
+      this.closeOldBrowserNotifications();
+    },
+
+    initBrowserNotifications(this: any) {
+      this.loadBrowserNotificationsEnabledSetting();
+      this.syncBrowserNotificationPermission();
+      if (!this.browserNotificationsEnabled) return;
+      if (this.browserNotificationPermission !== 'default') return;
+      void this.requestBrowserNotificationPermission();
     },
 
     isDirectDialogUnread(this: any, dialogIdRaw: unknown) {
@@ -1178,6 +1291,7 @@ export default {
 
     pushNotification(this: any, notification: NotificationItem, showToast: boolean) {
       this.notifications = [notification, ...this.notifications].slice(0, 500);
+      this.showBrowserNotification(notification);
       if (showToast) {
         this.pushToast(
           this.getNotificationDialogTitle(notification),
@@ -2709,6 +2823,7 @@ export default {
     const ok = await this.ensureAuth();
     if (!ok) return;
     this.resolveSoundStartupState();
+    this.initBrowserNotifications();
 
     this.chatMessageHandler = (message: Message) => {
       void this.onChatMessage(message);
@@ -2793,6 +2908,10 @@ export default {
       this.notificationAudioEl.pause();
       this.notificationAudioEl.currentTime = 0;
       this.notificationAudioEl = null;
+    }
+    if (Array.isArray(this.activeBrowserNotifications) && this.activeBrowserNotifications.length) {
+      this.activeBrowserNotifications.forEach((item: Notification) => item.close());
+      this.activeBrowserNotifications = [];
     }
     this.persistHandledMessageNotificationIds();
   },
