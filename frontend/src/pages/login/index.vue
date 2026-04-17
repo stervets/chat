@@ -10,14 +10,17 @@
       />
       <div class="content">
         <h1>Вход</h1>
-        <div class="form">
+        <form class="form" autocomplete="on" @submit.prevent="onLogin">
           <input
             v-model="nickname"
             type="text"
             placeholder="nickname"
+            name="nickname"
+            id="login-nickname"
             class="input"
             autocapitalize="none"
             autocorrect="off"
+            autocomplete="username"
             spellcheck="false"
             @keydown="onKeydown"
           />
@@ -25,14 +28,17 @@
             v-model="password"
             type="password"
             placeholder="password"
+            name="password"
+            id="login-password"
             class="input"
+            autocomplete="current-password"
             @keydown="onKeydown"
           />
-          <button class="btn" :disabled="loading" @click="onLogin">
+          <button class="btn" :disabled="loading" type="submit">
             {{ loading ? 'Вход...' : 'Login' }}
           </button>
           <div v-if="error" class="error">{{ error }}</div>
-        </div>
+        </form>
       </div>
     </div>
   </div>

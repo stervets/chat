@@ -71,6 +71,9 @@ const COMPOSER_NAMED_COLORS = [
   {name: 'purple', swatch: '#be8cff'},
 ];
 const COMPOSER_EMOJIS = ['🙂', '😀', '😉', '😎', '🤔', '😴', '🥳', '🔥', '💬', '✅', '❤️', '👍', '👎', '😢', '😡', '😂'];
+const HANDLED_MESSAGE_IDS_STORAGE_PREFIX = 'chat:handled-message-notification-ids:v1';
+const HANDLED_MESSAGE_IDS_LIMIT = 8000;
+const HANDLED_MESSAGE_IDS_SAVE_DELAY_MS = 180;
 
 export default {
   components: {
@@ -139,6 +142,7 @@ export default {
       notifications: ref<NotificationItem[]>([]),
       notificationsSeq: ref(1),
       handledMessageNotificationIds: ref<Record<number, true>>({}),
+      handledMessageNotificationSaveTimer: ref<number | null>(null),
       notificationMenuEl: ref<HTMLElement | null>(null),
       notificationButtonEl: ref<HTMLElement | null>(null),
       windowClickHandler: ref<Function | null>(null),
@@ -189,6 +193,36 @@ export default {
       }, 0);
     },
 
+    unreadDirectDialogIds(this: any) {
+      const ids: Record<number, true> = {};
+      this.notifications.forEach((notification: NotificationItem) => {
+        if (!notification.unread) return;
+        if (notification.notificationType !== 'message') return;
+        if (notification.dialogKind !== 'private') return;
+        const dialogId = Number(notification.dialogId || 0);
+        if (!Number.isFinite(dialogId) || dialogId <= 0) return;
+        ids[dialogId] = true;
+      });
+      return ids;
+    },
+
+    sortedDirectDialogs(this: any) {
+      const unreadIds = this.unreadDirectDialogIds || {};
+      return [...this.directDialogs].sort((left: DirectDialog, right: DirectDialog) => {
+        const leftUnread = !!unreadIds[left.dialogId];
+        const rightUnread = !!unreadIds[right.dialogId];
+        if (leftUnread !== rightUnread) return leftUnread ? -1 : 1;
+
+        const leftTs = Date.parse(String(left.lastMessageAt || ''));
+        const rightTs = Date.parse(String(right.lastMessageAt || ''));
+        const leftTime = Number.isFinite(leftTs) ? leftTs : 0;
+        const rightTime = Number.isFinite(rightTs) ? rightTs : 0;
+        if (leftTime !== rightTime) return rightTime - leftTime;
+
+        return Number(right.dialogId || 0) - Number(left.dialogId || 0);
+      });
+    },
+
     virtualMessages(this: any) {
       if (!this.messages.length) return [];
       const start = Math.max(0, Number(this.virtualRangeStart || 0));
@@ -219,6 +253,99 @@ export default {
   },
 
   methods: {
+    getHandledMessageIdsStorageKey(this: any) {
+      const userId = Number(this.me?.id || 0);
+      if (!Number.isFinite(userId) || userId <= 0) return '';
+      return `${HANDLED_MESSAGE_IDS_STORAGE_PREFIX}:${userId}`;
+    },
+
+    loadHandledMessageNotificationIds(this: any) {
+      if (typeof window === 'undefined') return;
+
+      const storageKey = this.getHandledMessageIdsStorageKey();
+      if (!storageKey) {
+        this.handledMessageNotificationIds = {};
+        return;
+      }
+
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) {
+        this.handledMessageNotificationIds = {};
+        return;
+      }
+
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        this.handledMessageNotificationIds = {};
+        return;
+      }
+
+      if (!Array.isArray(parsed)) {
+        this.handledMessageNotificationIds = {};
+        return;
+      }
+
+      const ids: number[] = [];
+      const seen = new Set<number>();
+      for (const value of parsed) {
+        const id = Number.parseInt(String(value ?? ''), 10);
+        if (!Number.isFinite(id) || id <= 0 || seen.has(id)) continue;
+        ids.push(id);
+        seen.add(id);
+        if (ids.length >= HANDLED_MESSAGE_IDS_LIMIT) break;
+      }
+
+      const next: Record<number, true> = {};
+      ids.forEach((id: number) => {
+        next[id] = true;
+      });
+      this.handledMessageNotificationIds = next;
+    },
+
+    persistHandledMessageNotificationIds(this: any) {
+      if (typeof window === 'undefined') return;
+
+      const storageKey = this.getHandledMessageIdsStorageKey();
+      if (!storageKey) return;
+
+      const ids = Object.keys(this.handledMessageNotificationIds)
+        .map((key: string) => Number.parseInt(key, 10))
+        .filter((id: number) => Number.isFinite(id) && id > 0)
+        .sort((left: number, right: number) => right - left)
+        .slice(0, HANDLED_MESSAGE_IDS_LIMIT);
+
+      const normalized: Record<number, true> = {};
+      ids.forEach((id: number) => {
+        normalized[id] = true;
+      });
+      this.handledMessageNotificationIds = normalized;
+
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(ids));
+      } catch {}
+    },
+
+    scheduleHandledMessageNotificationIdsSave(this: any) {
+      if (typeof window === 'undefined') return;
+
+      if (this.handledMessageNotificationSaveTimer) {
+        clearTimeout(this.handledMessageNotificationSaveTimer);
+      }
+
+      this.handledMessageNotificationSaveTimer = window.setTimeout(() => {
+        this.handledMessageNotificationSaveTimer = null;
+        this.persistHandledMessageNotificationIds();
+      }, HANDLED_MESSAGE_IDS_SAVE_DELAY_MS);
+    },
+
+    isDirectDialogUnread(this: any, dialogIdRaw: unknown) {
+      const dialogId = Number(dialogIdRaw || 0);
+      if (!Number.isFinite(dialogId) || dialogId <= 0) return false;
+      return !!this.unreadDirectDialogIds?.[dialogId];
+    },
+
     estimateMessageHeight(this: any, message: Message) {
       const known = Number(this.virtualMessageHeights?.[message.id] || 0);
       if (known > 0) return known;
@@ -928,6 +1055,7 @@ export default {
         ...this.handledMessageNotificationIds,
         [messageId]: true,
       };
+      this.scheduleHandledMessageNotificationIdsSave();
     },
 
     pushNotification(this: any, notification: NotificationItem, showToast: boolean) {
@@ -1774,6 +1902,7 @@ export default {
       }
 
       this.applyMe(me as User);
+      this.loadHandledMessageNotificationIds();
       return true;
     },
 
@@ -2532,5 +2661,10 @@ export default {
     }
     Object.values(this.toastTimerById).forEach((timerId: number) => clearTimeout(timerId));
     this.toastTimerById = {};
+    if (this.handledMessageNotificationSaveTimer) {
+      clearTimeout(this.handledMessageNotificationSaveTimer);
+      this.handledMessageNotificationSaveTimer = null;
+    }
+    this.persistHandledMessageNotificationIds();
   },
 };

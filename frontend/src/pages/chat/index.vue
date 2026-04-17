@@ -7,57 +7,69 @@
           <button class="drawer-close" @click="closeLeftMenu">Закрыть</button>
         </div>
 
-        <div v-if="me" class="drawer-profile">
-          <div class="drawer-profile-name" :style="getUserNameStyle(me)">{{ me.name }}</div>
-          <div class="drawer-profile-username">{{ formatUsername(me.nickname) }}</div>
-        </div>
+        <div class="drawer-layout">
+          <div v-if="me" class="drawer-profile">
+            <div class="drawer-profile-name" :style="getUserNameStyle(me)">{{ me.name }}</div>
+            <div class="drawer-profile-username">{{ formatUsername(me.nickname) }}</div>
+          </div>
 
-        <button
-          class="menu-item"
-          :class="{active: activeDialog?.kind === 'general'}"
-          @click="selectGeneral"
-        >
-          Общий чат
-        </button>
-
-        <div class="section-title">Директы</div>
-        <div v-if="!directDialogs.length" class="hint">Пока нет сообщений в директах</div>
-        <div class="menu-list">
           <button
-            v-for="dialog in directDialogs"
-            :key="dialog.dialogId"
-            class="menu-item"
-            :class="{active: activeDialog?.kind === 'private' && activeDialog?.targetUser?.id === dialog.targetUser.id}"
-            @click="selectDirectDialog(dialog)"
+            class="menu-item menu-item-general"
+            :class="{active: activeDialog?.kind === 'general'}"
+            @click="selectGeneral"
           >
-            <span class="name" :style="getUserNameStyle(dialog.targetUser)">{{ dialog.targetUser.name }}</span>
-            <span class="nickname">{{ formatUsername(dialog.targetUser.nickname) }}</span>
+            Общий чат
           </button>
-        </div>
 
-        <div class="section-title">Поиск пользователей</div>
-        <input
-          v-model="searchQuery"
-          class="users-search"
-          type="text"
-          placeholder="Найти пользователя..."
-        />
-        <div v-if="searchQuery.trim() && !filteredUsers.length" class="hint">Ничего не найдено</div>
-        <div class="menu-list users-list">
-          <button
-            v-for="user in filteredUsers"
-            :key="`search-${user.id}`"
-            class="menu-item user-item"
-            :class="{active: activeDialog?.kind === 'private' && activeDialog?.targetUser?.id === user.id}"
-            @click="selectUser(user)"
-          >
-            <span class="name" :style="getUserNameStyle(user)">{{ user.name }}</span>
-            <span class="nickname">{{ formatUsername(user.nickname) }}</span>
-          </button>
-        </div>
+          <div class="directs-block">
+            <div class="section-title">Директы</div>
+            <div class="directs-scroll">
+              <div v-if="!sortedDirectDialogs.length" class="hint">Пока нет сообщений в директах</div>
+              <div class="menu-list">
+                <button
+                  v-for="dialog in sortedDirectDialogs"
+                  :key="dialog.dialogId"
+                  class="menu-item"
+                  :class="{
+                    active: activeDialog?.kind === 'private' && activeDialog?.targetUser?.id === dialog.targetUser.id,
+                    'menu-item-unread': isDirectDialogUnread(dialog.dialogId),
+                  }"
+                  @click="selectDirectDialog(dialog)"
+                >
+                  <span class="name" :style="getUserNameStyle(dialog.targetUser)">{{ dialog.targetUser.name }}</span>
+                  <span class="nickname">{{ formatUsername(dialog.targetUser.nickname) }}</span>
+                  <span v-if="isDirectDialogUnread(dialog.dialogId)" class="direct-unread-dot"/>
+                </button>
+              </div>
+            </div>
+          </div>
 
-        <NuxtLink class="menu-link" to="/invites">Инвайты</NuxtLink>
-        <button class="menu-logout" @click="onLogout">Выйти из аккаунта</button>
+          <div class="drawer-fixed">
+            <div class="section-title">Поиск пользователей</div>
+            <input
+              v-model="searchQuery"
+              class="users-search"
+              type="text"
+              placeholder="Найти пользователя..."
+            />
+            <div v-if="searchQuery.trim() && !filteredUsers.length" class="hint">Ничего не найдено</div>
+            <div class="menu-list users-list">
+              <button
+                v-for="user in filteredUsers"
+                :key="`search-${user.id}`"
+                class="menu-item user-item"
+                :class="{active: activeDialog?.kind === 'private' && activeDialog?.targetUser?.id === user.id}"
+                @click="selectUser(user)"
+              >
+                <span class="name" :style="getUserNameStyle(user)">{{ user.name }}</span>
+                <span class="nickname">{{ formatUsername(user.nickname) }}</span>
+              </button>
+            </div>
+
+            <NuxtLink class="menu-link" to="/invites">Инвайты</NuxtLink>
+            <button class="menu-logout" @click="onLogout">Выйти из аккаунта</button>
+          </div>
+        </div>
       </aside>
 
       <div v-if="isCompactLayout && leftMenuOpen" class="drawer-backdrop" @click="closeLeftMenu"/>
@@ -77,7 +89,7 @@
             class="header-center-btn"
             @click="onGoToGeneralChat"
           >
-            Общий чат
+            Чат
           </button>
           <div class="header-text">
             <div class="title">
@@ -122,7 +134,7 @@
               {{ unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount }}
             </span>
           </button>
-          <button class="icon-btn" @click="toggleRightMenu">⚙</button>
+          <button class="icon-btn icon-cog" @click="toggleRightMenu">⚙</button>
           <div
             v-if="notificationsMenuOpen"
             ref="notificationMenuEl"
