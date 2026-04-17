@@ -10,10 +10,7 @@
   }
 
   .chat-main {
-    --chat-gradient:
-      radial-gradient(940px 520px at -14% -22%, rgba(229, 192, 123, 0.08) 0%, rgba(229, 192, 123, 0) 64%),
-      radial-gradient(900px 540px at 118% -2%, rgba(152, 195, 121, 0.07) 0%, rgba(152, 195, 121, 0) 66%),
-      linear-gradient(160deg, #171b22 0%, #1b2028 46%, #1a1f27 100%);
+    --chat-background-image: url('/chat-bg.webp');
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -23,15 +20,11 @@
   }
 
   .chat-main-general {
-    --chat-gradient:
-      linear-gradient(162deg, #171b22 0%, #1b212a 44%, #1c222c 100%);
+    --chat-background-image: url('/chat-bg.webp');
   }
 
   .chat-main-private {
-    --chat-gradient:
-      radial-gradient(860px 500px at -14% -18%, rgba(198, 120, 221, 0.10) 0%, rgba(198, 120, 221, 0) 64%),
-      radial-gradient(900px 540px at 116% -4%, rgba(224, 108, 117, 0.08) 0%, rgba(224, 108, 117, 0) 66%),
-      linear-gradient(164deg, #161a21 0%, #1a2029 46%, #1b222b 100%);
+    --chat-background-image: url('/chat-bg.webp');
   }
 
   .chat-header {
@@ -39,10 +32,14 @@
     border-bottom: 1px solid var(--border);
     background:
       linear-gradient(180deg, rgba(42, 51, 64, 0.86) 0%, rgba(27, 35, 47, 0.9) 100%);
+    box-shadow:
+      0 10px 24px rgba(4, 8, 14, 0.42),
+      0 1px 0 rgba(170, 188, 208, 0.08);
     display: flex;
     align-items: center;
     gap: 12px;
     position: relative;
+    z-index: 8;
   }
 
   .header-center-btn {
@@ -282,7 +279,16 @@
     min-height: 0;
     padding: 14px 16px;
     overflow-y: auto;
-    background: var(--chat-gradient);
+    background-color: #0e1a2a;
+    background-image: var(--chat-background-image);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+  }
+
+  .chat-feed {
+    width: min(100%, 900px);
+    margin: 0 auto;
   }
 
   .message {
@@ -678,9 +684,14 @@
     display: flex;
     align-items: flex-end;
     gap: 10px;
-    background: var(--bg-elevated);
+    background:
+      linear-gradient(180deg, rgba(16, 22, 31, 0.95) 0%, rgba(28, 36, 50, 0.94) 100%);
+    box-shadow:
+      0 -14px 28px rgba(4, 8, 14, 0.46),
+      0 -1px 0 rgba(170, 188, 208, 0.08);
     width: 100%;
     position: relative;
+    z-index: 8;
   }
 
   .composer-tools {
@@ -835,6 +846,11 @@
     gap: 8px;
   }
 
+  .composer-upload-row {
+    display: flex;
+    gap: 8px;
+  }
+
   .composer-color-picker {
     width: 42px;
     height: 32px;
@@ -850,6 +866,10 @@
     flex: 1;
     min-width: 0;
     font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  }
+
+  .composer-format-btn-upload {
+    width: 100%;
   }
 
   .composer-emoji-grid {
@@ -955,6 +975,10 @@
     color: var(--text-muted);
   }
 
+  .gallery-input {
+    display: none;
+  }
+
   .btn {
     border-radius: 8px;
     background: var(--accent);
@@ -971,11 +995,25 @@
     min-width: 44px;
     width: 44px;
     padding: 10px 0;
-    font-size: 18px;
+    border: 1px solid rgba(119, 157, 192, 0.38);
+    background: linear-gradient(180deg, #4f8abd 0%, #3c6d99 100%);
+    color: #e2ecfa;
     line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .send-btn:hover {
+    background: linear-gradient(180deg, #5c96c8 0%, #477aa6 100%);
+    border-color: rgba(145, 181, 214, 0.52);
+  }
+
+  .send-icon {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+    display: block;
   }
 
   .btn:disabled {
@@ -1273,28 +1311,31 @@
     }
 
     .chat-input {
-      flex-wrap: wrap;
-      align-items: flex-end;
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      align-items: stretch;
+      gap: 8px;
     }
 
     .composer-tools {
-      order: 1;
+      grid-column: 1;
+      grid-row: 2;
     }
 
     .input {
-      order: 2;
-      flex: 1 1 calc(100% - 52px);
+      grid-column: 1 / -1;
+      grid-row: 1;
+      width: 100%;
       min-height: 44px;
     }
 
-    .btn {
-      width: 100%;
-    }
-
     .send-btn {
-      order: 3;
+      grid-column: 2;
+      grid-row: 2;
       width: 100%;
       min-width: 0;
+      height: 44px;
     }
 
     .composer-tools-panel {

@@ -4,9 +4,11 @@
   border-radius: 10px;
   background: linear-gradient(180deg, rgba(20, 30, 40, .2) 0%, rgba(10, 20, 30, .5) 100%);
   margin-bottom: 10px;
+  margin-right: 22px;
 
   &.message-own {
     margin-left: 22px;
+    margin-right: 0;
     background: linear-gradient(180deg, rgba(20, 30, 40, .5) 0%, rgba(10, 20, 30, .8) 100%);
     border-color: rgba(97, 175, 239, 0.3);
   }
@@ -109,6 +111,29 @@
 
   .message-body :deep(a) {
     color: var(--accent);
+  }
+
+  .message-body :deep(.inline-image-link) {
+    display: inline-block;
+    max-width: min(100%, 460px);
+    margin: 8px 0;
+    vertical-align: top;
+  }
+
+  .message-body :deep(.preview-inline-image) {
+    display: block;
+    max-height: 300px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .message-body :deep(.preview-image) {
+    max-height: 300px;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
   }
 
   .message-body :deep(.mention-token) {
@@ -245,7 +270,7 @@
   }
 
   .preview-media {
-    max-height: 280px;
+    max-height: 300px;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: #111722;
@@ -255,6 +280,7 @@
   .preview-image {
     width: auto;
     max-width: 100%;
+    max-height: 300px;
     height: auto;
     object-fit: contain;
     background: transparent;
@@ -398,8 +424,11 @@
 
 @media (max-width: 860px) {
   .chat-message-item {
+    margin-right: 12px;
+
     &.message-own {
       margin-left: 12px;
+      margin-right: 0;
     }
 
     .time {

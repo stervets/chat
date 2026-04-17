@@ -1,14 +1,13 @@
-const COLOR_NAME_WHITELIST = new Set([
-  'red',
-  'green',
-  'blue',
-  'yellow',
-  'orange',
-  'gray',
-  'grey',
-  'cyan',
-  'purple',
-]);
+const NAMED_COLOR_MAP: Record<string, string> = {
+  red: '#ff5d5d',
+  green: '#79d279',
+  blue: '#6aa8ff',
+  yellow: '#ffd75f',
+  orange: '#ff9f43',
+  gray: '#9ba7b8',
+  cyan: '#56d7ff',
+  purple: '#be8cff',
+};
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const NAME_COLOR_RE = /^#[a-zA-Z]+$/;
@@ -33,8 +32,9 @@ function validateColor(rawColor: string) {
   if (!NAME_COLOR_RE.test(rawColor)) return null;
 
   const name = rawColor.slice(1).toLowerCase();
-  if (!COLOR_NAME_WHITELIST.has(name)) return null;
-  return name;
+  const mapped = NAMED_COLOR_MAP[name];
+  if (!mapped) return null;
+  return mapped;
 }
 
 function tryParseTagSpec(source: string, index: number): TagSpec | null {

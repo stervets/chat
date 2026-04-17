@@ -63,7 +63,6 @@ const COMPOSER_NAMED_COLORS = [
   {name: 'yellow', swatch: '#ffd75f'},
   {name: 'orange', swatch: '#ff9f43'},
   {name: 'gray', swatch: '#9ba7b8'},
-  {name: 'grey', swatch: '#8e99aa'},
   {name: 'cyan', swatch: '#56d7ff'},
   {name: 'purple', swatch: '#be8cff'},
 ];
@@ -98,6 +97,7 @@ export default {
       historyLoadSeq: ref(0),
       messagesEl: ref<HTMLDivElement | null>(null),
       messageInputEl: ref<HTMLTextAreaElement | null>(null),
+      galleryInputEl: ref<HTMLInputElement | null>(null),
       showScrollDown: ref(false),
       forceOwnScrollDown: ref(false),
       blinkMessageId: ref<number | null>(null),
@@ -325,20 +325,29 @@ export default {
       const colorName = String(colorNameRaw || '').trim().toLowerCase();
       if (!colorName) return;
       this.applyWrapperToSelection(`c#${colorName}(`);
+      this.closeComposerTools();
     },
 
     applyCustomColorWrapper(this: any) {
       const color = String(this.composerColorPicker || '').trim();
-      if (!COLOR_HEX_FULL_RE.test(color)) return;
+      if (!COLOR_HEX_FULL_RE.test(color)) {
+        this.closeComposerTools();
+        return;
+      }
       const normalized = color.toUpperCase();
       this.composerColorPicker = normalized;
       this.applyWrapperToSelection(`c${normalized}(`);
+      this.closeComposerTools();
     },
 
     applyFormatWrapper(this: any, tagRaw: unknown) {
       const tag = String(tagRaw || '').trim().toLowerCase();
-      if (!['b', 'u', 's', 'h', 'm'].includes(tag)) return;
+      if (!['b', 'u', 's', 'h', 'm'].includes(tag)) {
+        this.closeComposerTools();
+        return;
+      }
       this.applyWrapperToSelection(`${tag}(`);
+      this.closeComposerTools();
     },
 
     insertComposerText(this: any, textRaw: unknown) {
@@ -354,8 +363,70 @@ export default {
 
     onComposerEmojiClick(this: any, emojiRaw: unknown) {
       const emoji = String(emojiRaw || '');
-      if (!emoji) return;
+      if (!emoji) {
+        this.closeComposerTools();
+        return;
+      }
       this.insertComposerText(emoji);
+      this.closeComposerTools();
+    },
+
+    openGalleryPicker(this: any) {
+      const input = this.galleryInputEl as HTMLInputElement | null;
+      if (!input) {
+        this.closeComposerTools();
+        return;
+      }
+      this.closeComposerTools();
+      input.click();
+    },
+
+    async attachImageFiles(this: any, filesRaw: File[]) {
+      const files = Array.isArray(filesRaw) ? filesRaw : [];
+      if (!files.length) return;
+      if (!this.activeDialog || this.pasteUploading) return;
+
+      this.pasteUploading = true;
+      this.error = '';
+
+      try {
+        for (const sourceFile of files) {
+          const preparedFile = await this.preparePastedImage(sourceFile);
+          if (!preparedFile) {
+            this.error = 'Картинка слишком большая даже после сжатия.';
+            continue;
+          }
+
+          const uploadResult = await this.uploadImageFile(preparedFile);
+          if (!(uploadResult as any)?.ok || !(uploadResult as any)?.url) {
+            this.error = 'Не удалось загрузить картинку.';
+            continue;
+          }
+
+          const url = String((uploadResult as any).url || '').trim();
+          if (!url) {
+            this.error = 'Не удалось загрузить картинку.';
+            continue;
+          }
+
+          this.appendToInput(url);
+        }
+      } finally {
+        this.pasteUploading = false;
+        this.focusMessageInputToEnd();
+      }
+    },
+
+    async onGalleryInputChange(this: any, event: Event) {
+      const input = event.target as HTMLInputElement | null;
+      const files = input?.files ? Array.from(input.files) : [];
+      if (!files.length) {
+        if (input) input.value = '';
+        return;
+      }
+
+      await this.attachImageFiles(files);
+      if (input) input.value = '';
     },
 
     async copyTextToClipboard(this: any, textRaw: unknown) {
@@ -1740,36 +1811,7 @@ export default {
       if (!files.length) return;
 
       event.preventDefault();
-      if (!this.activeDialog || this.pasteUploading) return;
-
-      this.pasteUploading = true;
-      this.error = '';
-
-      try {
-        for (const sourceFile of files) {
-          const preparedFile = await this.preparePastedImage(sourceFile);
-          if (!preparedFile) {
-            this.error = 'Картинка слишком большая даже после сжатия.';
-            continue;
-          }
-
-          const uploadResult = await this.uploadImageFile(preparedFile);
-          if (!(uploadResult as any)?.ok || !(uploadResult as any)?.url) {
-            this.error = 'Не удалось загрузить картинку.';
-            continue;
-          }
-
-          const url = String((uploadResult as any).url || '').trim();
-          if (!url) {
-            this.error = 'Не удалось загрузить картинку.';
-            continue;
-          }
-          this.appendToInput(url);
-        }
-      } finally {
-        this.pasteUploading = false;
-        this.focusMessageInputToEnd();
-      }
+      await this.attachImageFiles(files);
     },
 
     onKeydown(this: any, event: KeyboardEvent) {

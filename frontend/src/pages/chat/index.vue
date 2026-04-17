@@ -160,47 +160,49 @@
         </div>
 
         <div class="chat-body" ref="messagesEl" @scroll="onMessagesScroll">
-          <div v-if="historyLoading" class="hint">Загрузка...</div>
-          <div v-else-if="!messages.length" class="hint">Нет сообщений</div>
-          <ChatMessageItem
-            v-for="(message, messageIndex) in messages"
-            :key="message.id"
-            :message="message"
-            :message-index="messageIndex"
-            :me-id="me?.id || null"
-            :is-mentioned-for-me="isMentionedForMe(message)"
-            :is-blink-target="blinkMessageId === message.id"
-            :is-editing="editingMessageId === message.id"
-            :editing-message-text="editingMessageText"
-            :message-action-pending-id="messageActionPendingId"
-            :can-open-direct="canOpenDirectFromMessage(message)"
-            :author-style="getAuthorStyle(message)"
-            :formatted-username="formatUsername(message.authorNickname)"
-            :formatted-time="formatMessageTime(message.createdAt)"
-            :rendered-html="getRenderedMessageHtml(message, messageIndex)"
-            :extra-previews="getMessageExtraPreviews(message)"
-            :reaction-picker-open="reactionPickerMessageId === message.id"
-            :reaction-palette="reactionPalette()"
-            @update:editing-message-text="onEditingMessageTextUpdate"
-            @author-click="onAuthorClick"
-            @direct-jump-click="onDirectFromMessageClick"
-            @time-click="onMessageTimeClick"
-            @start-edit="startMessageEdit"
-            @delete-message="deleteOwnMessage"
-            @edit-input-keydown="onEditMessageKeydown"
-            @save-edit="saveMessageEdit"
-            @cancel-edit="cancelMessageEdit"
-            @message-body-click="onMessageBodyClick"
-            @message-body-mousemove="onMessageBodyMouseMove"
-            @message-body-mouseleave="onMessageBodyMouseLeave"
-            @toggle-reaction-picker="toggleReactionPicker"
-            @reaction-select="onReactionSelect"
-            @reaction-chip-click="onReactionChipClick"
-            @reaction-mouseenter="onReactionMouseEnter"
-            @reaction-mousemove="onReactionMouseMove"
-            @reaction-mouseleave="onReactionMouseLeave"
-          />
-          <div v-if="error" class="error">{{ error }}</div>
+          <div class="chat-feed">
+            <div v-if="historyLoading" class="hint">Загрузка...</div>
+            <div v-else-if="!messages.length" class="hint">Нет сообщений</div>
+            <ChatMessageItem
+              v-for="(message, messageIndex) in messages"
+              :key="message.id"
+              :message="message"
+              :message-index="messageIndex"
+              :me-id="me?.id || null"
+              :is-mentioned-for-me="isMentionedForMe(message)"
+              :is-blink-target="blinkMessageId === message.id"
+              :is-editing="editingMessageId === message.id"
+              :editing-message-text="editingMessageText"
+              :message-action-pending-id="messageActionPendingId"
+              :can-open-direct="canOpenDirectFromMessage(message)"
+              :author-style="getAuthorStyle(message)"
+              :formatted-username="formatUsername(message.authorNickname)"
+              :formatted-time="formatMessageTime(message.createdAt)"
+              :rendered-html="getRenderedMessageHtml(message, messageIndex)"
+              :extra-previews="getMessageExtraPreviews(message)"
+              :reaction-picker-open="reactionPickerMessageId === message.id"
+              :reaction-palette="reactionPalette()"
+              @update:editing-message-text="onEditingMessageTextUpdate"
+              @author-click="onAuthorClick"
+              @direct-jump-click="onDirectFromMessageClick"
+              @time-click="onMessageTimeClick"
+              @start-edit="startMessageEdit"
+              @delete-message="deleteOwnMessage"
+              @edit-input-keydown="onEditMessageKeydown"
+              @save-edit="saveMessageEdit"
+              @cancel-edit="cancelMessageEdit"
+              @message-body-click="onMessageBodyClick"
+              @message-body-mousemove="onMessageBodyMouseMove"
+              @message-body-mouseleave="onMessageBodyMouseLeave"
+              @toggle-reaction-picker="toggleReactionPicker"
+              @reaction-select="onReactionSelect"
+              @reaction-chip-click="onReactionChipClick"
+              @reaction-mouseenter="onReactionMouseEnter"
+              @reaction-mousemove="onReactionMouseMove"
+              @reaction-mouseleave="onReactionMouseLeave"
+            />
+            <div v-if="error" class="error">{{ error }}</div>
+          </div>
         </div>
         <button
           v-if="showScrollDown"
@@ -272,6 +274,11 @@
                     c{{ composerColorPicker.toUpperCase() }}
                   </button>
                 </div>
+                <div class="composer-upload-row">
+                  <button class="composer-format-btn composer-format-btn-upload" @click="openGalleryPicker">
+                    Из галереи
+                  </button>
+                </div>
               </div>
 
               <div class="composer-section">
@@ -303,8 +310,18 @@
             @keydown="onKeydown"
             @paste="onInputPaste"
           />
+          <input
+            ref="galleryInputEl"
+            class="gallery-input"
+            type="file"
+            accept="image/*"
+            multiple
+            @change="onGalleryInputChange"
+          />
           <button class="btn send-btn" aria-label="Отправить сообщение" title="Отправить сообщение" @click="onSend">
-            ⮞
+            <svg viewBox="0 0 24 24" class="send-icon" aria-hidden="true">
+              <path d="M3.5 11.8 19.8 4.5c.8-.4 1.6.4 1.2 1.2l-7.3 16.3c-.4.9-1.7.8-2-.1L9.9 15 3.6 13.2c-.9-.3-1-.9-.1-1.4Z"/>
+            </svg>
           </button>
         </div>
         <div v-if="pasteUploading" class="upload-hint">Загружаю картинку...</div>
