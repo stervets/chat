@@ -111,13 +111,13 @@
       >
         <header class="chat-header">
           <button class="icon-btn" @click="toggleLeftMenu">☰</button>
-          <button
+          <!--button
             v-if="activeDialog?.kind === 'private'"
             class="header-center-btn"
             @click="onGoToGeneralChat"
           >
             Чат
-          </button>
+          </button-->
           <div class="header-text">
             <div class="title">
               {{ activeDialog?.kind === 'general' ? 'Общий чат' : (activeDialog?.title || 'Чат') }}

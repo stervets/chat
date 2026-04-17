@@ -185,39 +185,34 @@
   }
 
   .message-body :deep(.message-spoiler) {
-    position: relative;
     display: inline-block;
     border-radius: 2px;
-    padding: 0 4px;
-    color: transparent !important;
-    -webkit-text-fill-color: transparent;
+    padding: 0 2px;
     cursor: pointer;
     user-select: none;
-    transition: color .16s ease;
+    filter: blur(8px);
+    -webkit-filter: blur(8px);
+    transition: filter .2s ease;
+  }
+
+  .message-body :deep(.message-spoiler:hover) {
+    filter: blur(6px);
+    -webkit-filter: blur(6px);
   }
 
   .message-body :deep(.message-spoiler *) {
-    color: transparent !important;
-    -webkit-text-fill-color: transparent;
+    color: inherit !important;
+    -webkit-text-fill-color: currentColor;
   }
 
   .message-body :deep(.message-spoiler::after) {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    background-color: #506070;
-    //background: linear-gradient(90deg, rgba(133, 145, 164, 0.0) 0%, rgba(162, 175, 195, 0.4) 45%, rgba(123, 136, 156, 0.2) 100%);
-    //box-shadow: inset 0 0 0 1px rgba(184, 196, 215, 0.28);
-    pointer-events: none;
-    //animation: spoiler-shimmer 1.65s linear infinite;
-    transition: opacity .18s ease;
+    display: none;
   }
 
   .message-body.message-body-show-hidden :deep(.message-spoiler),
   .message-body :deep(.message-spoiler.message-spoiler-revealed) {
-    color: inherit !important;
-    -webkit-text-fill-color: currentColor;
+    filter: none;
+    -webkit-filter: none;
     user-select: text;
   }
 
@@ -229,8 +224,7 @@
 
   .message-body.message-body-show-hidden :deep(.message-spoiler::after),
   .message-body :deep(.message-spoiler.message-spoiler-revealed::after) {
-    opacity: 0;
-    animation: none;
+    display: none;
   }
 
   .message-edit {

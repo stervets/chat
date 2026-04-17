@@ -49,6 +49,8 @@ type ToastItem = {
   body: string;
 };
 
+type RouteMode = 'push' | 'replace' | 'none';
+
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const MENTION_TAG_RE = /@([a-zA-Z0-9._-]+)/g;
 const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
@@ -80,6 +82,11 @@ const NOTIFICATION_SOUND_VOLUME = 0.35;
 const BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY = 'chat:browser-notifications-enabled:v1';
 const MAX_ACTIVE_BROWSER_NOTIFICATIONS = 6;
 
+type SoundRuntimeState = {
+  overlayHandled: boolean;
+  soundReady: boolean;
+};
+
 export default {
   components: {
     ChatMessageItem,
@@ -88,6 +95,7 @@ export default {
   async setup() {
     return {
       router: useRouter(),
+      route: useRoute(),
 
       me: ref<User | null>(null),
       users: ref<User[]>([]),
@@ -167,6 +175,7 @@ export default {
       browserNotificationsEnabled: ref(true),
       browserNotificationPermission: ref<'default' | 'denied' | 'granted'>('default'),
       activeBrowserNotifications: ref<Notification[]>([]),
+      routeSyncReady: ref(false),
 
       newPassword: ref(''),
       pasteUploading: ref(false),
@@ -261,6 +270,13 @@ export default {
       const total = Math.max(0, Number(this.virtualTotalHeight || 0));
       if (!prefix.length || end >= prefix.length) return 0;
       return Math.max(0, total - Number(prefix[end] || 0));
+    },
+  },
+
+  watch: {
+    'route.fullPath'(this: any) {
+      if (!this.routeSyncReady) return;
+      void this.onRouteChanged();
     },
   },
 
@@ -367,25 +383,32 @@ export default {
       window.localStorage.setItem(SOUND_ENABLED_STORAGE_KEY, this.soundEnabled ? '1' : '0');
     },
 
+    getSoundRuntimeState(this: any): SoundRuntimeState {
+      if (typeof window === 'undefined') {
+        return {
+          overlayHandled: false,
+          soundReady: false,
+        };
+      }
+
+      const key = '__marxSoundRuntimeState';
+      const runtime = (window as any)[key] as SoundRuntimeState | undefined;
+      if (runtime) return runtime;
+
+      const next: SoundRuntimeState = {
+        overlayHandled: false,
+        soundReady: false,
+      };
+      (window as any)[key] = next;
+      return next;
+    },
+
     consumeSoundOverlaySkipOnce(this: any) {
       if (typeof window === 'undefined') return false;
       const raw = window.sessionStorage.getItem(SOUND_OVERLAY_SKIP_ONCE_KEY);
       if (raw !== '1') return false;
       window.sessionStorage.removeItem(SOUND_OVERLAY_SKIP_ONCE_KEY);
       return true;
-    },
-
-    isReloadNavigation(this: any) {
-      if (typeof window === 'undefined') return false;
-      if (typeof performance === 'undefined') return false;
-
-      const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
-      if (Array.isArray(navEntries) && navEntries.length) {
-        return navEntries[0]?.type === 'reload';
-      }
-
-      const legacyNavigation = (performance as any).navigation;
-      return Number(legacyNavigation?.type) === 1;
     },
 
     ensureNotificationAudio(this: any) {
@@ -402,14 +425,20 @@ export default {
     markSoundReady(this: any) {
       if (!this.soundEnabled) return;
       this.soundReady = true;
+      const runtime = this.getSoundRuntimeState();
+      runtime.soundReady = true;
+      runtime.overlayHandled = true;
       this.ensureNotificationAudio();
     },
 
     resolveSoundStartupState(this: any) {
+      const runtime = this.getSoundRuntimeState();
       this.loadSoundEnabledSetting();
       if (!this.soundEnabled) {
         this.soundOverlayVisible = false;
         this.soundReady = false;
+        runtime.overlayHandled = true;
+        runtime.soundReady = false;
         return;
       }
 
@@ -420,14 +449,22 @@ export default {
         return;
       }
 
-      if (this.isReloadNavigation()) {
-        this.soundOverlayVisible = true;
+      if (runtime.soundReady) {
+        this.soundOverlayVisible = false;
+        this.soundReady = true;
+        runtime.overlayHandled = true;
+        return;
+      }
+
+      if (runtime.overlayHandled) {
+        this.soundOverlayVisible = false;
         this.soundReady = false;
         return;
       }
 
-      this.soundOverlayVisible = false;
-      this.markSoundReady();
+      this.soundOverlayVisible = true;
+      this.soundReady = false;
+      runtime.overlayHandled = true;
     },
 
     async playNotificationSound(this: any) {
@@ -453,13 +490,17 @@ export default {
     },
 
     onSoundEnabledChange(this: any) {
+      const runtime = this.getSoundRuntimeState();
       this.soundEnabled = !!this.soundEnabled;
       this.persistSoundEnabledSetting();
       if (!this.soundEnabled) {
         this.soundOverlayVisible = false;
         this.soundReady = false;
+        runtime.overlayHandled = true;
+        runtime.soundReady = false;
         return;
       }
+      runtime.overlayHandled = true;
       this.markSoundReady();
     },
 
@@ -569,6 +610,128 @@ export default {
       if (!this.browserNotificationsEnabled) return;
       if (this.browserNotificationPermission !== 'default') return;
       void this.requestBrowserNotificationPermission();
+    },
+
+    normalizeRouteNickname(this: any, nicknameRaw: unknown) {
+      return String(nicknameRaw || '').trim().toLowerCase();
+    },
+
+    buildDirectRoutePath(this: any, nicknameRaw: unknown) {
+      const nickname = this.normalizeRouteNickname(nicknameRaw);
+      if (!nickname) return '/chat';
+      return `/direct/${encodeURIComponent(nickname)}`;
+    },
+
+    getDirectNicknameFromRoute(this: any) {
+      const path = String(this.route?.path || '');
+      if (!path.startsWith('/direct/')) return '';
+
+      const raw = Array.isArray(this.route?.params?.username)
+        ? this.route.params.username[0]
+        : this.route?.params?.username;
+      const decoded = decodeURIComponent(String(raw || ''));
+      return this.normalizeRouteNickname(decoded);
+    },
+
+    findUserByNickname(this: any, nicknameRaw: unknown) {
+      const nickname = this.normalizeRouteNickname(nicknameRaw);
+      if (!nickname) return null;
+
+      const fromUsers = this.users.find((user: User) => user.nickname.toLowerCase() === nickname);
+      if (fromUsers) return fromUsers;
+
+      const fromDirects = this.directDialogs
+        .map((dialog: DirectDialog) => dialog.targetUser)
+        .find((user: User) => user.nickname.toLowerCase() === nickname);
+      if (fromDirects) return fromDirects;
+
+      return null;
+    },
+
+    async syncRouteForDialog(this: any, dialog: Dialog, modeRaw?: RouteMode) {
+      const mode = modeRaw || 'push';
+      if (mode === 'none') return;
+
+      const targetPath = dialog.kind === 'private'
+        ? this.buildDirectRoutePath(dialog.targetUser?.nickname)
+        : '/chat';
+      const currentPath = String(this.route?.path || '');
+      if (currentPath === targetPath) return;
+
+      if (mode === 'replace') {
+        await this.router.replace(targetPath);
+        return;
+      }
+      await this.router.push(targetPath);
+    },
+
+    async syncDialogFromRoute(this: any, optionsRaw?: {replaceInvalid?: boolean}) {
+      const replaceInvalid = optionsRaw?.replaceInvalid !== false;
+      const directNickname = this.getDirectNicknameFromRoute();
+      if (!directNickname) {
+        if (this.generalDialog) {
+          await this.selectDialog(this.generalDialog, {routeMode: 'none'});
+          if (replaceInvalid && String(this.route?.path || '') !== '/chat') {
+            await this.router.replace('/chat');
+          }
+        }
+        return;
+      }
+
+      const targetUser = this.findUserByNickname(directNickname);
+      if (!targetUser || targetUser.id === this.me?.id) {
+        if (replaceInvalid) {
+          await this.router.replace('/chat');
+        }
+        if (this.generalDialog) {
+          await this.selectDialog(this.generalDialog, {routeMode: 'none'});
+        }
+        return;
+      }
+
+      await this.selectPrivate(targetUser, {
+        routeMode: 'none',
+        closeMenu: false,
+        refreshDirects: true,
+      });
+
+      const canonicalPath = this.buildDirectRoutePath(targetUser.nickname);
+      if (String(this.route?.path || '') !== canonicalPath) {
+        await this.router.replace(canonicalPath);
+      }
+    },
+
+    async onRouteChanged(this: any) {
+      if (!this.routeSyncReady || !this.generalDialog) return;
+
+      const path = String(this.route?.path || '');
+      if (path === '/chat') {
+        if (this.activeDialog?.kind === 'general') return;
+        await this.selectGeneral({routeMode: 'none', closeMenu: false});
+        return;
+      }
+
+      const directNickname = this.getDirectNicknameFromRoute();
+      if (!directNickname) return;
+
+      if (
+        this.activeDialog?.kind === 'private'
+        && this.normalizeRouteNickname(this.activeDialog?.targetUser?.nickname) === directNickname
+      ) {
+        return;
+      }
+
+      const targetUser = this.findUserByNickname(directNickname);
+      if (!targetUser || targetUser.id === this.me?.id) {
+        await this.selectGeneral({routeMode: 'replace', closeMenu: false});
+        return;
+      }
+
+      await this.selectPrivate(targetUser, {
+        routeMode: 'none',
+        closeMenu: false,
+        refreshDirects: true,
+      });
     },
 
     isDirectDialogUnread(this: any, dialogIdRaw: unknown) {
@@ -2260,7 +2423,7 @@ export default {
       }
     },
 
-    async selectDialog(this: any, dialog: Dialog) {
+    async selectDialog(this: any, dialog: Dialog, optionsRaw?: {routeMode?: RouteMode}) {
       const seq = this.historyLoadSeq + 1;
       this.historyLoadSeq = seq;
       this.activeDialog = dialog;
@@ -2277,24 +2440,31 @@ export default {
       this.virtualRangeEnd = 0;
       await this.loadHistory(dialog.id, seq);
       await this.joinDialog(dialog.id);
+      await this.syncRouteForDialog(dialog, optionsRaw?.routeMode || 'push');
     },
 
-    async selectGeneral(this: any) {
+    async selectGeneral(this: any, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean}) {
       if (!this.generalDialog) return;
-      await this.selectDialog(this.generalDialog);
-      this.closeLeftMenu();
+      await this.selectDialog(this.generalDialog, {routeMode: optionsRaw?.routeMode || 'push'});
+      if (optionsRaw?.closeMenu !== false) {
+        this.closeLeftMenu();
+      }
     },
 
     async onGoToGeneralChat(this: any) {
       await this.selectGeneral();
     },
 
-    async selectPrivate(this: any, user: User) {
+    async selectPrivate(this: any, user: User, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; refreshDirects?: boolean}) {
       const dialog = await this.fetchPrivateDialog(user);
       if (!dialog) return;
-      await this.selectDialog(dialog);
-      this.closeLeftMenu();
-      await this.fetchDirectDialogs();
+      await this.selectDialog(dialog, {routeMode: optionsRaw?.routeMode || 'push'});
+      if (optionsRaw?.closeMenu !== false) {
+        this.closeLeftMenu();
+      }
+      if (optionsRaw?.refreshDirects !== false) {
+        await this.fetchDirectDialogs();
+      }
     },
 
     async selectUser(this: any, user: User) {
@@ -2307,7 +2477,7 @@ export default {
         kind: 'private',
         targetUser: dialog.targetUser,
         title: dialog.targetUser.name,
-      });
+      }, {routeMode: 'push'});
       this.closeLeftMenu();
     },
 
@@ -2750,7 +2920,7 @@ export default {
       this.resetMessagePreviewCache();
 
       if (this.generalDialog) {
-        await this.selectDialog(this.generalDialog);
+        await this.selectDialog(this.generalDialog, {routeMode: 'replace'});
       } else {
         this.activeDialog = null;
       }
@@ -2873,9 +3043,8 @@ export default {
     await this.fetchUsers();
     await this.fetchDirectDialogs();
 
-    if (this.generalDialog) {
-      await this.selectDialog(this.generalDialog);
-    }
+    await this.syncDialogFromRoute({replaceInvalid: true});
+    this.routeSyncReady = true;
     this.scheduleVirtualSync();
   },
 
