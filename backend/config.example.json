@@ -11,6 +11,6 @@
     "maxBytes": 1048576
   },
   "db": {
-    "path": "./data/marx.sqlite"
+    "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"
   }
 }

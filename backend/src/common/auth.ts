@@ -22,57 +22,64 @@ export async function verifyPassword(hash: string, password: string) {
   return argon2.verify(hash, password);
 }
 
-export function createSession(userId: number, meta?: {ip?: string | null; userAgent?: string | null}) {
+export async function createSession(userId: number, meta?: {ip?: string | null; userAgent?: string | null}) {
   const sessionId = randomUUID();
   const token = randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAtDate = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
   const ip = meta?.ip || null;
   const userAgent = meta?.userAgent || null;
 
-  db.prepare(
-    'insert into sessions (id, user_id, token, expires_at, ip, user_agent) values (?, ?, ?, ?, ?, ?)'
-  ).run(sessionId, userId, token, expiresAt, ip, userAgent);
+  await db.session.create({
+    data: {
+      id: sessionId,
+      userId,
+      token,
+      expiresAt: expiresAtDate,
+      ip,
+      userAgent,
+    },
+  });
 
-  return {token, expiresAt};
+  return {token, expiresAt: expiresAtDate.toISOString()};
 }
 
-export function resolveSession(token: string): ResolvedSession | null {
-  const nowIso = new Date().toISOString();
-  const row = db.prepare(
-    `select
-       s.token as token,
-       s.expires_at as "expiresAt",
-       u.id as userId,
-       u.nickname as nickname,
-       u.name as name,
-       u.nickname_color as "nicknameColor"
-     from sessions s
-     join users u on u.id = s.user_id
-     where s.token = ? and s.expires_at > ?
-     limit 1`
-  ).get(token, nowIso) as {
-    token: string;
-    expiresAt: string;
-    userId: number;
-    nickname: string;
-    name: string;
-    nicknameColor: string | null;
-  } | undefined;
+export async function resolveSession(token: string): Promise<ResolvedSession | null> {
+  const now = new Date();
+  const row = await db.session.findFirst({
+    where: {
+      token,
+      expiresAt: {
+        gt: now,
+      },
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          nickname: true,
+          name: true,
+          nicknameColor: true,
+        },
+      },
+    },
+  });
 
-  if (!row) return null;
+  if (!row || !row.user) return null;
 
   return {
     token: row.token,
-    expiresAt: row.expiresAt,
+    expiresAt: row.expiresAt.toISOString(),
     user: {
-      id: row.userId,
-      nickname: row.nickname,
-      name: row.name || row.nickname,
-      nicknameColor: row.nicknameColor || DEFAULT_NICKNAME_COLOR,
+      id: row.user.id,
+      nickname: row.user.nickname,
+      name: row.user.name || row.user.nickname,
+      nicknameColor: row.user.nicknameColor || DEFAULT_NICKNAME_COLOR,
     },
   };
 }
 
-export function revokeSession(token: string) {
-  return db.prepare('delete from sessions where token = ?').run(token);
+export async function revokeSession(token: string) {
+  return db.session.deleteMany({
+    where: {token},
+  });
 }

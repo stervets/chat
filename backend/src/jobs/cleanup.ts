@@ -1,5 +1,6 @@
 import {config} from '../config.js';
-import type {DatabaseSync} from 'node:sqlite';
+import {Prisma} from '@prisma/client';
+import {db} from '../db.js';
 import {pruneExpiredUploads} from '../common/uploads.js';
 
 const MOSCOW_UTC_OFFSET_MS = 3 * 60 * 60 * 1000;
@@ -11,29 +12,33 @@ type CleanupLogger = {
   error: (obj: Record<string, unknown>, msg: string) => void;
 };
 
-export async function runMessagesCleanup(db: DatabaseSync, logger: CleanupLogger = console as CleanupLogger) {
+export async function runMessagesCleanup(logger: CleanupLogger = console as CleanupLogger) {
   const ttlDays = Math.max(1, Math.floor(config.messagesTtlDays || 1));
   try {
-    const cutoff = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000).toISOString();
+    const cutoffDate = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
     const cutoffMs = Date.now() - ttlDays * 24 * 60 * 60 * 1000;
-    const ttlResult = db.prepare(
-      'delete from messages where created_at < ?'
-    ).run(cutoff);
-    const limitResult = db.prepare(
-      `delete from messages
-       where id in (
-         select id from (
-           select
-             id,
-             row_number() over (partition by dialog_id order by created_at desc, id desc) as rn
-           from messages
-         ) ranked
-         where rn > ?
-       )`
-    ).run(MAX_MESSAGES_PER_DIALOG);
+    const ttlResult = await db.message.deleteMany({
+      where: {
+        createdAt: {lt: cutoffDate},
+      },
+    });
+    const limitResult = await db.$executeRaw(
+      Prisma.sql`
+        delete from messages
+        where id in (
+          select id from (
+            select
+              id,
+              row_number() over (partition by dialog_id order by created_at desc, id desc) as rn
+            from messages
+          ) ranked
+          where rn > ${MAX_MESSAGES_PER_DIALOG}
+        )
+      `
+    );
     const uploadsDeleted = pruneExpiredUploads(cutoffMs);
-    const deletedByTtl = Number(ttlResult.changes);
-    const deletedByLimit = Number(limitResult.changes);
+    const deletedByTtl = Number(ttlResult.count);
+    const deletedByLimit = Number(limitResult || 0);
     logger.info({
       deletedByTtl,
       deletedByLimit,
@@ -59,11 +64,11 @@ function msUntilNextMoscowCleanup(nowMs = Date.now()) {
   return Math.max(1000, nextUtcMs - nowMs);
 }
 
-export function registerCleanupJob(db: DatabaseSync, logger: CleanupLogger = console as CleanupLogger) {
+export function registerCleanupJob(logger: CleanupLogger = console as CleanupLogger) {
   const scheduleNext = () => {
     const delayMs = msUntilNextMoscowCleanup();
     const timer = setTimeout(() => {
-      void runMessagesCleanup(db, logger).finally(() => {
+      void runMessagesCleanup(logger).finally(() => {
         scheduleNext();
       });
     }, delayMs);

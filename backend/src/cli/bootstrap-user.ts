@@ -19,27 +19,29 @@ const run = async () => {
     process.exit(1);
   }
 
-  const row = db.prepare('select count(*) as c from users').get() as {c?: number} | undefined;
-  const usersCount = row?.c || 0;
+  const usersCount = await db.user.count();
   if (usersCount > 0) {
     process.stderr.write('Users already exist. Bootstrap is only for the first user.\n');
     process.exit(1);
   }
 
   const passwordHash = await hashPassword(password);
-  const insert = db.prepare(
-    'insert into users (nickname, name, nickname_color, password_hash) values (?, ?, ?, ?)'
-  ).run(nickname, nickname, DEFAULT_NICKNAME_COLOR, passwordHash);
+  const created = await db.user.create({
+    data: {
+      nickname,
+      nicknameNormalized: nickname,
+      name: nickname,
+      nicknameColor: DEFAULT_NICKNAME_COLOR,
+      passwordHash,
+    },
+    select: {id: true},
+  });
 
-  process.stdout.write(`Created user id ${Number(insert.lastInsertRowid)}\n`);
-  closeDb();
+  process.stdout.write(`Created user id ${created.id}\n`);
+  await closeDb();
 };
 
 run().catch((err) => {
   console.error(err);
-  try {
-    closeDb();
-  } finally {
-    process.exit(1);
-  }
+  void closeDb().finally(() => process.exit(1));
 });

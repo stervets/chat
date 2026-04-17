@@ -4,7 +4,7 @@ import {Logger} from '@nestjs/common';
 import {WsAdapter} from '@nestjs/platform-ws';
 import {AppModule} from './app.module.js';
 import {config} from './config.js';
-import {checkDb, closeDb, db} from './db.js';
+import {checkDb, closeDb} from './db.js';
 import {registerCleanupJob, runMessagesCleanup} from './jobs/cleanup.js';
 import {BACKEND_PEER_ID} from './ws/protocol.js';
 
@@ -21,21 +21,21 @@ async function bootstrap() {
   });
 
   try {
-    checkDb();
-    logger.log('SQLite connection OK');
+    await checkDb();
+    logger.log('PostgreSQL connection OK');
   } catch (err) {
-    logger.error('SQLite connection failed');
+    logger.error('PostgreSQL connection failed');
     await closeDb();
     process.exit(1);
     return;
   }
 
-  await runMessagesCleanup(db, {
+  await runMessagesCleanup({
     info: (obj, msg) => logger.log(`${msg} ${JSON.stringify(obj)}`),
     error: (obj, msg) => logger.error(`${msg} ${JSON.stringify(obj)}`),
   });
 
-  registerCleanupJob(db, {
+  registerCleanupJob({
     info: (obj, msg) => logger.log(`${msg} ${JSON.stringify(obj)}`),
     error: (obj, msg) => logger.error(`${msg} ${JSON.stringify(obj)}`),
   });

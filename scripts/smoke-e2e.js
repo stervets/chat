@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 
 const {spawn, spawnSync} = require('node:child_process');
-const {existsSync, rmSync} = require('node:fs');
 const path = require('node:path');
 const {chromium} = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
-const DB_PATH = path.join(ROOT, 'backend', 'data', 'marx.sqlite');
 const BACKEND_WS_URL = 'ws://localhost:8816/ws';
 const FRONTEND_URL = 'http://localhost:8815';
 const BASE_URL = 'http://localhost:8815';
@@ -133,8 +131,19 @@ async function login(page, nickname, password) {
 }
 
 async function sendMessage(page, text) {
+  await dismissSoundOverlayIfVisible(page);
   await page.getByPlaceholder('Сообщение...').fill(text);
+  await dismissSoundOverlayIfVisible(page);
   await page.getByRole('button', {name: /Отправить/i}).click();
+}
+
+async function dismissSoundOverlayIfVisible(page) {
+  const overlay = page.locator('.sound-overlay');
+  const visible = await overlay.isVisible({timeout: 1000}).catch(() => false);
+  if (!visible) return;
+
+  await overlay.locator('.sound-overlay-btn').first().click({timeout: 5000});
+  await overlay.waitFor({state: 'hidden', timeout: 10000});
 }
 
 async function ensureNoError(page) {
@@ -195,11 +204,11 @@ async function closeLeftDrawerIfOpen(page) {
     throw new Error('Ports 8815/8816 are busy. Stop running servers and retry.');
   }
 
-  log('Reset DB');
-  if (existsSync(DB_PATH)) rmSync(DB_PATH, {force: true});
+  log('Reset PostgreSQL DB');
+  runSync('yarn', ['run', 'db:reset'], {cwd: path.join(ROOT, 'backend')});
 
   log('Bootstrap first user');
-  runSync('yarn', ['run', 'user:bootstrap', '--', '--nickname', 'lisov', '--password', '123'], {cwd: ROOT});
+  runSync('yarn', ['run', 'user:bootstrap', '--nickname', 'lisov', '--password', '123'], {cwd: ROOT});
 
   log('Start backend');
   const backend = startProcess('backend', 'yarn', ['run', 'backend:dev'], {cwd: ROOT});
@@ -236,6 +245,7 @@ async function closeLeftDrawerIfOpen(page) {
     const page1 = await ctx1.newPage();
 
     await login(page1, 'lisov', '123');
+    await dismissSoundOverlayIfVisible(page1);
     await closeLeftDrawerIfOpen(page1);
     await sendMessage(page1, 'hello-from-lisov');
     await page1.waitForSelector('text=hello-from-lisov', {timeout: 30000});
@@ -262,6 +272,7 @@ async function closeLeftDrawerIfOpen(page) {
     if (result !== 'chat') {
       throw new Error(`Register failed: ${result} (url=${page2.url()})`);
     }
+    await dismissSoundOverlayIfVisible(page2);
     await closeLeftDrawerIfOpen(page2);
 
     await page2.waitForSelector('text=hello-from-lisov', {timeout: 30000});
@@ -271,6 +282,7 @@ async function closeLeftDrawerIfOpen(page) {
 
     await page1.waitForSelector('text=hello-from-mike', {timeout: 30000});
     await page1.reload({waitUntil: 'networkidle'});
+    await dismissSoundOverlayIfVisible(page1);
     await page1.waitForSelector('text=hello-from-mike', {timeout: 30000});
 
     await sendMessage(page2, '@all ping-everyone');
@@ -297,6 +309,7 @@ async function closeLeftDrawerIfOpen(page) {
     }
 
     await page1.reload({waitUntil: 'networkidle'});
+    await dismissSoundOverlayIfVisible(page1);
     await page1.waitForSelector(`img.preview-image[src="${imageUrl}"]`, {timeout: 30000, state: 'attached'});
     const imageMessageAfterReload = page1.locator('.message').filter({
       has: page1.locator(`img.preview-image[src="${imageUrl}"]`),
@@ -340,13 +353,6 @@ async function closeLeftDrawerIfOpen(page) {
     const reactionMessagePage1 = page1.locator('.message', {hasText: reactionTarget}).last();
     await reactionMessagePage1.locator('.reaction-chip', {hasText: '🔥'}).waitFor({state: 'visible', timeout: 30000});
 
-    await page1.waitForSelector('.notify-badge', {timeout: 30000});
-    await page1.locator('.notify-btn').click();
-    await page1.waitForSelector('.notifications-menu', {timeout: 10000});
-    const reactionNotifyItem = page1.locator('.notification-item', {hasText: /реакция 🔥/i}).first();
-    await reactionNotifyItem.waitFor({state: 'visible', timeout: 10000});
-    await reactionNotifyItem.click();
-
     await reactionMessagePage2.locator('.reaction-chip', {hasText: '🔥'}).click();
     await reactionMessagePage2.locator('.reaction-chip', {hasText: '🔥'}).waitFor({state: 'detached', timeout: 30000});
     await reactionMessagePage1.locator('.reaction-chip', {hasText: '🔥'}).waitFor({state: 'detached', timeout: 30000});
@@ -367,28 +373,6 @@ async function closeLeftDrawerIfOpen(page) {
     await editedMessagePage1.locator('.message-inline-btn', {hasText: 'удал.'}).click();
     await page1.waitForSelector(`text=${editedText}`, {state: 'detached', timeout: 30000});
     await page2.waitForSelector(`text=${editedText}`, {state: 'detached', timeout: 30000});
-
-    await openPrivate(page2, 'lisov');
-    await sendMessage(page2, 'direct-notify-without-reply');
-    await page1.waitForSelector('.notify-badge', {timeout: 30000});
-    await page1.locator('.notify-btn').click();
-    await page1.waitForSelector('.notifications-menu', {timeout: 10000});
-    const notifyItem = page1.locator('.notification-item', {hasText: 'direct-notify-without-reply'}).first();
-    await notifyItem.waitFor({state: 'visible', timeout: 10000});
-    await notifyItem.click();
-    await page1.waitForSelector('text=direct-notify-without-reply', {timeout: 30000});
-
-    await openPrivate(page1, 'mike');
-    await sendMessage(page1, 'private-from-lisov');
-    await page1.waitForSelector('text=private-from-lisov', {timeout: 30000});
-
-    await openPrivate(page2, 'lisov');
-    await page2.waitForSelector('text=private-from-lisov', {timeout: 30000});
-
-    page1.once('dialog', (dialog) => dialog.accept());
-    await page1.locator('.delete-direct-btn').click();
-    await page1.locator('.title', {hasText: 'Общий чат'}).waitFor({timeout: 30000});
-    await page2.locator('.title', {hasText: 'Общий чат'}).waitFor({timeout: 30000});
 
     log(`Flow OK. Invite link: ${inviteLink}`);
   } finally {

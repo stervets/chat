@@ -15,7 +15,7 @@ type ConfigFile = {
     maxBytes?: number;
   };
   db?: {
-    path?: string;
+    url?: string;
   };
 };
 
@@ -57,7 +57,9 @@ export const config = {
   inviteBaseUrl,
   corsOrigins: resolvedCorsOrigins,
   db: {
-    path: fileConfig.db?.path || './data/marx.sqlite',
+    url: fileConfig.db?.url
+      || process.env.DATABASE_URL
+      || 'postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public',
   },
   uploads: {
     path: fileConfig.uploads?.path || './data/uploads',

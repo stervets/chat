@@ -1,4 +1,5 @@
 import {Injectable} from '@nestjs/common';
+import {Prisma} from '@prisma/client';
 import {randomBytes} from 'node:crypto';
 import {db} from '../db.js';
 import {config} from '../config.js';
@@ -72,6 +73,10 @@ type MessageReaction = {
   users: MessageReactionUser[];
 };
 
+function isUniqueError(err: unknown) {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
+
 @Injectable()
 export class ChatService {
   private unauthorized(): ApiError {
@@ -100,27 +105,37 @@ export class ChatService {
     return parsed;
   }
 
-  private messagesCutoffIso() {
+  private messagesCutoffDate() {
     const ttlDays = Math.max(1, Math.floor(config.messagesTtlDays || 7));
-    return new Date(Date.now() - ttlDays * DAY_MS).toISOString();
+    return new Date(Date.now() - ttlDays * DAY_MS);
   }
 
-  private pruneExpiredMessages() {
-    db.prepare('delete from messages where created_at < ?').run(this.messagesCutoffIso());
+  private async pruneExpiredMessages() {
+    await db.message.deleteMany({
+      where: {
+        createdAt: {
+          lt: this.messagesCutoffDate(),
+        },
+      },
+    });
   }
 
-  private pruneDialogOverflow(dialogId: number) {
-    db.prepare(
-      `delete from messages
-       where dialog_id = ?
-         and id not in (
-           select id
-           from messages
-           where dialog_id = ?
-           order by created_at desc, id desc
-           limit ?
-         )`
-    ).run(dialogId, dialogId, MAX_MESSAGES_PER_DIALOG);
+  private async pruneDialogOverflow(dialogId: number) {
+    await db.$executeRaw(
+      Prisma.sql`
+        delete from messages
+        where id in (
+          select id from (
+            select
+              id,
+              row_number() over (order by created_at desc, id desc) as rn
+            from messages
+            where dialog_id = ${dialogId}
+          ) ranked
+          where rn > ${MAX_MESSAGES_PER_DIALOG}
+        )
+      `,
+    );
   }
 
   private extractUploadNamesFromRawText(rawTextRaw: unknown) {
@@ -137,23 +152,25 @@ export class ChatService {
     return Array.from(names);
   }
 
-  private isUploadUsed(fileName: string) {
-    const row = db.prepare(
-      `select id
-       from messages
-       where raw_text like ?
-       limit 1`
-    ).get(`%/uploads/${fileName}%`) as {id: number} | undefined;
+  private async isUploadUsed(fileName: string) {
+    const row = await db.message.findFirst({
+      where: {
+        rawText: {
+          contains: `/uploads/${fileName}`,
+        },
+      },
+      select: {id: true},
+    });
 
     return !!row?.id;
   }
 
-  private cleanupUnusedUploads(uploadNamesRaw: string[]) {
+  private async cleanupUnusedUploads(uploadNamesRaw: string[]) {
     const uploadNames = Array.from(new Set(uploadNamesRaw.filter(Boolean)));
     if (!uploadNames.length) return;
 
     for (const fileName of uploadNames) {
-      if (this.isUploadUsed(fileName)) continue;
+      if (await this.isUploadUsed(fileName)) continue;
       deleteUploadFile(fileName);
     }
   }
@@ -199,42 +216,38 @@ export class ChatService {
     return {ok: true, value};
   }
 
-  private loadMessageReactions(messageId: number): MessageReaction[] {
-    const rows = db.prepare(
-      `select
-         mr.reaction as emoji,
-         u.id as "userId",
-         u.nickname as "userNickname",
-         coalesce(u.name, u.nickname) as "userName",
-         u.nickname_color as "userNicknameColor"
-       from message_reactions mr
-       join users u on u.id = mr.user_id
-       where mr.message_id = ?
-       order by mr.created_at asc`
-    ).all(messageId) as Array<{
-      emoji: string;
-      userId: number;
-      userNickname: string;
-      userName: string | null;
-      userNicknameColor: string | null;
-    }>;
+  private async loadMessageReactions(messageId: number): Promise<MessageReaction[]> {
+    const rows = await db.messageReaction.findMany({
+      where: {messageId},
+      orderBy: {createdAt: 'asc'},
+      include: {
+        user: {
+          select: {
+            id: true,
+            nickname: true,
+            name: true,
+            nicknameColor: true,
+          },
+        },
+      },
+    });
 
     const grouped = new Map<string, MessageReactionUser[]>();
     for (const row of rows) {
-      const users = grouped.get(row.emoji) || [];
+      const users = grouped.get(row.reaction) || [];
       users.push({
-        id: row.userId,
-        nickname: row.userNickname,
-        name: row.userName?.trim() ? row.userName.trim() : row.userNickname,
-        nicknameColor: row.userNicknameColor || DEFAULT_NICKNAME_COLOR,
+        id: row.user.id,
+        nickname: row.user.nickname,
+        name: row.user.name?.trim() ? row.user.name.trim() : row.user.nickname,
+        nicknameColor: row.user.nicknameColor || DEFAULT_NICKNAME_COLOR,
       });
-      grouped.set(row.emoji, users);
+      grouped.set(row.reaction, users);
     }
 
     return Array.from(grouped.entries()).map(([emoji, users]) => ({emoji, users}));
   }
 
-  private attachMessageReactions(messages: any[]) {
+  private async attachMessageReactions(messages: any[]) {
     if (!messages.length) return messages;
 
     const messageIds = messages.map((message) => Number(message.id)).filter((id) => Number.isFinite(id));
@@ -242,27 +255,24 @@ export class ChatService {
       return messages.map((message) => ({...message, reactions: []}));
     }
 
-    const placeholders = messageIds.map(() => '?').join(', ');
-    const rows = db.prepare(
-      `select
-         mr.message_id as "messageId",
-         mr.reaction as emoji,
-         u.id as "userId",
-         u.nickname as "userNickname",
-         coalesce(u.name, u.nickname) as "userName",
-         u.nickname_color as "userNicknameColor"
-       from message_reactions mr
-       join users u on u.id = mr.user_id
-       where mr.message_id in (${placeholders})
-       order by mr.created_at asc`
-    ).all(...messageIds) as Array<{
-      messageId: number;
-      emoji: string;
-      userId: number;
-      userNickname: string;
-      userName: string | null;
-      userNicknameColor: string | null;
-    }>;
+    const rows = await db.messageReaction.findMany({
+      where: {
+        messageId: {
+          in: messageIds,
+        },
+      },
+      orderBy: {createdAt: 'asc'},
+      include: {
+        user: {
+          select: {
+            id: true,
+            nickname: true,
+            name: true,
+            nicknameColor: true,
+          },
+        },
+      },
+    });
 
     const byMessage = new Map<number, Map<string, MessageReactionUser[]>>();
     for (const row of rows) {
@@ -272,14 +282,14 @@ export class ChatService {
         byMessage.set(row.messageId, byEmoji);
       }
 
-      const users = byEmoji.get(row.emoji) || [];
+      const users = byEmoji.get(row.reaction) || [];
       users.push({
-        id: row.userId,
-        nickname: row.userNickname,
-        name: row.userName?.trim() ? row.userName.trim() : row.userNickname,
-        nicknameColor: row.userNicknameColor || DEFAULT_NICKNAME_COLOR,
+        id: row.user.id,
+        nickname: row.user.nickname,
+        name: row.user.name?.trim() ? row.user.name.trim() : row.user.nickname,
+        nicknameColor: row.user.nicknameColor || DEFAULT_NICKNAME_COLOR,
       });
-      byEmoji.set(row.emoji, users);
+      byEmoji.set(row.reaction, users);
     }
 
     return messages.map((message) => {
@@ -305,27 +315,27 @@ export class ChatService {
       return {ok: false, error: 'invalid_input'};
     }
 
-    const user = db.prepare(
-      `select
-         id,
-         nickname,
-         coalesce(name, nickname) as name,
-         nickname_color as "nicknameColor",
-         password_hash
-       from users
-       where lower(nickname) = ?`
-    ).get(nickname) as (UserRow & {password_hash: string}) | undefined;
+    const user = await db.user.findUnique({
+      where: {nicknameNormalized: nickname},
+      select: {
+        id: true,
+        nickname: true,
+        name: true,
+        nicknameColor: true,
+        passwordHash: true,
+      },
+    });
 
     if (!user) {
       return {ok: false, error: 'invalid_credentials'};
     }
 
-    const valid = await verifyPassword(user.password_hash, password);
+    const valid = await verifyPassword(user.passwordHash, password);
     if (!valid) {
       return {ok: false, error: 'invalid_credentials'};
     }
 
-    const session = createSession(user.id, {
+    const session = await createSession(user.id, {
       ip: state.ip,
       userAgent: state.userAgent,
     });
@@ -350,7 +360,7 @@ export class ChatService {
     const token = (tokenRaw || '').toString().trim();
     if (!token) return this.unauthorized();
 
-    const session = resolveSession(token);
+    const session = await resolveSession(token);
     if (!session) return this.unauthorized();
 
     state.user = session.user;
@@ -378,7 +388,7 @@ export class ChatService {
     if (authError) return authError;
 
     if (state.token) {
-      revokeSession(state.token);
+      await revokeSession(state.token);
     }
     state.token = null;
     state.user = null;
@@ -397,8 +407,7 @@ export class ChatService {
       return {ok: false, error: 'invalid_input'};
     }
 
-    const fields: string[] = [];
-    const values: Array<string | number | null> = [];
+    const updateData: Record<string, unknown> = {};
 
     if (hasName) {
       const nextName = String(payload?.name ?? '').trim();
@@ -406,8 +415,7 @@ export class ChatService {
         return {ok: false, error: 'invalid_name'};
       }
 
-      fields.push('name = ?');
-      values.push(nextName.slice(0, MAX_USER_NAME_LENGTH));
+      updateData.name = nextName.slice(0, MAX_USER_NAME_LENGTH);
     }
 
     if (hasNicknameColor) {
@@ -415,38 +423,23 @@ export class ChatService {
       if (!color.ok) {
         return {ok: false, error: color.error};
       }
-      fields.push('nickname_color = ?');
-      values.push(color.value);
+      updateData.nicknameColor = color.value;
     }
 
-    if (!fields.length) {
+    if (Object.keys(updateData).length === 0) {
       return {ok: false, error: 'invalid_input'};
     }
 
-    const updatedAt = new Date().toISOString();
-    fields.push('updated_at = ?');
-    values.push(updatedAt);
-    values.push(state.user!.id);
-
-    db.prepare(
-      `update users
-       set ${fields.join(', ')}
-       where id = ?`
-    ).run(...values);
-
-    const updated = db.prepare(
-      `select
-         id,
-         nickname,
-         coalesce(name, nickname) as name,
-         nickname_color as "nicknameColor"
-       from users
-       where id = ?`
-    ).get(state.user!.id) as UserRow | undefined;
-
-    if (!updated) {
-      return {ok: false, error: 'not_found'};
-    }
+    const updated = await db.user.update({
+      where: {id: state.user!.id},
+      data: updateData,
+      select: {
+        id: true,
+        nickname: true,
+        name: true,
+        nicknameColor: true,
+      },
+    });
 
     state.user = this.toPublicUser(updated);
     return {ok: true, user: state.user};
@@ -467,10 +460,10 @@ export class ChatService {
     }
 
     const hash = await hashPassword(trimmedPassword);
-    const updatedAt = new Date().toISOString();
-    db.prepare(
-      'update users set password_hash = ?, updated_at = ? where id = ?'
-    ).run(hash, updatedAt, state.user!.id);
+    await db.user.update({
+      where: {id: state.user!.id},
+      data: {passwordHash: hash},
+    });
 
     return {ok: true};
   }
@@ -479,16 +472,23 @@ export class ChatService {
     const authError = this.requireAuth(state);
     if (authError) return authError;
 
-    const rows = db.prepare(
-      `select
-         id,
-         nickname,
-         coalesce(name, nickname) as name,
-         nickname_color as "nicknameColor"
-       from users
-       where id <> ?
-       order by name asc, nickname asc`
-    ).all(state.user!.id) as UserRow[];
+    const rows = await db.user.findMany({
+      where: {
+        id: {
+          not: state.user!.id,
+        },
+      },
+      orderBy: [
+        {name: 'asc'},
+        {nickname: 'asc'},
+      ],
+      select: {
+        id: true,
+        nickname: true,
+        name: true,
+        nicknameColor: true,
+      },
+    });
 
     return rows.map((row) => this.toPublicUser(row));
   }
@@ -497,37 +497,39 @@ export class ChatService {
     const authError = this.requireAuth(state);
     if (authError) return authError;
 
-    const result = db.prepare(
-      `select
-         i.id,
-         i.code,
-         i.created_at as "createdAt",
-         i.used_at as "usedAt",
-         i.used_by as "usedById",
-         u.nickname as "usedByNickname",
-         coalesce(u.name, u.nickname) as "usedByName",
-         u.nickname_color as "usedByNicknameColor",
-         (i.used_at is not null) as "isUsed"
-       from invites i
-       left join users u on u.id = i.used_by
-       where i.created_by = ?
-       order by i.created_at desc`
-    ).all(state.user!.id) as any[];
+    const result = await db.invite.findMany({
+      where: {
+        createdById: state.user!.id,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: {
+        usedBy: {
+          select: {
+            id: true,
+            nickname: true,
+            name: true,
+            nicknameColor: true,
+          },
+        },
+      },
+    });
 
-    return result.map((row: any) => ({
+    return result.map((row) => ({
       id: row.id,
       code: row.code,
-      createdAt: row.createdAt,
-      usedAt: row.usedAt,
-      usedBy: row.usedById
+      createdAt: row.createdAt.toISOString(),
+      usedAt: row.usedAt ? row.usedAt.toISOString() : null,
+      usedBy: row.usedBy
         ? {
-          id: row.usedById,
-          nickname: row.usedByNickname,
-          name: row.usedByName || row.usedByNickname,
-          nicknameColor: row.usedByNicknameColor || DEFAULT_NICKNAME_COLOR,
+          id: row.usedBy.id,
+          nickname: row.usedBy.nickname,
+          name: row.usedBy.name || row.usedBy.nickname,
+          nicknameColor: row.usedBy.nicknameColor || DEFAULT_NICKNAME_COLOR,
         }
         : null,
-      isUsed: Boolean(row.isUsed),
+      isUsed: Boolean(row.usedAt),
     }));
   }
 
@@ -539,19 +541,33 @@ export class ChatService {
     const authError = this.requireAuth(state);
     if (authError) return authError;
 
-    const code = randomBytes(8).toString('hex');
-    const insert = db.prepare(
-      'insert into invites (code, created_by) values (?, ?)'
-    ).run(code, state.user!.id);
-    const created = db.prepare(
-      'select id, code, created_at as "createdAt" from invites where id = ?'
-    ).get(Number(insert.lastInsertRowid)) as {
-      id: number;
-      code: string;
-      createdAt: string;
-    };
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = randomBytes(8).toString('hex');
+      try {
+        const created = await db.invite.create({
+          data: {
+            code,
+            createdById: state.user!.id,
+          },
+          select: {
+            id: true,
+            code: true,
+            createdAt: true,
+          },
+        });
 
-    return created;
+        return {
+          id: created.id,
+          code: created.code,
+          createdAt: created.createdAt.toISOString(),
+        };
+      } catch (err) {
+        if (isUniqueError(err)) continue;
+        throw err;
+      }
+    }
+
+    return {ok: false, error: 'failed_to_generate_invite'};
   }
 
   async invitesCheck(_state: SocketState, payload: any): Promise<ApiError | ApiOk<{code: string}>> {
@@ -560,24 +576,20 @@ export class ChatService {
       return {ok: false, error: 'invalid_input'};
     }
 
-    const invite = db.prepare(
-      `select
-         i.id as id,
-         i.used_at as "usedAt",
-         i.expires_at as "expiresAt"
-       from invites i
-       where i.code = ?`
-    ).get(code) as {
-      id: number;
-      usedAt: string | null;
-      expiresAt: string | null;
-    } | undefined;
+    const invite = await db.invite.findUnique({
+      where: {code},
+      select: {
+        id: true,
+        usedAt: true,
+        expiresAt: true,
+      },
+    });
 
     if (!invite) {
       return {ok: false, error: 'invite_not_found'};
     }
 
-    const isExpired = invite.expiresAt && new Date(invite.expiresAt) < new Date();
+    const isExpired = invite.expiresAt && invite.expiresAt < new Date();
     const isUsedUp = !!invite.usedAt;
     if (isExpired || isUsedUp) {
       return {ok: false, error: 'invite_invalid'};
@@ -603,52 +615,77 @@ export class ChatService {
     }
 
     const passwordHash = await hashPassword(password);
+    const name = this.normalizeName(payload?.name, nickname);
 
     try {
-      db.exec('begin immediate');
-      const invite = db.prepare(
-        'select * from invites where code = ?'
-      ).get(code) as any;
+      const createdUser = await db.$transaction(async (tx) => {
+        const invite = await tx.invite.findUnique({
+          where: {code},
+          select: {
+            id: true,
+            usedAt: true,
+            expiresAt: true,
+          },
+        });
 
-      if (!invite) {
-        db.exec('rollback');
-        return {ok: false, error: 'invite_not_found'};
-      }
+        if (!invite) {
+          throw new Error('invite_not_found');
+        }
 
-      const isExpired = invite.expires_at && new Date(invite.expires_at) < new Date();
-      const isUsedUp = invite.used_at;
-      if (isExpired || isUsedUp) {
-        db.exec('rollback');
-        return {ok: false, error: 'invite_invalid'};
-      }
+        const isExpired = invite.expiresAt && invite.expiresAt < new Date();
+        const isUsedUp = !!invite.usedAt;
+        if (isExpired || isUsedUp) {
+          throw new Error('invite_invalid');
+        }
 
-      const existingUser = db.prepare(
-        'select id from users where lower(nickname) = ?'
-      ).get(nickname);
-      if (existingUser) {
-        db.exec('rollback');
-        return {ok: false, error: 'nickname_taken'};
-      }
+        const existingUser = await tx.user.findUnique({
+          where: {nicknameNormalized: nickname},
+          select: {id: true},
+        });
+        if (existingUser) {
+          throw new Error('nickname_taken');
+        }
 
-      const name = this.normalizeName(payload?.name, nickname);
-      const userInsert = db.prepare(
-        'insert into users (nickname, name, nickname_color, password_hash) values (?, ?, ?, ?)'
-      ).run(nickname, name, DEFAULT_NICKNAME_COLOR, passwordHash);
-      const userId = Number(userInsert.lastInsertRowid);
-      const usedAt = new Date().toISOString();
+        const user = await tx.user.create({
+          data: {
+            nickname,
+            nicknameNormalized: nickname,
+            name,
+            nicknameColor: DEFAULT_NICKNAME_COLOR,
+            passwordHash,
+          },
+          select: {
+            id: true,
+            nickname: true,
+            name: true,
+            nicknameColor: true,
+          },
+        });
 
-      db.prepare(
-        'update invites set used_by = ?, used_at = ? where id = ?'
-      ).run(userId, usedAt, invite.id);
+        const updatedInvite = await tx.invite.updateMany({
+          where: {
+            id: invite.id,
+            usedAt: null,
+          },
+          data: {
+            usedById: user.id,
+            usedAt: new Date(),
+          },
+        });
 
-      db.exec('commit');
+        if (updatedInvite.count === 0) {
+          throw new Error('invite_invalid');
+        }
 
-      const session = createSession(userId, {
+        return user;
+      });
+
+      const session = await createSession(createdUser.id, {
         ip: state.ip,
         userAgent: state.userAgent,
       });
 
-      state.user = {id: userId, nickname, name, nicknameColor: DEFAULT_NICKNAME_COLOR};
+      state.user = this.toPublicUser(createdUser);
       state.token = session.token;
 
       return {
@@ -657,11 +694,13 @@ export class ChatService {
         expiresAt: session.expiresAt,
         user: state.user,
       };
-    } catch (err) {
-      try {
-        db.exec('rollback');
-      } catch {
-        // ignore rollback errors
+    } catch (err: any) {
+      const knownError = String(err?.message || '');
+      if (knownError === 'invite_not_found' || knownError === 'invite_invalid' || knownError === 'nickname_taken') {
+        return {ok: false, error: knownError};
+      }
+      if (isUniqueError(err)) {
+        return {ok: false, error: 'nickname_taken'};
       }
       throw err;
     }
@@ -700,15 +739,15 @@ export class ChatService {
       return {ok: false, error: 'self_dialog'};
     }
 
-    const targetUser = db.prepare(
-      `select
-         id,
-         nickname,
-         coalesce(name, nickname) as name,
-         nickname_color as "nicknameColor"
-       from users
-       where id = ?`
-    ).get(userId) as UserRow | undefined;
+    const targetUser = await db.user.findUnique({
+      where: {id: userId},
+      select: {
+        id: true,
+        nickname: true,
+        name: true,
+        nicknameColor: true,
+      },
+    });
 
     if (!targetUser) {
       return {ok: false, error: 'user_not_found'};
@@ -730,44 +769,80 @@ export class ChatService {
     const authError = this.requireAuth(state);
     if (authError) return authError;
 
-    this.pruneExpiredMessages();
-    const cutoff = this.messagesCutoffIso();
-    const rows = db.prepare(
-      `select
-         d.id as "dialogId",
-         max(m.created_at) as "lastMessageAt",
-         u.id as "targetUserId",
-         u.nickname as "targetUserNickname",
-         coalesce(u.name, u.nickname) as "targetUserName",
-         u.nickname_color as "targetUserNicknameColor"
-       from dialogs d
-       join messages m on m.dialog_id = d.id
-       join users u on u.id = (case when d.member_a = ? then d.member_b else d.member_a end)
-       where d.kind = 'private'
-         and (d.member_a = ? or d.member_b = ?)
-         and m.created_at >= ?
-       group by d.id, u.id, u.nickname, u.name, u.nickname_color
-       having count(m.id) > 0
-       order by "lastMessageAt" desc`
-    ).all(state.user!.id, state.user!.id, state.user!.id, cutoff) as Array<{
+    await this.pruneExpiredMessages();
+    const cutoffDate = this.messagesCutoffDate();
+    const userId = state.user!.id;
+
+    const rows = await db.dialog.findMany({
+      where: {
+        kind: 'private',
+        OR: [
+          {memberAId: userId},
+          {memberBId: userId},
+        ],
+        messages: {
+          some: {
+            createdAt: {
+              gte: cutoffDate,
+            },
+          },
+        },
+      },
+      include: {
+        memberA: {
+          select: {
+            id: true,
+            nickname: true,
+            name: true,
+            nicknameColor: true,
+          },
+        },
+        memberB: {
+          select: {
+            id: true,
+            nickname: true,
+            name: true,
+            nicknameColor: true,
+          },
+        },
+        messages: {
+          where: {
+            createdAt: {
+              gte: cutoffDate,
+            },
+          },
+          orderBy: [
+            {createdAt: 'desc'},
+            {id: 'desc'},
+          ],
+          take: 1,
+          select: {
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    const mapped = rows
+      .map((row) => {
+        const targetUser = row.memberAId === userId ? row.memberB : row.memberA;
+        const lastMessage = row.messages[0];
+        if (!targetUser || !lastMessage) return null;
+
+        return {
+          dialogId: row.id,
+          lastMessageAt: lastMessage.createdAt.toISOString(),
+          targetUser: this.toPublicUser(targetUser),
+        };
+      })
+      .filter(Boolean) as Array<{
       dialogId: number;
+      targetUser: PublicUser;
       lastMessageAt: string;
-      targetUserId: number;
-      targetUserNickname: string;
-      targetUserName: string | null;
-      targetUserNicknameColor: string | null;
     }>;
 
-    return rows.map((row) => ({
-      dialogId: row.dialogId,
-      lastMessageAt: row.lastMessageAt,
-      targetUser: {
-        id: row.targetUserId,
-        nickname: row.targetUserNickname,
-        name: row.targetUserName?.trim() ? row.targetUserName.trim() : row.targetUserNickname,
-        nicknameColor: row.targetUserNicknameColor || DEFAULT_NICKNAME_COLOR,
-      },
-    }));
+    mapped.sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+    return mapped;
   }
 
   async dialogsMessages(
@@ -778,7 +853,7 @@ export class ChatService {
   ): Promise<ApiError | any[]> {
     const authError = this.requireAuth(state);
     if (authError) return authError;
-    this.pruneExpiredMessages();
+    await this.pruneExpiredMessages();
 
     const dialogId = this.parseDialogId(dialogIdRaw);
     if (!dialogId) {
@@ -794,39 +869,49 @@ export class ChatService {
       return {ok: false, error: 'forbidden'};
     }
 
-    this.pruneDialogOverflow(dialogId);
+    await this.pruneDialogOverflow(dialogId);
     const limit = this.parseLimit(limitRaw);
-    const cutoff = this.messagesCutoffIso();
+    const cutoffDate = this.messagesCutoffDate();
     const beforeMessageId = this.parseBeforeMessageId(beforeMessageIdRaw);
-    const beforeSql = beforeMessageId ? 'and m.id < ?' : '';
-    const params = beforeMessageId
-      ? [dialogId, cutoff, beforeMessageId, limit]
-      : [dialogId, cutoff, limit];
 
-    const result = db.prepare(
-      `select * from (
-         select
-           m.id,
-           m.dialog_id as "dialogId",
-           m.sender_id as "authorId",
-           u.nickname as "authorNickname",
-           coalesce(u.name, u.nickname) as "authorName",
-           u.nickname_color as "authorNicknameColor",
-           coalesce(m.raw_text, '') as "rawText",
-           coalesce(m.rendered_html, '') as "renderedHtml",
-           m.created_at as "createdAt"
-         from messages m
-         left join users u on u.id = m.sender_id
-         where m.dialog_id = ?
-           and m.created_at >= ?
-           ${beforeSql}
-         order by m.created_at desc, m.id desc
-         limit ?
-       ) t
-       order by t."createdAt" asc, t.id asc`
-    ).all(...params);
+    const result = await db.message.findMany({
+      where: {
+        dialogId,
+        createdAt: {
+          gte: cutoffDate,
+        },
+        ...(beforeMessageId ? {id: {lt: beforeMessageId}} : {}),
+      },
+      orderBy: [
+        {createdAt: 'desc'},
+        {id: 'desc'},
+      ],
+      take: limit,
+      include: {
+        sender: {
+          select: {
+            id: true,
+            nickname: true,
+            name: true,
+            nicknameColor: true,
+          },
+        },
+      },
+    });
 
-    return this.attachMessageReactions(result as any[]);
+    const ordered = result.reverse().map((row) => ({
+      id: row.id,
+      dialogId: row.dialogId,
+      authorId: row.sender?.id || row.senderId || 0,
+      authorNickname: row.sender?.nickname || 'deleted',
+      authorName: row.sender?.name || row.sender?.nickname || 'deleted',
+      authorNicknameColor: row.sender?.nicknameColor || DEFAULT_NICKNAME_COLOR,
+      rawText: row.rawText || '',
+      renderedHtml: row.renderedHtml || '',
+      createdAt: row.createdAt.toISOString(),
+    }));
+
+    return this.attachMessageReactions(ordered);
   }
 
   async chatJoin(state: SocketState, dialogIdRaw: unknown): Promise<ApiError | ApiOk<{dialogId: number}>> {
@@ -888,17 +973,25 @@ export class ChatService {
       : trimmed;
     const compiled = compileMessageFormat(rawText);
 
-    this.pruneExpiredMessages();
-    const createdAt = new Date().toISOString();
-    const insert = db.prepare(
-      'insert into messages (dialog_id, sender_id, raw_text, rendered_html, created_at) values (?, ?, ?, ?, ?)'
-    ).run(dialogId, state.user!.id, compiled.rawText, compiled.renderedHtml, createdAt);
-    this.pruneDialogOverflow(dialogId);
+    await this.pruneExpiredMessages();
+    const created = await db.message.create({
+      data: {
+        dialogId,
+        senderId: state.user!.id,
+        rawText: compiled.rawText,
+        renderedHtml: compiled.renderedHtml,
+      },
+      select: {
+        id: true,
+        createdAt: true,
+      },
+    });
+    await this.pruneDialogOverflow(dialogId);
 
     return {
       ok: true,
       message: {
-        id: Number(insert.lastInsertRowid),
+        id: created.id,
         dialogId,
         authorId: state.user!.id,
         authorNickname: state.user!.nickname,
@@ -906,7 +999,7 @@ export class ChatService {
         authorNicknameColor: state.user!.nicknameColor,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
-        createdAt,
+        createdAt: created.createdAt.toISOString(),
         reactions: [],
       },
     };
@@ -929,37 +1022,30 @@ export class ChatService {
   }>> {
     const authError = this.requireAuth(state);
     if (authError) return authError;
-    this.pruneExpiredMessages();
+    await this.pruneExpiredMessages();
 
     const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
     if (!Number.isFinite(messageId) || messageId <= 0) {
       return {ok: false, error: 'invalid_message'};
     }
 
-    const existing = db.prepare(
-      `select
-         m.id as id,
-         m.dialog_id as "dialogId",
-         m.sender_id as "authorId",
-         coalesce(m.raw_text, '') as "rawText",
-         coalesce(m.rendered_html, '') as "renderedHtml",
-         m.created_at as "createdAt"
-       from messages m
-       where m.id = ?`
-    ).get(messageId) as {
-      id: number;
-      dialogId: number;
-      authorId: number | null;
-      rawText: string;
-      renderedHtml: string;
-      createdAt: string;
-    } | undefined;
+    const existing = await db.message.findUnique({
+      where: {id: messageId},
+      select: {
+        id: true,
+        dialogId: true,
+        senderId: true,
+        rawText: true,
+        renderedHtml: true,
+        createdAt: true,
+      },
+    });
 
     if (!existing) {
       return {ok: false, error: 'message_not_found'};
     }
 
-    if (existing.authorId !== state.user!.id) {
+    if (existing.senderId !== state.user!.id) {
       return {ok: false, error: 'forbidden'};
     }
 
@@ -978,11 +1064,15 @@ export class ChatService {
       : trimmed;
     const compiled = compileMessageFormat(rawText);
 
-    const changed = compiled.rawText !== existing.rawText || compiled.renderedHtml !== existing.renderedHtml;
+    const changed = compiled.rawText !== (existing.rawText || '') || compiled.renderedHtml !== (existing.renderedHtml || '');
     if (changed) {
-      db.prepare(
-        'update messages set raw_text = ?, rendered_html = ? where id = ?'
-      ).run(compiled.rawText, compiled.renderedHtml, messageId);
+      await db.message.update({
+        where: {id: messageId},
+        data: {
+          rawText: compiled.rawText,
+          renderedHtml: compiled.renderedHtml,
+        },
+      });
     }
 
     return {
@@ -997,8 +1087,8 @@ export class ChatService {
         authorNicknameColor: state.user!.nicknameColor,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
-        createdAt: existing.createdAt,
-        reactions: this.loadMessageReactions(messageId),
+        createdAt: existing.createdAt.toISOString(),
+        reactions: await this.loadMessageReactions(messageId),
       },
     };
   }
@@ -1010,33 +1100,28 @@ export class ChatService {
   }>> {
     const authError = this.requireAuth(state);
     if (authError) return authError;
-    this.pruneExpiredMessages();
+    await this.pruneExpiredMessages();
 
     const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
     if (!Number.isFinite(messageId) || messageId <= 0) {
       return {ok: false, error: 'invalid_message'};
     }
 
-    const existing = db.prepare(
-      `select
-         m.id as id,
-         m.dialog_id as "dialogId",
-         m.sender_id as "authorId",
-         coalesce(m.raw_text, '') as "rawText"
-       from messages m
-       where m.id = ?`
-    ).get(messageId) as {
-      id: number;
-      dialogId: number;
-      authorId: number | null;
-      rawText: string;
-    } | undefined;
+    const existing = await db.message.findUnique({
+      where: {id: messageId},
+      select: {
+        id: true,
+        dialogId: true,
+        senderId: true,
+        rawText: true,
+      },
+    });
 
     if (!existing) {
       return {ok: false, error: 'message_not_found'};
     }
 
-    if (existing.authorId !== state.user!.id) {
+    if (existing.senderId !== state.user!.id) {
       return {ok: false, error: 'forbidden'};
     }
 
@@ -1045,14 +1130,16 @@ export class ChatService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const uploadNames = this.extractUploadNamesFromRawText(existing.rawText);
-    const result = db.prepare('delete from messages where id = ?').run(messageId);
-    if (result.changes > 0) {
-      this.cleanupUnusedUploads(uploadNames);
+    const uploadNames = this.extractUploadNamesFromRawText(existing.rawText || '');
+    const result = await db.message.deleteMany({
+      where: {id: messageId},
+    });
+    if (result.count > 0) {
+      await this.cleanupUnusedUploads(uploadNames);
     }
     return {
       ok: true,
-      changed: result.changes > 0,
+      changed: result.count > 0,
       dialogId: existing.dialogId,
       messageId,
     };
@@ -1084,16 +1171,19 @@ export class ChatService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const uploadRows = db.prepare(
-      `select coalesce(m.raw_text, '') as "rawText"
-       from messages m
-       where m.dialog_id = ?`
-    ).all(dialogId) as Array<{rawText: string}>;
-    const uploadNames = uploadRows.flatMap((row) => this.extractUploadNamesFromRawText(row.rawText));
+    const uploadRows = await db.message.findMany({
+      where: {dialogId},
+      select: {
+        rawText: true,
+      },
+    });
+    const uploadNames = uploadRows.flatMap((row) => this.extractUploadNamesFromRawText(row.rawText || ''));
 
-    const result = db.prepare('delete from dialogs where id = ?').run(dialogId);
-    if (result.changes > 0) {
-      this.cleanupUnusedUploads(uploadNames);
+    const result = await db.dialog.deleteMany({
+      where: {id: dialogId},
+    });
+    if (result.count > 0) {
+      await this.cleanupUnusedUploads(uploadNames);
     }
     if (state.dialogId === dialogId) {
       state.dialogId = null;
@@ -1101,7 +1191,7 @@ export class ChatService {
 
     return {
       ok: true,
-      changed: result.changes > 0,
+      changed: result.count > 0,
       dialogId,
       kind: 'private',
     };
@@ -1124,7 +1214,7 @@ export class ChatService {
   }>> {
     const authError = this.requireAuth(state);
     if (authError) return authError;
-    this.pruneExpiredMessages();
+    await this.pruneExpiredMessages();
 
     const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
     if (!Number.isFinite(messageId) || messageId <= 0) {
@@ -1136,20 +1226,15 @@ export class ChatService {
       return {ok: false, error: parsedEmoji.error};
     }
 
-    const message = db.prepare(
-      `select
-         m.id as id,
-         m.dialog_id as "dialogId",
-         m.sender_id as "authorId",
-         coalesce(m.raw_text, '') as "rawText"
-       from messages m
-       where m.id = ?`
-    ).get(messageId) as {
-      id: number;
-      dialogId: number;
-      authorId: number | null;
-      rawText: string;
-    } | undefined;
+    const message = await db.message.findUnique({
+      where: {id: messageId},
+      select: {
+        id: true,
+        dialogId: true,
+        senderId: true,
+        rawText: true,
+      },
+    });
 
     if (!message) {
       return {ok: false, error: 'message_not_found'};
@@ -1160,51 +1245,71 @@ export class ChatService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const existing = db.prepare(
-      `select id, reaction
-       from message_reactions
-       where message_id = ? and user_id = ?`
-    ).get(messageId, state.user!.id) as {id: number; reaction: string} | undefined;
+    const existing = await db.messageReaction.findUnique({
+      where: {
+        messageId_userId: {
+          messageId,
+          userId: state.user!.id,
+        },
+      },
+      select: {
+        id: true,
+        reaction: true,
+      },
+    });
 
-    const now = new Date().toISOString();
+    const now = new Date();
     let finalEmoji: string | null = parsedEmoji.value;
     let reactionSetForNotify = false;
     let changed = false;
 
     if (!parsedEmoji.value) {
       if (existing) {
-        db.prepare('delete from message_reactions where id = ?').run(existing.id);
+        await db.messageReaction.delete({
+          where: {id: existing.id},
+        });
         changed = true;
       }
       finalEmoji = null;
     } else if (existing) {
       if (existing.reaction === parsedEmoji.value) {
-        db.prepare('delete from message_reactions where id = ?').run(existing.id);
+        await db.messageReaction.delete({
+          where: {id: existing.id},
+        });
         finalEmoji = null;
         changed = true;
       } else {
-        db.prepare(
-          'update message_reactions set reaction = ?, created_at = ? where id = ?'
-        ).run(parsedEmoji.value, now, existing.id);
+        await db.messageReaction.update({
+          where: {id: existing.id},
+          data: {
+            reaction: parsedEmoji.value,
+            createdAt: now,
+          },
+        });
         finalEmoji = parsedEmoji.value;
         reactionSetForNotify = true;
         changed = true;
       }
     } else {
-      db.prepare(
-        'insert into message_reactions (message_id, user_id, reaction, created_at) values (?, ?, ?, ?)'
-      ).run(messageId, state.user!.id, parsedEmoji.value, now);
+      await db.messageReaction.create({
+        data: {
+          messageId,
+          userId: state.user!.id,
+          reaction: parsedEmoji.value,
+          createdAt: now,
+        },
+      });
       finalEmoji = parsedEmoji.value;
       reactionSetForNotify = true;
       changed = true;
     }
 
-    const reactions = this.loadMessageReactions(messageId);
+    const reactions = await this.loadMessageReactions(messageId);
     const shouldNotify = reactionSetForNotify
       && !!finalEmoji
-      && typeof message.authorId === 'number'
-      && message.authorId > 0
-      && message.authorId !== state.user!.id;
+      && typeof message.senderId === 'number'
+      && message.senderId > 0
+      && message.senderId !== state.user!.id;
 
     return {
       ok: true,
@@ -1214,7 +1319,7 @@ export class ChatService {
       changed,
       notify: shouldNotify
         ? {
-          userId: Number(message.authorId),
+          userId: Number(message.senderId),
           dialogId: message.dialogId,
           messageId,
           emoji: finalEmoji!,
@@ -1224,8 +1329,8 @@ export class ChatService {
             name: state.user!.name,
             nicknameColor: state.user!.nicknameColor,
           },
-          messageBody: message.rawText,
-          createdAt: now,
+          messageBody: message.rawText || '',
+          createdAt: now.toISOString(),
         }
         : null,
     };

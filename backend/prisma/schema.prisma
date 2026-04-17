@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DialogKind {
+  general
+  private
+}
+
+model User {
+  id                 Int               @id @default(autoincrement())
+  nickname           String            @db.VarChar(64)
+  nicknameNormalized String            @unique @map("nickname_normalized") @db.VarChar(64)
+  name               String            @db.VarChar(80)
+  nicknameColor      String?           @map("nickname_color") @db.VarChar(7)
+  passwordHash       String            @map("password_hash")
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdInvites     Invite[]          @relation("InviteCreatedBy")
+  usedInvites        Invite[]          @relation("InviteUsedBy")
+  dialogsA           Dialog[]          @relation("DialogMemberA")
+  dialogsB           Dialog[]          @relation("DialogMemberB")
+  sentMessages       Message[]         @relation("MessageSender")
+  sessions           Session[]
+  reactions          MessageReaction[]
+
+  @@index([nickname])
+  @@map("users")
+}
+
+model Invite {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.VarChar(64)
+  createdById Int?      @map("created_by")
+  createdBy   User?     @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  usedById    Int?      @map("used_by")
+  usedBy      User?     @relation("InviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(3)
+
+  @@map("invites")
+}
+
+model Dialog {
+  id        Int        @id @default(autoincrement())
+  kind      DialogKind
+  memberAId Int?       @map("member_a")
+  memberA   User?      @relation("DialogMemberA", fields: [memberAId], references: [id], onDelete: SetNull)
+  memberBId Int?       @map("member_b")
+  memberB   User?      @relation("DialogMemberB", fields: [memberBId], references: [id], onDelete: SetNull)
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  messages  Message[]
+
+  @@index([kind, memberAId, memberBId], map: "dialogs_private_lookup_idx")
+  @@map("dialogs")
+}
+
+model Message {
+  id           Int               @id @default(autoincrement())
+  dialogId     Int               @map("dialog_id")
+  dialog       Dialog            @relation(fields: [dialogId], references: [id], onDelete: Cascade)
+  senderId     Int?              @map("sender_id")
+  sender       User?             @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  rawText      String            @map("raw_text")
+  renderedHtml String            @map("rendered_html")
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  reactions    MessageReaction[]
+
+  @@index([dialogId, createdAt(sort: Desc)], map: "messages_dialog_created_idx")
+  @@map("messages")
+}
+
+model MessageReaction {
+  id        Int      @id @default(autoincrement())
+  messageId Int      @map("message_id")
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reaction  String   @db.VarChar(32)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([messageId, userId], map: "message_reactions_unique")
+  @@index([messageId, reaction], map: "message_reactions_message_idx")
+  @@map("message_reactions")
+}
+
+model Session {
+  id        String   @id @db.Uuid
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique @db.VarChar(128)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  ip        String?  @db.VarChar(64)
+  userAgent String?  @map("user_agent")
+
+  @@index([expiresAt], map: "sessions_expires_idx")
+  @@map("sessions")
+}

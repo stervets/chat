@@ -5,9 +5,9 @@
 ## Быстрый старт (dev)
 
 Нужно:
-- Node.js 22+ (используется встроенный `node:sqlite`)
+- Node.js 22+
 - Yarn
-При старте может быть `ExperimentalWarning: SQLite` — это нормально.
+- PostgreSQL 16+ (или контейнер с Postgres)
 
 1. Установи зависимости.
 
@@ -36,11 +36,17 @@ yarn run frontend:dev
 
 - Frontend: `http://localhost:8815` или `http://127.0.0.1:8815`
 - Backend: `http://localhost:8816` или `http://127.0.0.1:8816`
-- SQLite по умолчанию: `backend/data/marx.sqlite`
+- БД по умолчанию: `postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public`
 
 ## Первый пользователь (без invite)
 
-1. Если нужно начать с нуля, удали файл БД `backend/data/marx.sqlite`.
+1. Если нужно начать с нуля, сбрось БД:
+
+```bash
+cd backend
+yarn run db:reset
+```
+
 2. Создай первого пользователя **секретной командой** (из корня):
 
 ```bash

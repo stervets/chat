@@ -42,13 +42,12 @@
     "http://127.0.0.1:8815"
   ],
   "db": {
-    "path": "./data/marx.sqlite"
+    "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"
   }
 }
 ```
 
-SQLite файл создаётся автоматически при старте, если его ещё нет.
-`db.path` указывается относительно папки `backend/`.
+`db.url` — строка подключения к PostgreSQL.
 `inviteBaseUrl` используется CLI/TUI админкой для генерации полной ссылки на инвайт (`/invite/<code>`).
 
 Если открываешь фронт через LAN IP, добавь `http://<LAN_IP>:8815` в `corsOrigins`,

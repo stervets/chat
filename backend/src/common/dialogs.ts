@@ -8,26 +8,69 @@ export type DialogRow = {
 };
 
 export async function getOrCreateGeneralDialog(): Promise<DialogRow> {
-  db.prepare(
-    "insert or ignore into dialogs (kind) values ('general')"
-  ).run();
+  let dialog = await db.dialog.findFirst({
+    where: {kind: 'general'},
+    select: {
+      id: true,
+      kind: true,
+      memberAId: true,
+      memberBId: true,
+    },
+  });
 
-  const dialog = db.prepare(
-    "select id, kind, member_a, member_b from dialogs where kind = 'general' limit 1"
-  ).get();
+  if (!dialog) {
+    try {
+      dialog = await db.dialog.create({
+        data: {kind: 'general'},
+        select: {
+          id: true,
+          kind: true,
+          memberAId: true,
+          memberBId: true,
+        },
+      });
+    } catch {
+      dialog = await db.dialog.findFirst({
+        where: {kind: 'general'},
+        select: {
+          id: true,
+          kind: true,
+          memberAId: true,
+          memberBId: true,
+        },
+      });
+    }
+  }
 
   if (!dialog) {
     throw new Error('failed_to_create_general_dialog');
   }
 
-  return dialog as DialogRow;
+  return {
+    id: dialog.id,
+    kind: dialog.kind,
+    member_a: dialog.memberAId,
+    member_b: dialog.memberBId,
+  };
 }
 
 export async function getDialogById(dialogId: number): Promise<DialogRow | null> {
-  const result = db.prepare(
-    'select id, kind, member_a, member_b from dialogs where id = ?'
-  ).get(dialogId);
-  return result ? (result as DialogRow) : null;
+  const result = await db.dialog.findUnique({
+    where: {id: dialogId},
+    select: {
+      id: true,
+      kind: true,
+      memberAId: true,
+      memberBId: true,
+    },
+  });
+  if (!result) return null;
+  return {
+    id: result.id,
+    kind: result.kind,
+    member_a: result.memberAId,
+    member_b: result.memberBId,
+  };
 }
 
 export function normalizePair(userId: number, otherId: number) {
@@ -38,19 +81,62 @@ export function normalizePair(userId: number, otherId: number) {
 
 export async function getOrCreatePrivateDialog(userId: number, otherId: number): Promise<DialogRow> {
   const {a, b} = normalizePair(userId, otherId);
-  db.prepare(
-    "insert or ignore into dialogs (kind, member_a, member_b) values ('private', ?, ?)"
-  ).run(a, b);
+  let dialog = await db.dialog.findFirst({
+    where: {
+      kind: 'private',
+      memberAId: a,
+      memberBId: b,
+    },
+    select: {
+      id: true,
+      kind: true,
+      memberAId: true,
+      memberBId: true,
+    },
+  });
 
-  const dialog = db.prepare(
-    "select id, kind, member_a, member_b from dialogs where kind = 'private' and member_a = ? and member_b = ?"
-  ).get(a, b);
+  if (!dialog) {
+    try {
+      dialog = await db.dialog.create({
+        data: {
+          kind: 'private',
+          memberAId: a,
+          memberBId: b,
+        },
+        select: {
+          id: true,
+          kind: true,
+          memberAId: true,
+          memberBId: true,
+        },
+      });
+    } catch {
+      dialog = await db.dialog.findFirst({
+        where: {
+          kind: 'private',
+          memberAId: a,
+          memberBId: b,
+        },
+        select: {
+          id: true,
+          kind: true,
+          memberAId: true,
+          memberBId: true,
+        },
+      });
+    }
+  }
 
   if (!dialog) {
     throw new Error('failed_to_create_private_dialog');
   }
 
-  return dialog as DialogRow;
+  return {
+    id: dialog.id,
+    kind: dialog.kind,
+    member_a: dialog.memberAId,
+    member_b: dialog.memberBId,
+  };
 }
 
 export function userCanAccessDialog(userId: number, dialog: DialogRow) {

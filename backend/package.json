@@ -7,11 +7,17 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "admin:tui": "tsx src/cli/admin-tui.ts",
     "invite:create": "tsx src/cli/invite-create.ts",
-    "user:bootstrap": "tsx src/cli/bootstrap-user.ts"
+    "user:bootstrap": "tsx src/cli/bootstrap-user.ts",
+    "db:reset": "tsx src/cli/db-reset.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.7.0",
     "@nestjs/common": "^11.1.6",
     "@nestjs/core": "^11.1.6",
     "@nestjs/platform-express": "^11.1.6",
@@ -24,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "prisma": "^6.7.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }

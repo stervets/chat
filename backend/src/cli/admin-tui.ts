@@ -29,7 +29,6 @@ type InviteRow = {
 
 const rl = createInterface({input, output});
 
-const nowIso = () => new Date().toISOString();
 const clearScreen = () => output.write('\x1Bc');
 const normalize = (value: string) => value.trim();
 const normalizeNickname = (value: string) => normalize(value).toLowerCase();
@@ -52,37 +51,59 @@ function renderTitle(title: string) {
   output.write('\n\n');
 }
 
-function getUsers() {
-  return db.prepare(
-    `select
-       id,
-       nickname,
-       coalesce(name, nickname) as name,
-       nickname_color as "nicknameColor",
-       created_at as "createdAt",
-       updated_at as "updatedAt"
-     from users
-     order by id asc`
-  ).all() as UserRow[];
+async function getUsers() {
+  const rows = await db.user.findMany({
+    orderBy: {id: 'asc'},
+    select: {
+      id: true,
+      nickname: true,
+      name: true,
+      nicknameColor: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    nickname: row.nickname,
+    name: row.name || row.nickname,
+    nicknameColor: row.nicknameColor,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  })) as UserRow[];
 }
 
-function getInvites() {
-  return db.prepare(
-    `select
-       i.id,
-       i.code,
-       i.created_by as "createdById",
-       c.nickname as "createdByNickname",
-       i.created_at as "createdAt",
-       i.used_by as "usedById",
-       u.nickname as "usedByNickname",
-       i.used_at as "usedAt",
-       i.expires_at as "expiresAt"
-     from invites i
-     left join users c on c.id = i.created_by
-     left join users u on u.id = i.used_by
-     order by i.created_at desc`
-  ).all() as InviteRow[];
+async function getInvites() {
+  const rows = await db.invite.findMany({
+    orderBy: {createdAt: 'desc'},
+    include: {
+      createdBy: {
+        select: {
+          id: true,
+          nickname: true,
+        },
+      },
+      usedBy: {
+        select: {
+          id: true,
+          nickname: true,
+        },
+      },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    code: row.code,
+    createdById: row.createdBy?.id || null,
+    createdByNickname: row.createdBy?.nickname || null,
+    createdAt: row.createdAt.toISOString(),
+    usedById: row.usedBy?.id || null,
+    usedByNickname: row.usedBy?.nickname || null,
+    usedAt: row.usedAt ? row.usedAt.toISOString() : null,
+    expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+  })) as InviteRow[];
 }
 
 function renderUsers(rows: UserRow[]) {
@@ -122,13 +143,19 @@ function parsePositiveInt(raw: string) {
   return value;
 }
 
-function userExists(id: number) {
-  const row = db.prepare('select id from users where id = ?').get(id) as {id: number} | undefined;
+async function userExists(id: number) {
+  const row = await db.user.findUnique({
+    where: {id},
+    select: {id: true},
+  });
   return Boolean(row?.id);
 }
 
-function inviteExists(id: number) {
-  const row = db.prepare('select id from invites where id = ?').get(id) as {id: number} | undefined;
+async function inviteExists(id: number) {
+  const row = await db.invite.findUnique({
+    where: {id},
+    select: {id: true},
+  });
   return Boolean(row?.id);
 }
 
@@ -136,11 +163,13 @@ async function createUniqueInviteCode() {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = randomBytes(8).toString('hex');
     try {
-      db.prepare('insert into invites (code) values (?)').run(code);
+      await db.invite.create({
+        data: {code},
+        select: {id: true},
+      });
       return code;
     } catch (err: any) {
-      const sqliteCode = err?.code;
-      if (sqliteCode === 'SQLITE_CONSTRAINT' || sqliteCode === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if (err?.code === 'P2002') {
         continue;
       }
       throw err;
@@ -151,7 +180,7 @@ async function createUniqueInviteCode() {
 
 async function listUsersAction() {
   renderTitle('Пользователи');
-  renderUsers(getUsers());
+  renderUsers(await getUsers());
   await pause();
 }
 
@@ -169,10 +198,17 @@ async function addUserAction() {
 
   try {
     const passwordHash = await hashPassword(password);
-    const insert = db.prepare(
-      'insert into users (nickname, name, nickname_color, password_hash) values (?, ?, ?, ?)'
-    ).run(nickname, name || nickname, DEFAULT_NICKNAME_COLOR, passwordHash);
-    output.write(`\nПользователь создан: id=${Number(insert.lastInsertRowid)}\n`);
+    const created = await db.user.create({
+      data: {
+        nickname,
+        nicknameNormalized: nickname,
+        name: name || nickname,
+        nicknameColor: DEFAULT_NICKNAME_COLOR,
+        passwordHash,
+      },
+      select: {id: true},
+    });
+    output.write(`\nПользователь создан: id=${created.id}\n`);
   } catch (err: any) {
     output.write(`\nНе удалось создать пользователя: ${String(err?.message || err)}\n`);
   }
@@ -182,7 +218,7 @@ async function addUserAction() {
 
 async function editUserAction() {
   renderTitle('Редактирование пользователя');
-  const users = getUsers();
+  const users = await getUsers();
   renderUsers(users);
 
   const idRaw = await ask('\nid пользователя: ');
@@ -204,47 +240,42 @@ async function editUserAction() {
   const nextNickname = nextNicknameRaw ? normalizeNickname(nextNicknameRaw) : '';
   const nextName = await ask(`новое имя [${user.name}] (Enter = без изменений): `);
   const nextNicknameColor = await ask(
-    `цвет никнейма [${printable(user.nicknameColor)}] (Enter = без изменений, "-" = очистить): `
+    `цвет никнейма [${printable(user.nicknameColor)}] (Enter = без изменений, "-" = очистить): `,
   );
   const nextPassword = await ask('новый password (Enter = без изменений): ');
-  const updateTime = nowIso();
 
   try {
-    const fields: string[] = [];
-    const values: Array<string | number | null> = [];
+    const data: Record<string, unknown> = {};
 
     if (nextNickname) {
-      fields.push('nickname = ?');
-      values.push(nextNickname);
+      data.nickname = nextNickname;
+      data.nicknameNormalized = nextNickname;
     }
 
     if (nextName) {
-      fields.push('name = ?');
-      values.push(nextName);
+      data.name = nextName;
     }
 
     if (nextNicknameColor) {
-      fields.push('nickname_color = ?');
-      values.push(nextNicknameColor === '-' ? null : nextNicknameColor);
+      data.nicknameColor = nextNicknameColor === '-' ? null : nextNicknameColor;
     }
 
     if (nextPassword) {
       const passwordHash = await hashPassword(nextPassword);
-      fields.push('password_hash = ?');
-      values.push(passwordHash);
+      data.passwordHash = passwordHash;
     }
 
-    if (!fields.length) {
+    if (Object.keys(data).length === 0) {
       output.write('\nИзменений нет.\n');
       await pause();
       return;
     }
 
-    fields.push('updated_at = ?');
-    values.push(updateTime);
-    values.push(id);
-
-    db.prepare(`update users set ${fields.join(', ')} where id = ?`).run(...values);
+    await db.user.update({
+      where: {id},
+      data,
+      select: {id: true},
+    });
     output.write('\nПользователь обновлён.\n');
   } catch (err: any) {
     output.write(`\nНе удалось обновить пользователя: ${String(err?.message || err)}\n`);
@@ -255,7 +286,7 @@ async function editUserAction() {
 
 async function deleteUserAction() {
   renderTitle('Удаление пользователя');
-  renderUsers(getUsers());
+  renderUsers(await getUsers());
 
   const idRaw = await ask('\nid пользователя: ');
   const id = parsePositiveInt(idRaw);
@@ -265,7 +296,7 @@ async function deleteUserAction() {
     return;
   }
 
-  if (!userExists(id)) {
+  if (!await userExists(id)) {
     output.write('\nПользователь не найден.\n');
     await pause();
     return;
@@ -278,14 +309,14 @@ async function deleteUserAction() {
     return;
   }
 
-  const result = db.prepare('delete from users where id = ?').run(id);
-  output.write(`\nУдалено пользователей: ${result.changes}\n`);
+  const result = await db.user.deleteMany({where: {id}});
+  output.write(`\nУдалено пользователей: ${result.count}\n`);
   await pause();
 }
 
 async function listInvitesAction() {
   renderTitle('Инвайты');
-  renderInvites(getInvites());
+  renderInvites(await getInvites());
   await pause();
 }
 
@@ -296,7 +327,7 @@ async function addInviteAction() {
   const createdByRaw = await ask('created_by id (Enter = пусто): ');
   const expiresAtRaw = await ask('expires_at ISO (Enter = пусто): ');
 
-  let createdBy: number | null = null;
+  let createdById: number | null = null;
   if (createdByRaw) {
     const parsed = parsePositiveInt(createdByRaw);
     if (!parsed) {
@@ -304,21 +335,35 @@ async function addInviteAction() {
       await pause();
       return;
     }
-    if (!userExists(parsed)) {
+    if (!await userExists(parsed)) {
       output.write('\ncreated_by не найден в users.\n');
       await pause();
       return;
     }
-    createdBy = parsed;
+    createdById = parsed;
   }
 
-  const expiresAt = expiresAtRaw || null;
+  let expiresAt: Date | null = null;
+  if (expiresAtRaw) {
+    const parsed = new Date(expiresAtRaw);
+    if (Number.isNaN(parsed.getTime())) {
+      output.write('\nНекорректный expires_at.\n');
+      await pause();
+      return;
+    }
+    expiresAt = parsed;
+  }
 
   try {
-    const insert = db.prepare(
-      'insert into invites (code, created_by, expires_at) values (?, ?, ?)'
-    ).run(code, createdBy, expiresAt);
-    output.write(`\nИнвайт создан: id=${Number(insert.lastInsertRowid)}\n`);
+    const created = await db.invite.create({
+      data: {
+        code,
+        createdById,
+        expiresAt,
+      },
+      select: {id: true},
+    });
+    output.write(`\nИнвайт создан: id=${created.id}\n`);
     output.write(`Ссылка: ${inviteLink(code)}\n`);
   } catch (err: any) {
     output.write(`\nНе удалось создать инвайт: ${String(err?.message || err)}\n`);
@@ -329,7 +374,7 @@ async function addInviteAction() {
 
 async function editInviteAction() {
   renderTitle('Редактирование инвайта');
-  const invites = getInvites();
+  const invites = await getInvites();
   renderInvites(invites);
 
   const idRaw = await ask('\nid инвайта: ');
@@ -349,56 +394,64 @@ async function editInviteAction() {
 
   const nextCode = await ask(`новый code [${invite.code}] (Enter = без изменений): `);
   const nextCreatedByRaw = await ask(
-    `новый created_by [${printable(invite.createdById)}] (Enter = без изменений, "-" = очистить): `
+    `новый created_by [${printable(invite.createdById)}] (Enter = без изменений, "-" = очистить): `,
   );
   const nextExpiresRaw = await ask(
-    `новый expires_at [${printable(invite.expiresAt)}] (Enter = без изменений, "-" = очистить): `
+    `новый expires_at [${printable(invite.expiresAt)}] (Enter = без изменений, "-" = очистить): `,
   );
   const resetUsedRaw = await ask('сбросить used_by/used_at? [y/N]: ');
 
-  const fields: string[] = [];
-  const values: (string | number | null)[] = [];
+  const data: Record<string, unknown> = {};
 
   if (nextCode) {
-    fields.push('code = ?');
-    values.push(nextCode);
+    data.code = nextCode;
   }
 
   if (nextCreatedByRaw) {
     if (nextCreatedByRaw === '-') {
-      fields.push('created_by = ?');
-      values.push(null);
+      data.createdById = null;
     } else {
       const parsed = parsePositiveInt(nextCreatedByRaw);
-      if (!parsed || !userExists(parsed)) {
+      if (!parsed || !await userExists(parsed)) {
         output.write('\nНекорректный created_by.\n');
         await pause();
         return;
       }
-      fields.push('created_by = ?');
-      values.push(parsed);
+      data.createdById = parsed;
     }
   }
 
   if (nextExpiresRaw) {
-    fields.push('expires_at = ?');
-    values.push(nextExpiresRaw === '-' ? null : nextExpiresRaw);
+    if (nextExpiresRaw === '-') {
+      data.expiresAt = null;
+    } else {
+      const parsed = new Date(nextExpiresRaw);
+      if (Number.isNaN(parsed.getTime())) {
+        output.write('\nНекорректный expires_at.\n');
+        await pause();
+        return;
+      }
+      data.expiresAt = parsed;
+    }
   }
 
   if (isYes(resetUsedRaw)) {
-    fields.push('used_by = null');
-    fields.push('used_at = null');
+    data.usedById = null;
+    data.usedAt = null;
   }
 
-  if (fields.length === 0) {
+  if (Object.keys(data).length === 0) {
     output.write('\nИзменений нет.\n');
     await pause();
     return;
   }
 
   try {
-    values.push(id);
-    db.prepare(`update invites set ${fields.join(', ')} where id = ?`).run(...values);
+    await db.invite.update({
+      where: {id},
+      data,
+      select: {id: true},
+    });
     output.write('\nИнвайт обновлён.\n');
   } catch (err: any) {
     output.write(`\nНе удалось обновить инвайт: ${String(err?.message || err)}\n`);
@@ -409,7 +462,7 @@ async function editInviteAction() {
 
 async function deleteInviteAction() {
   renderTitle('Удаление инвайта');
-  renderInvites(getInvites());
+  renderInvites(await getInvites());
 
   const idRaw = await ask('\nid инвайта: ');
   const id = parsePositiveInt(idRaw);
@@ -419,7 +472,7 @@ async function deleteInviteAction() {
     return;
   }
 
-  if (!inviteExists(id)) {
+  if (!await inviteExists(id)) {
     output.write('\nИнвайт не найден.\n');
     await pause();
     return;
@@ -432,8 +485,8 @@ async function deleteInviteAction() {
     return;
   }
 
-  const result = db.prepare('delete from invites where id = ?').run(id);
-  output.write(`\nУдалено инвайтов: ${result.changes}\n`);
+  const result = await db.invite.deleteMany({where: {id}});
+  output.write(`\nУдалено инвайтов: ${result.count}\n`);
   await pause();
 }
 
@@ -504,5 +557,5 @@ run()
   })
   .finally(() => {
     rl.close();
-    closeDb();
+    void closeDb();
   });

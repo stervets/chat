@@ -46,12 +46,12 @@ export class UploadsController {
       fileSize: Math.max(config.uploads.maxBytes * 8, 8 * 1024 * 1024),
     },
   }))
-  uploadImage(
+  async uploadImage(
     @Req() req: any,
     @UploadedFile() file: any,
   ) {
     const token = this.resolveToken(req);
-    const session = token ? resolveSession(token) : null;
+    const session = token ? await resolveSession(token) : null;
     if (!session) {
       throw new UnauthorizedException('unauthorized');
     }

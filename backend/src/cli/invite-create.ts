@@ -17,13 +17,16 @@ const parseCount = (args: string[]) => {
 
 const createInvite = async () => {
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const code = randomBytes(8).toString('hex');
+    const inviteCode = randomBytes(8).toString('hex');
     try {
-      db.prepare('insert into invites (code) values (?)').run(code);
-      return code;
+      await db.invite.create({
+        data: {code: inviteCode},
+        select: {id: true},
+      });
+      return inviteCode;
     } catch (err: any) {
       const code = err?.code;
-      if (code === 'SQLITE_CONSTRAINT' || code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if (code === 'P2002') {
         continue;
       }
       throw err;
@@ -45,14 +48,10 @@ const run = async () => {
     process.stdout.write(`${code}\n`);
   }
 
-  closeDb();
+  await closeDb();
 };
 
 run().catch((err) => {
   console.error(err);
-  try {
-    closeDb();
-  } finally {
-    process.exit(1);
-  }
+  void closeDb().finally(() => process.exit(1));
 });

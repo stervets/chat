@@ -25,4 +25,4 @@ Caddy завершает HTTPS и проксирует:
 Скопируй `frontend/config.example.json` → `frontend/config.json` и
 `backend/config.example.json` → `backend/config.json`, затем отредактируй под прод.
 
-SQLite файл хранится в `backend/data/` (по умолчанию `backend/data/marx.sqlite`).
+В `backend/config.json` обязательно укажи `db.url` до PostgreSQL.

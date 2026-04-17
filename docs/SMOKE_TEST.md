@@ -1,6 +1,6 @@
 # Smoke Test
 
-SQLite файл создаётся автоматически при запуске backend.
+Тесты работают с PostgreSQL.
 
 ## Быстрый smoke (headless)
 
