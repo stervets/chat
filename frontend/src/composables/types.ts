@@ -32,7 +32,9 @@ export type Message = {
   authorNickname: string;
   authorName: string;
   authorNicknameColor: string | null;
-  body: string;
+  rawText: string;
+  renderedHtml: string;
+  body?: string;
   createdAt: string;
   reactions: MessageReaction[];
 };

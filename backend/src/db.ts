@@ -56,6 +56,33 @@ function ensureMigrations(database: DatabaseSync) {
   }
 
   database.exec(`create unique index if not exists users_nickname_ci_unique on users(lower(nickname))`);
+
+  const messageColumns = database.prepare(`pragma table_info('messages')`).all() as {name: string}[];
+  const hasBody = messageColumns.some((column) => column.name === 'body');
+  const hasRawText = messageColumns.some((column) => column.name === 'raw_text');
+  const hasRenderedHtml = messageColumns.some((column) => column.name === 'rendered_html');
+
+  if (!hasRawText) {
+    database.exec(`alter table messages add column raw_text text`);
+  }
+
+  if (!hasRenderedHtml) {
+    database.exec(`alter table messages add column rendered_html text`);
+  }
+
+  if (hasBody) {
+    database.exec(
+      `update messages
+       set raw_text = body
+       where raw_text is null`
+    );
+  }
+
+  database.exec(
+    `update messages
+     set raw_text = ''
+     where raw_text is null`
+  );
 }
 
 export {db};

@@ -11,6 +11,7 @@ import {
   wsLogout,
   wsUpdateProfile,
 } from '@/composables/ws-rpc';
+import ChatMessageItem from './message-item/index.vue';
 
 type DirectDialog = {
   dialogId: number;
@@ -49,7 +50,6 @@ type ToastItem = {
 };
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
-const TIME_TAG_RE = /\[(\d{2}:\d{2}:\d{2})\]/g;
 const MENTION_TAG_RE = /@([a-zA-Z0-9._-]+)/g;
 const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)$/i;
@@ -57,6 +57,10 @@ const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '☹️', '�
 const MAX_PASTE_IMAGE_BYTES = 1024 * 1024;
 
 export default {
+  components: {
+    ChatMessageItem,
+  },
+
   async setup() {
     return {
       router: useRouter(),
@@ -91,6 +95,7 @@ export default {
       reactionTooltipY: ref(0),
       reactionPickerMessageId: ref<number | null>(null),
       messagePreviewCache: ref<Record<string, LinkPreview[]>>({}),
+      messageHtmlCache: ref<Record<string, string>>({}),
       faviconBlinkTimer: ref<number | null>(null),
       faviconBlinkAlertFrame: ref(false),
       inactiveTabUnread: ref(false),
@@ -179,18 +184,26 @@ export default {
     },
 
     normalizeMessage(this: any, message: any): Message {
+      const rawText = String(message?.rawText ?? message?.body ?? '');
       return {
         ...message,
+        rawText,
+        renderedHtml: String(message?.renderedHtml ?? ''),
         reactions: Array.isArray(message?.reactions) ? message.reactions : [],
       } as Message;
     },
 
+    getMessageRawText(this: any, messageRaw: any) {
+      return String(messageRaw?.rawText ?? messageRaw?.body ?? '');
+    },
+
     messagePreviewCacheKey(this: any, message: Message) {
-      return `${message.id}:${message.body}`;
+      return `${message.id}:${this.getMessageRawText(message)}:${String(message.renderedHtml || '')}`;
     },
 
     resetMessagePreviewCache(this: any) {
       this.messagePreviewCache = {};
+      this.messageHtmlCache = {};
     },
 
     formatMessageTime(this: any, createdAt: string) {
@@ -220,18 +233,38 @@ export default {
       this.focusMessageInputToEnd();
     },
 
+    async copyTextToClipboard(this: any, textRaw: unknown) {
+      const text = String(textRaw ?? '');
+      if (!text.trim()) return;
+
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.setAttribute('readonly', 'true');
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          textarea.style.pointerEvents = 'none';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+        }
+        this.pushToast('Буфер обмена', 'Код скопирован');
+      } catch {
+        this.error = 'Не удалось скопировать код.';
+      }
+    },
+
     onAuthorClick(this: any, message: Message) {
       this.appendToInput(`${this.formatUsername(message.authorNickname)}, `);
     },
 
     onMessageTimeClick(this: any, message: Message) {
       this.appendToInput(`${this.formatUsername(message.authorNickname)} [${this.formatMessageTime(message.createdAt)}], `);
-    },
-
-    onMentionTokenClick(this: any, segment: any) {
-      const username = String(segment?.username || '').trim();
-      if (!username) return;
-      this.appendToInput(`${username}, `);
     },
 
     canOpenDirectFromMessage(this: any, message: Message) {
@@ -257,7 +290,7 @@ export default {
     startMessageEdit(this: any, message: Message) {
       if (!this.isOwnMessage(message)) return;
       this.editingMessageId = message.id;
-      this.editingMessageText = message.body;
+      this.editingMessageText = this.getMessageRawText(message);
       this.reactionPickerMessageId = null;
       this.reactionTooltipVisible = false;
       nextTick(() => {
@@ -272,6 +305,10 @@ export default {
     cancelMessageEdit(this: any) {
       this.editingMessageId = null;
       this.editingMessageText = '';
+    },
+
+    onEditingMessageTextUpdate(this: any, valueRaw: unknown) {
+      this.editingMessageText = String(valueRaw ?? '');
     },
 
     applyMessageUpdate(this: any, messageRaw: any) {
@@ -370,9 +407,9 @@ export default {
     isMentionedForMe(this: any, message: Message) {
       const meNickname = String(this.me?.nickname || '').toLowerCase();
       if (message.authorId === this.me?.id) return false;
-      if (this.containsAllKeyword(message.body)) return true;
+      if (this.containsAllKeyword(this.getMessageRawText(message))) return true;
       if (!meNickname) return false;
-      return this.hasMentionToken(message.body, meNickname);
+      return this.hasMentionToken(this.getMessageRawText(message), meNickname);
     },
 
     getNotificationDialogTitle(this: any, notification: NotificationItem) {
@@ -499,7 +536,7 @@ export default {
         authorName: message.authorName,
         authorNickname: message.authorNickname,
         authorNicknameColor: message.authorNicknameColor,
-        body: message.body,
+        body: this.getMessageRawText(message),
         createdAt: message.createdAt,
         unread: true,
         targetUser,
@@ -651,9 +688,201 @@ export default {
     },
 
     buildTimeTagTooltip(this: any, message: Message) {
-      const normalized = message.body.replace(/\s+/g, ' ').trim();
+      const normalized = this.getMessageRawText(message).replace(/\s+/g, ' ').trim();
       const preview = normalized.length > 100 ? `${normalized.slice(0, 97)}...` : normalized;
       return `${this.formatUsername(message.authorNickname)}: ${preview || '(пусто)'}`;
+    },
+
+    escapeHtml(this: any, valueRaw: unknown) {
+      return String(valueRaw ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    },
+
+    decodeHtmlEntities(this: any, valueRaw: unknown) {
+      return String(valueRaw ?? '')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, '\'')
+        .replace(/&amp;/g, '&');
+    },
+
+    renderTextChunkHtml(this: any, rawChunkRaw: unknown, sourceIndex: number) {
+      const rawChunk = String(rawChunkRaw ?? '');
+      const parts = this.linkify(rawChunk);
+      let html = '';
+
+      for (const part of parts) {
+        if (part.type === 'link') {
+          const normalizedUrl = this.normalizeMessageLink(part.value);
+          const escapedUrl = this.escapeHtml(normalizedUrl);
+          const preview = this.buildLinkPreview(normalizedUrl);
+          if (preview?.type === 'image') {
+            html += `<a class="inline-image-link" href="${escapedUrl}" target="_blank" rel="noopener noreferrer"><img class="preview-media preview-image preview-inline-image" src="${escapedUrl}" alt="image preview" loading="lazy" decoding="async"></a>`;
+          } else {
+            html += `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a>`;
+          }
+          continue;
+        }
+
+        const text = String(part.value || '');
+        const tokenRe = /@([a-zA-Z0-9._-]+)|\[(\d{2}:\d{2}:\d{2})\]/g;
+        let lastIndex = 0;
+        for (const match of text.matchAll(tokenRe)) {
+          if (match.index === undefined) continue;
+          if (match.index > lastIndex) {
+            html += this.escapeHtml(text.slice(lastIndex, match.index));
+          }
+
+          if (match[1]) {
+            const nickname = String(match[1] || '').trim();
+            const user = this.findMentionUser(nickname);
+            if (!user) {
+              html += this.escapeHtml(`@${nickname}`);
+            } else {
+              const username = this.formatUsername(user.nickname);
+              const escapedUsername = this.escapeHtml(username);
+              const escapedName = this.escapeHtml(user.name);
+              const style = user.nicknameColor ? ` style="color:${this.escapeHtml(user.nicknameColor)}"` : '';
+              html += `<span class="mention-token" data-mention="${escapedUsername}" title="${escapedUsername}"${style}>${escapedName}</span>`;
+            }
+          } else {
+            const timeLabel = String(match[2] || '');
+            const target = this.findClosestMessageByTime(sourceIndex, timeLabel);
+            const tooltip = target ? this.buildTimeTagTooltip(target) : 'Сообщение с этим временем не найдено';
+            const targetAttr = target?.id ? ` data-target-message-id="${target.id}"` : '';
+            html += `<span class="time-reference" data-time-tooltip="${this.escapeHtml(tooltip)}"${targetAttr}>[${this.escapeHtml(timeLabel)}]</span>`;
+          }
+
+          lastIndex = match.index + match[0].length;
+        }
+
+        if (lastIndex < text.length) {
+          html += this.escapeHtml(text.slice(lastIndex));
+        }
+      }
+
+      return html;
+    },
+
+    decorateRenderedHtml(this: any, sourceHtmlRaw: unknown, sourceIndex: number) {
+      const sourceHtml = String(sourceHtmlRaw ?? '');
+      if (!sourceHtml) return '';
+
+      let html = '';
+      let index = 0;
+      let insideCode = false;
+
+      while (index < sourceHtml.length) {
+        if (sourceHtml[index] === '<') {
+          const closeIndex = sourceHtml.indexOf('>', index);
+          if (closeIndex < 0) {
+            html += this.escapeHtml(this.decodeHtmlEntities(sourceHtml.slice(index)));
+            break;
+          }
+
+          const tag = sourceHtml.slice(index, closeIndex + 1);
+          const tagLower = tag.toLowerCase();
+          if (tagLower === '<code>') insideCode = true;
+          if (tagLower === '</code>') insideCode = false;
+          html += tag;
+          index = closeIndex + 1;
+          continue;
+        }
+
+        const nextTagIndex = sourceHtml.indexOf('<', index);
+        const chunk = nextTagIndex < 0
+          ? sourceHtml.slice(index)
+          : sourceHtml.slice(index, nextTagIndex);
+
+        if (insideCode) {
+          html += chunk;
+        } else {
+          const decodedChunk = this.decodeHtmlEntities(chunk);
+          html += this.renderTextChunkHtml(decodedChunk, sourceIndex);
+        }
+
+        if (nextTagIndex < 0) break;
+        index = nextTagIndex;
+      }
+
+      return html;
+    },
+
+    getRenderedMessageHtml(this: any, message: Message, sourceIndex: number) {
+      const cacheKey = this.messagePreviewCacheKey(message);
+      const cached = this.messageHtmlCache[cacheKey];
+      if (cached !== undefined) return cached;
+
+      const rendered = String(message.renderedHtml || '').trim();
+      const html = rendered
+        ? this.decorateRenderedHtml(rendered, sourceIndex)
+        : this.renderTextChunkHtml(this.getMessageRawText(message), sourceIndex);
+
+      this.messageHtmlCache = {
+        ...this.messageHtmlCache,
+        [cacheKey]: html,
+      };
+
+      return html;
+    },
+
+    onMessageBodyClick(this: any, event: MouseEvent, _message: Message, _sourceIndex: number) {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+
+      const codeEl = target.closest('code') as HTMLElement | null;
+      if (codeEl) {
+        this.timeTooltipVisible = false;
+        void this.copyTextToClipboard(codeEl.textContent || '');
+        return;
+      }
+
+      const mentionEl = target.closest('.mention-token') as HTMLElement | null;
+      if (mentionEl?.dataset?.mention) {
+        this.timeTooltipVisible = false;
+        this.appendToInput(`${mentionEl.dataset.mention}, `);
+        return;
+      }
+
+      const timeRefEl = target.closest('.time-reference') as HTMLElement | null;
+      if (timeRefEl?.dataset?.targetMessageId) {
+        this.timeTooltipVisible = false;
+        const targetMessageId = Number.parseInt(timeRefEl.dataset.targetMessageId, 10);
+        if (Number.isFinite(targetMessageId) && targetMessageId > 0) {
+          this.scrollToMessageById(targetMessageId);
+        }
+        return;
+      }
+    },
+
+    onMessageBodyMouseMove(this: any, event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+
+      const timeRefEl = target.closest('.time-reference') as HTMLElement | null;
+      if (!timeRefEl) {
+        this.timeTooltipVisible = false;
+        return;
+      }
+
+      const tooltipRaw = String(timeRefEl.dataset.timeTooltip || '').trim();
+      if (!tooltipRaw) {
+        this.timeTooltipVisible = false;
+        return;
+      }
+
+      this.timeTooltipText = this.decodeHtmlEntities(tooltipRaw);
+      this.timeTooltipVisible = true;
+      this.updateTimeTooltipPosition(event);
+    },
+
+    onMessageBodyMouseLeave(this: any) {
+      this.timeTooltipVisible = false;
     },
 
     findClosestMessageByTime(this: any, sourceIndex: number, timeLabel: string) {
@@ -675,12 +904,6 @@ export default {
       return String(rawUrl || '').replace(/[),.;!?]+$/g, '');
     },
 
-    shouldHideImageLink(this: any, rawUrl: string) {
-      const normalizedUrl = this.normalizeMessageLink(rawUrl);
-      const preview = this.buildLinkPreview(normalizedUrl);
-      return preview?.type === 'image';
-    },
-
     findMentionUser(this: any, nicknameRaw: unknown) {
       const nickname = String(nicknameRaw || '').trim().toLowerCase();
       if (!nickname) return null;
@@ -700,112 +923,12 @@ export default {
       return null;
     },
 
-    pushMentionSegments(this: any, segments: any[], textRaw: string) {
-      const text = String(textRaw || '');
-      if (!text) return;
-
-      let lastIndex = 0;
-      MENTION_TAG_RE.lastIndex = 0;
-      for (const match of text.matchAll(MENTION_TAG_RE)) {
-        if (match.index === undefined) continue;
-
-        if (match.index > lastIndex) {
-          segments.push({
-            type: 'text',
-            value: text.slice(lastIndex, match.index),
-          });
-        }
-
-        const nickname = String(match[1] || '').trim();
-        const user = this.findMentionUser(nickname);
-        if (user) {
-          segments.push({
-            type: 'mention',
-            value: user.name,
-            username: this.formatUsername(user.nickname),
-            color: user.nicknameColor || null,
-          });
-        } else {
-          segments.push({
-            type: 'text',
-            value: this.formatUsername(nickname),
-          });
-        }
-
-        lastIndex = match.index + match[0].length;
-      }
-
-      if (lastIndex < text.length) {
-        segments.push({
-          type: 'text',
-          value: text.slice(lastIndex),
-        });
-      }
-    },
-
-    buildMessageBodySegments(this: any, message: Message, sourceIndex: number) {
-      const segments: Array<any> = [];
-      let hiddenImageLink = false;
-
-      for (const part of this.linkify(message.body)) {
-        if (part.type === 'link') {
-          const normalizedUrl = this.normalizeMessageLink(part.value);
-          if (this.shouldHideImageLink(normalizedUrl)) {
-            const preview = this.buildLinkPreview(normalizedUrl);
-            if (preview?.type === 'image') {
-              segments.push({
-                type: 'inlineImagePreview',
-                src: preview.src,
-              });
-            }
-            hiddenImageLink = true;
-            continue;
-          }
-          segments.push(part);
-          continue;
-        }
-
-        let lastIndex = 0;
-        TIME_TAG_RE.lastIndex = 0;
-        for (const match of part.value.matchAll(TIME_TAG_RE)) {
-          if (match.index === undefined) continue;
-          if (match.index > lastIndex) {
-            this.pushMentionSegments(segments, part.value.slice(lastIndex, match.index));
-          }
-
-          const timeLabel = match[1];
-          const target = this.findClosestMessageByTime(sourceIndex, timeLabel);
-          segments.push({
-            type: 'timeTag',
-            value: `[${timeLabel}]`,
-            targetMessageId: target?.id || null,
-            tooltip: target ? this.buildTimeTagTooltip(target) : 'Сообщение с этим временем не найдено',
-          });
-          lastIndex = match.index + match[0].length;
-        }
-
-        if (lastIndex < part.value.length) {
-          this.pushMentionSegments(segments, part.value.slice(lastIndex));
-        }
-      }
-
-      if (segments.length) return segments;
-      if (hiddenImageLink) return [];
-      return [{type: 'text', value: message.body}];
-    },
-
     scrollToMessageById(this: any, messageId: number) {
       if (!this.messagesEl) return;
       const target = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
       if (!target) return;
       target.scrollIntoView({behavior: 'smooth', block: 'center'});
       this.triggerMessageBlink(messageId);
-    },
-
-    onBodyTimeTagClick(this: any, segment: any) {
-      if (!segment?.targetMessageId) return;
-      this.timeTooltipVisible = false;
-      this.scrollToMessageById(segment.targetMessageId);
     },
 
     parseUrl(this: any, raw: string) {
@@ -909,7 +1032,7 @@ export default {
       const previews: LinkPreview[] = [];
       const seen = new Set<string>();
 
-      for (const linkUrl of this.extractMessageLinks(message.body)) {
+      for (const linkUrl of this.extractMessageLinks(this.getMessageRawText(message))) {
         const preview = this.buildLinkPreview(linkUrl);
         if (!preview) continue;
         if (seen.has(preview.key)) continue;
@@ -1043,23 +1166,6 @@ export default {
     updateTimeTooltipPosition(this: any, event: MouseEvent) {
       this.timeTooltipX = Math.min(event.clientX + 14, window.innerWidth - 16);
       this.timeTooltipY = Math.min(event.clientY + 16, window.innerHeight - 16);
-    },
-
-    onTimeTagMouseEnter(this: any, event: MouseEvent, segment: any) {
-      const tooltip = String(segment?.tooltip || '').trim();
-      if (!tooltip) return;
-      this.timeTooltipText = tooltip;
-      this.timeTooltipVisible = true;
-      this.updateTimeTooltipPosition(event);
-    },
-
-    onTimeTagMouseMove(this: any, event: MouseEvent) {
-      if (!this.timeTooltipVisible) return;
-      this.updateTimeTooltipPosition(event);
-    },
-
-    onTimeTagMouseLeave(this: any) {
-      this.timeTooltipVisible = false;
     },
 
     getTimeTooltipStyle(this: any) {

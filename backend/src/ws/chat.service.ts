@@ -16,6 +16,7 @@ import {
   verifyPassword,
 } from '../common/auth.js';
 import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
+import {compileMessageFormat} from '../common/message-format.js';
 import {deleteUploadFile, sanitizeUploadName} from '../common/uploads.js';
 import type {SocketState} from './protocol.js';
 
@@ -98,12 +99,12 @@ export class ChatService {
     db.prepare('delete from messages where created_at < ?').run(this.messagesCutoffIso());
   }
 
-  private extractUploadNamesFromBody(bodyRaw: unknown) {
-    const body = String(bodyRaw || '');
+  private extractUploadNamesFromRawText(rawTextRaw: unknown) {
+    const rawText = String(rawTextRaw || '');
     const names = new Set<string>();
 
     UPLOAD_LINK_RE.lastIndex = 0;
-    for (const match of body.matchAll(UPLOAD_LINK_RE)) {
+    for (const match of rawText.matchAll(UPLOAD_LINK_RE)) {
       const safeName = sanitizeUploadName(match[1]);
       if (!safeName) continue;
       names.add(safeName);
@@ -116,7 +117,7 @@ export class ChatService {
     const row = db.prepare(
       `select id
        from messages
-       where body like ?
+       where raw_text like ?
        limit 1`
     ).get(`%/uploads/${fileName}%`) as {id: number} | undefined;
 
@@ -776,7 +777,8 @@ export class ChatService {
            u.nickname as "authorNickname",
            coalesce(u.name, u.nickname) as "authorName",
            u.nickname_color as "authorNicknameColor",
-           m.body,
+           coalesce(m.raw_text, '') as "rawText",
+           coalesce(m.rendered_html, '') as "renderedHtml",
            m.created_at as "createdAt"
          from messages m
          left join users u on u.id = m.sender_id
@@ -821,7 +823,8 @@ export class ChatService {
       authorNickname: string;
       authorName: string;
       authorNicknameColor: string | null;
-      body: string;
+      rawText: string;
+      renderedHtml: string;
       createdAt: string;
       reactions: MessageReaction[];
     };
@@ -844,15 +847,16 @@ export class ChatService {
       return {ok: false, error: 'empty_message'};
     }
 
-    const body = trimmed.length > MAX_MESSAGE_LENGTH
+    const rawText = trimmed.length > MAX_MESSAGE_LENGTH
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
+    const compiled = compileMessageFormat(rawText);
 
     this.pruneExpiredMessages();
     const createdAt = new Date().toISOString();
     const insert = db.prepare(
-      'insert into messages (dialog_id, sender_id, body, created_at) values (?, ?, ?, ?)'
-    ).run(dialogId, state.user!.id, body, createdAt);
+      'insert into messages (dialog_id, sender_id, raw_text, rendered_html, created_at) values (?, ?, ?, ?, ?)'
+    ).run(dialogId, state.user!.id, compiled.rawText, compiled.renderedHtml, createdAt);
 
     return {
       ok: true,
@@ -863,7 +867,8 @@ export class ChatService {
         authorNickname: state.user!.nickname,
         authorName: state.user!.name,
         authorNicknameColor: state.user!.nicknameColor,
-        body,
+        rawText: compiled.rawText,
+        renderedHtml: compiled.renderedHtml,
         createdAt,
         reactions: [],
       },
@@ -879,7 +884,8 @@ export class ChatService {
       authorNickname: string;
       authorName: string;
       authorNicknameColor: string | null;
-      body: string;
+      rawText: string;
+      renderedHtml: string;
       createdAt: string;
       reactions: MessageReaction[];
     };
@@ -898,7 +904,8 @@ export class ChatService {
          m.id as id,
          m.dialog_id as "dialogId",
          m.sender_id as "authorId",
-         m.body as body,
+         coalesce(m.raw_text, '') as "rawText",
+         coalesce(m.rendered_html, '') as "renderedHtml",
          m.created_at as "createdAt"
        from messages m
        where m.id = ?`
@@ -906,7 +913,8 @@ export class ChatService {
       id: number;
       dialogId: number;
       authorId: number | null;
-      body: string;
+      rawText: string;
+      renderedHtml: string;
       createdAt: string;
     } | undefined;
 
@@ -928,13 +936,16 @@ export class ChatService {
       return {ok: false, error: 'empty_message'};
     }
 
-    const body = trimmed.length > MAX_MESSAGE_LENGTH
+    const rawText = trimmed.length > MAX_MESSAGE_LENGTH
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
+    const compiled = compileMessageFormat(rawText);
 
-    const changed = body !== existing.body;
+    const changed = compiled.rawText !== existing.rawText || compiled.renderedHtml !== existing.renderedHtml;
     if (changed) {
-      db.prepare('update messages set body = ? where id = ?').run(body, messageId);
+      db.prepare(
+        'update messages set raw_text = ?, rendered_html = ? where id = ?'
+      ).run(compiled.rawText, compiled.renderedHtml, messageId);
     }
 
     return {
@@ -947,7 +958,8 @@ export class ChatService {
         authorNickname: state.user!.nickname,
         authorName: state.user!.name,
         authorNicknameColor: state.user!.nicknameColor,
-        body,
+        rawText: compiled.rawText,
+        renderedHtml: compiled.renderedHtml,
         createdAt: existing.createdAt,
         reactions: this.loadMessageReactions(messageId),
       },
@@ -973,14 +985,14 @@ export class ChatService {
          m.id as id,
          m.dialog_id as "dialogId",
          m.sender_id as "authorId",
-         m.body as body
+         coalesce(m.raw_text, '') as "rawText"
        from messages m
        where m.id = ?`
     ).get(messageId) as {
       id: number;
       dialogId: number;
       authorId: number | null;
-      body: string;
+      rawText: string;
     } | undefined;
 
     if (!existing) {
@@ -996,7 +1008,7 @@ export class ChatService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const uploadNames = this.extractUploadNamesFromBody(existing.body);
+    const uploadNames = this.extractUploadNamesFromRawText(existing.rawText);
     const result = db.prepare('delete from messages where id = ?').run(messageId);
     if (result.changes > 0) {
       this.cleanupUnusedUploads(uploadNames);
@@ -1036,11 +1048,11 @@ export class ChatService {
     }
 
     const uploadRows = db.prepare(
-      `select m.body as body
+      `select coalesce(m.raw_text, '') as "rawText"
        from messages m
        where m.dialog_id = ?`
-    ).all(dialogId) as Array<{body: string}>;
-    const uploadNames = uploadRows.flatMap((row) => this.extractUploadNamesFromBody(row.body));
+    ).all(dialogId) as Array<{rawText: string}>;
+    const uploadNames = uploadRows.flatMap((row) => this.extractUploadNamesFromRawText(row.rawText));
 
     const result = db.prepare('delete from dialogs where id = ?').run(dialogId);
     if (result.changes > 0) {
@@ -1092,14 +1104,14 @@ export class ChatService {
          m.id as id,
          m.dialog_id as "dialogId",
          m.sender_id as "authorId",
-         m.body as body
+         coalesce(m.raw_text, '') as "rawText"
        from messages m
        where m.id = ?`
     ).get(messageId) as {
       id: number;
       dialogId: number;
       authorId: number | null;
-      body: string;
+      rawText: string;
     } | undefined;
 
     if (!message) {
@@ -1175,7 +1187,7 @@ export class ChatService {
             name: state.user!.name,
             nicknameColor: state.user!.nicknameColor,
           },
-          messageBody: message.body,
+          messageBody: message.rawText,
           createdAt: now,
         }
         : null,

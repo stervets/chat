@@ -134,7 +134,7 @@ async function login(page, nickname, password) {
 
 async function sendMessage(page, text) {
   await page.getByPlaceholder('Сообщение...').fill(text);
-  await page.getByRole('button', {name: 'Отправить'}).click();
+  await page.getByRole('button', {name: /Отправить/i}).click();
 }
 
 async function ensureNoError(page) {
@@ -273,11 +273,11 @@ async function closeLeftDrawerIfOpen(page) {
     await page1.reload({waitUntil: 'networkidle'});
     await page1.waitForSelector('text=hello-from-mike', {timeout: 30000});
 
-    await sendMessage(page2, 'all ping-everyone');
-    await page1.waitForSelector('text=all ping-everyone', {timeout: 30000});
-    const mentionClass = await page1.locator('.message', {hasText: 'all ping-everyone'}).last().getAttribute('class');
+    await sendMessage(page2, '@all ping-everyone');
+    await page1.waitForSelector('text=@all ping-everyone', {timeout: 30000});
+    const mentionClass = await page1.locator('.message', {hasText: '@all ping-everyone'}).last().getAttribute('class');
     if (!mentionClass || !mentionClass.includes('message-mention-me')) {
-      throw new Error('Message with all keyword was not highlighted');
+      throw new Error('Message with @all keyword was not highlighted');
     }
 
     const imageUrl = 'https://cs8.pikabu.ru/post_img/2016/09/16/10/og_og_1474048544294839279.jpg';
@@ -286,9 +286,14 @@ async function closeLeftDrawerIfOpen(page) {
     const imageMessage = page1.locator('.message').filter({
       has: page1.locator(`img.preview-image[src="${imageUrl}"]`),
     }).last();
-    const imageLinkInBody = await imageMessage.locator(`.message-body a[href="${imageUrl}"]`).count();
-    if (imageLinkInBody !== 0) {
-      throw new Error('Image URL should be hidden in message body when preview is rendered');
+    const imageLinkInBody = imageMessage.locator(`.message-body a[href="${imageUrl}"]`);
+    const imageLinkCount = await imageLinkInBody.count();
+    if (imageLinkCount !== 1) {
+      throw new Error(`Expected one clickable image link, got ${imageLinkCount}`);
+    }
+    const imageLinkText = ((await imageLinkInBody.first().textContent()) || '').trim();
+    if (imageLinkText === imageUrl) {
+      throw new Error('Image URL text should be hidden in message body when preview is rendered');
     }
 
     await page1.reload({waitUntil: 'networkidle'});
@@ -296,10 +301,27 @@ async function closeLeftDrawerIfOpen(page) {
     const imageMessageAfterReload = page1.locator('.message').filter({
       has: page1.locator(`img.preview-image[src="${imageUrl}"]`),
     }).last();
-    const imageLinkAfterReload = await imageMessageAfterReload.locator(`.message-body a[href="${imageUrl}"]`).count();
-    if (imageLinkAfterReload !== 0) {
-      throw new Error('Image URL should stay hidden after reload');
+    const imageLinkAfterReload = imageMessageAfterReload.locator(`.message-body a[href="${imageUrl}"]`);
+    const imageLinkAfterReloadCount = await imageLinkAfterReload.count();
+    if (imageLinkAfterReloadCount !== 1) {
+      throw new Error(`Expected one clickable image link after reload, got ${imageLinkAfterReloadCount}`);
     }
+    const imageLinkTextAfterReload = ((await imageLinkAfterReload.first().textContent()) || '').trim();
+    if (imageLinkTextAfterReload === imageUrl) {
+      throw new Error('Image URL text should stay hidden after reload');
+    }
+
+    const formattedRaw = 'b(жир) u(подч) s(зач) h(секрет) m(<x>) c#FF00FF(цвет)';
+    await sendMessage(page1, formattedRaw);
+    await page2.waitForSelector('text=жир', {timeout: 30000});
+    const formattedMessage = page2.locator('.message', {hasText: 'жир'}).last();
+    const formattedHtml = await formattedMessage.locator('.message-rendered-html').innerHTML();
+    if (!formattedHtml.includes('<strong>жир</strong>')) throw new Error('Strong formatting failed');
+    if (!formattedHtml.includes('<u>подч</u>')) throw new Error('Underline formatting failed');
+    if (!formattedHtml.includes('<s>зач</s>')) throw new Error('Strike formatting failed');
+    if (!formattedHtml.includes('class="message-spoiler"')) throw new Error('Spoiler formatting failed');
+    if (!formattedHtml.includes('<code>&lt;x&gt;</code>')) throw new Error('Monospace formatting failed');
+    if (!formattedHtml.includes('style="color:#FF00FF"')) throw new Error('Color formatting failed');
 
     const ytUrl = 'https://www.youtube.com/watch?v=LW4X1DvNDNo';
     await sendMessage(page2, ytUrl);

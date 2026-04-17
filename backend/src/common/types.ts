@@ -20,7 +20,8 @@ export type Message = {
   id: Id;
   dialogId: Id;
   senderId: Id;
-  body: string;
+  rawText: string;
+  renderedHtml: string;
   createdAt: string;
   expiresAt: string;
 };

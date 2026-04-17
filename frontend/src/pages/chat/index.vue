@@ -162,181 +162,44 @@
         <div class="chat-body" ref="messagesEl" @scroll="onMessagesScroll">
           <div v-if="historyLoading" class="hint">Загрузка...</div>
           <div v-else-if="!messages.length" class="hint">Нет сообщений</div>
-          <div
+          <ChatMessageItem
             v-for="(message, messageIndex) in messages"
             :key="message.id"
-            class="message"
-            :class="{
-              'message-own': me?.id === message.authorId,
-              'message-mention-me': isMentionedForMe(message),
-              'message-blink-target': blinkMessageId === message.id,
-            }"
-            :data-message-id="message.id"
-          >
-            <div class="message-meta">
-              <span
-                class="author message-meta-action"
-                :style="getAuthorStyle(message)"
-                @click="onAuthorClick(message)"
-              >
-                {{ message.authorName }}
-              </span>
-              <span class="nickname message-meta-action" @click="onAuthorClick(message)">
-                {{ formatUsername(message.authorNickname) }}
-              </span>
-              <span
-                v-if="canOpenDirectFromMessage(message)"
-                class="direct-jump message-meta-action"
-                title="Открыть директ"
-                @click="onDirectFromMessageClick(message)"
-              >
-                ↗
-              </span>
-              <span class="time message-meta-action" @click="onMessageTimeClick(message)">
-                {{ formatMessageTime(message.createdAt) }}
-              </span>
-              <button
-                v-if="isOwnMessage(message) && editingMessageId !== message.id"
-                class="message-inline-btn"
-                :disabled="messageActionPendingId === message.id"
-                @click="startMessageEdit(message)"
-              >
-                ред.
-              </button>
-              <button
-                v-if="isOwnMessage(message) && editingMessageId !== message.id"
-                class="message-inline-btn message-inline-btn-danger"
-                :disabled="messageActionPendingId === message.id"
-                @click="deleteOwnMessage(message)"
-              >
-                удал.
-              </button>
-            </div>
-            <div v-if="editingMessageId === message.id" class="message-edit">
-              <textarea
-                v-model="editingMessageText"
-                class="message-edit-input"
-                rows="3"
-                @keydown="onEditMessageKeydown($event, message)"
-              />
-              <div class="message-edit-actions">
-                <button class="ghost-btn message-edit-cancel" @click="cancelMessageEdit">Отмена</button>
-                <button
-                  class="btn message-edit-save"
-                  :disabled="messageActionPendingId === message.id"
-                  @click="saveMessageEdit(message)"
-                >
-                  Сохранить
-                </button>
-              </div>
-            </div>
-            <div v-else class="message-body">
-              <template
-                v-for="(segment, index) in buildMessageBodySegments(message, messageIndex)"
-                :key="`${message.id}-${index}`"
-              >
-                <a
-                  v-if="segment.type === 'link'"
-                  :href="segment.value"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {{ segment.value }}
-                </a>
-                <a
-                  v-else-if="segment.type === 'inlineImagePreview'"
-                  class="inline-image-link"
-                  :href="segment.src"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <img
-                    class="preview-media preview-image preview-inline-image"
-                    :src="segment.src"
-                    alt="image preview"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </a>
-                <span
-                  v-else-if="segment.type === 'mention'"
-                  class="mention-token"
-                  :title="segment.username || ''"
-                  :style="segment.color ? {color: segment.color} : undefined"
-                  @click="onMentionTokenClick(segment)"
-                >
-                  {{ segment.value }}
-                </span>
-                <span
-                  v-else-if="segment.type === 'timeTag'"
-                  class="time-reference"
-                  @click="onBodyTimeTagClick(segment)"
-                  @mouseenter="onTimeTagMouseEnter($event, segment)"
-                  @mousemove="onTimeTagMouseMove"
-                  @mouseleave="onTimeTagMouseLeave"
-                >
-                  {{ segment.value }}
-                </span>
-                <span v-else>{{ segment.value }}</span>
-              </template>
-            </div>
-            <div v-if="editingMessageId !== message.id && getMessageExtraPreviews(message).length" class="message-previews">
-              <template v-for="preview in getMessageExtraPreviews(message)" :key="preview.key">
-                <div class="preview-item">
-                  <video
-                    v-if="preview.type === 'video'"
-                    class="preview-media preview-video"
-                    :src="preview.src"
-                    controls
-                    preload="metadata"
-                    playsinline
-                  />
-                  <iframe
-                    v-else-if="preview.type === 'youtube'"
-                    class="preview-media preview-embed preview-youtube-embed"
-                    :src="preview.src"
-                    loading="lazy"
-                    allowfullscreen
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  />
-                  <iframe
-                    v-else
-                    class="preview-media preview-embed"
-                    :src="preview.src"
-                    loading="lazy"
-                    allowfullscreen
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  />
-                </div>
-              </template>
-            </div>
-            <div v-if="editingMessageId !== message.id" class="reaction-controls" @click.stop>
-              <button class="reaction-add-btn" @click="toggleReactionPicker(message)">+</button>
-              <div v-if="reactionPickerMessageId === message.id" class="reaction-picker">
-                <button
-                  v-for="emoji in reactionPalette()"
-                  :key="`${message.id}-${emoji}`"
-                  class="reaction-picker-item"
-                  @click="onReactionSelect(message, emoji)"
-                >
-                  {{ emoji }}
-                </button>
-              </div>
-              <button
-                v-for="reaction in message.reactions"
-                :key="`${message.id}-${reaction.emoji}`"
-                class="reaction-chip"
-                :class="{'reaction-chip-own': isMyReaction(reaction)}"
-                @click="onReactionChipClick(message, reaction)"
-                @mouseenter="onReactionMouseEnter($event, reaction)"
-                @mousemove="onReactionMouseMove"
-                @mouseleave="onReactionMouseLeave"
-              >
-                <span class="reaction-emoji">{{ reaction.emoji }}</span>
-                <span class="reaction-count">{{ reaction.users.length }}</span>
-              </button>
-            </div>
-          </div>
+            :message="message"
+            :message-index="messageIndex"
+            :me-id="me?.id || null"
+            :is-mentioned-for-me="isMentionedForMe(message)"
+            :is-blink-target="blinkMessageId === message.id"
+            :is-editing="editingMessageId === message.id"
+            :editing-message-text="editingMessageText"
+            :message-action-pending-id="messageActionPendingId"
+            :can-open-direct="canOpenDirectFromMessage(message)"
+            :author-style="getAuthorStyle(message)"
+            :formatted-username="formatUsername(message.authorNickname)"
+            :formatted-time="formatMessageTime(message.createdAt)"
+            :rendered-html="getRenderedMessageHtml(message, messageIndex)"
+            :extra-previews="getMessageExtraPreviews(message)"
+            :reaction-picker-open="reactionPickerMessageId === message.id"
+            :reaction-palette="reactionPalette()"
+            @update:editing-message-text="onEditingMessageTextUpdate"
+            @author-click="onAuthorClick"
+            @direct-jump-click="onDirectFromMessageClick"
+            @time-click="onMessageTimeClick"
+            @start-edit="startMessageEdit"
+            @delete-message="deleteOwnMessage"
+            @edit-input-keydown="onEditMessageKeydown"
+            @save-edit="saveMessageEdit"
+            @cancel-edit="cancelMessageEdit"
+            @message-body-click="onMessageBodyClick"
+            @message-body-mousemove="onMessageBodyMouseMove"
+            @message-body-mouseleave="onMessageBodyMouseLeave"
+            @toggle-reaction-picker="toggleReactionPicker"
+            @reaction-select="onReactionSelect"
+            @reaction-chip-click="onReactionChipClick"
+            @reaction-mouseenter="onReactionMouseEnter"
+            @reaction-mousemove="onReactionMouseMove"
+            @reaction-mouseleave="onReactionMouseLeave"
+          />
           <div v-if="error" class="error">{{ error }}</div>
         </div>
         <button

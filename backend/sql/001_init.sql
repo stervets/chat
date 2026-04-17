@@ -37,7 +37,8 @@ create table if not exists messages (
   id integer primary key autoincrement,
   dialog_id integer references dialogs(id) on delete cascade,
   sender_id integer references users(id) on delete set null,
-  body text not null,
+  raw_text text not null,
+  rendered_html text not null,
   created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
