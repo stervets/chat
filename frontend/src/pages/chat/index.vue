@@ -390,11 +390,11 @@
       <aside class="drawer drawer-right" :class="{open: rightMenuOpen}">
         <div class="drawer-head">
           <div class="drawer-title">Опции</div>
+          <button class="drawer-close" @click="closeRightMenu">Закрыть</button>
         </div>
 
         <div class="section-title">Профиль</div>
-        <div class="field-label">Username</div>
-        <div class="readonly">{{ formatUsername(me?.nickname || '') }}</div>
+        <div class="profile-username">{{ formatUsername(me?.nickname || '') }}</div>
 
         <div class="field-label">Имя</div>
         <input
@@ -457,7 +457,7 @@
 
         <div v-if="profileError" class="error">{{ profileError }}</div>
         <button class="logout" :disabled="profileSaving" @click="onDone">
-          {{ profileSaving ? 'Сохранение...' : 'Готово' }}
+          {{ profileSaving ? 'Сохранение...' : 'Сохранить' }}
         </button>
       </aside>
     </div>

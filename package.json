@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "db:init": "cd backend && yarn run db:init",
     "invite:create": "cd backend && yarn run invite:create",
     "user:bootstrap": "cd backend && yarn run user:bootstrap",
     "frontend:dev": "cd frontend && yarn run dev",

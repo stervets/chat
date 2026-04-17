@@ -28,6 +28,7 @@ const MIN_PASSWORD_LENGTH = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_MESSAGES_PAGE_LIMIT = 100;
 const MAX_MESSAGES_PER_DIALOG = 5000;
+const SYSTEM_NICKNAME_NORMALIZED = 'marx';
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const UPLOAD_LINK_RE = /\/uploads\/([a-zA-Z0-9._-]+)/gi;
@@ -216,6 +217,50 @@ export class ChatService {
     return {ok: true, value};
   }
 
+  private normalizePairIds(firstUserId: number, secondUserId: number) {
+    return firstUserId < secondUserId
+      ? {memberAId: firstUserId, memberBId: secondUserId}
+      : {memberAId: secondUserId, memberBId: firstUserId};
+  }
+
+  private async findSystemUserId() {
+    const systemUser = await db.user.findUnique({
+      where: {
+        nicknameNormalized: SYSTEM_NICKNAME_NORMALIZED,
+      },
+      select: {id: true},
+    });
+    return systemUser?.id || null;
+  }
+
+  private async ensureSystemDirectForUser(userId: number) {
+    const systemUserId = await this.findSystemUserId();
+    if (!systemUserId || systemUserId === userId) return;
+
+    const pair = this.normalizePairIds(systemUserId, userId);
+    const existing = await db.dialog.findFirst({
+      where: {
+        kind: 'private',
+        memberAId: pair.memberAId,
+        memberBId: pair.memberBId,
+      },
+      select: {id: true},
+    });
+    if (existing) return;
+
+    try {
+      await db.dialog.create({
+        data: {
+          kind: 'private',
+          memberAId: pair.memberAId,
+          memberBId: pair.memberBId,
+        },
+      });
+    } catch {
+      // race-safe: ignore unique conflicts
+    }
+  }
+
   private async loadMessageReactions(messageId: number): Promise<MessageReaction[]> {
     const rows = await db.messageReaction.findMany({
       where: {messageId},
@@ -343,6 +388,7 @@ export class ChatService {
     const publicUser = this.toPublicUser(user);
     state.user = publicUser;
     state.token = session.token;
+    await this.ensureSystemDirectForUser(publicUser.id);
 
     return {
       ok: true,
@@ -365,6 +411,7 @@ export class ChatService {
 
     state.user = session.user;
     state.token = session.token;
+    await this.ensureSystemDirectForUser(session.user.id);
     return {
       ok: true,
       token: session.token,
@@ -677,6 +724,39 @@ export class ChatService {
           throw new Error('invite_invalid');
         }
 
+        const systemUser = await tx.user.findUnique({
+          where: {
+            nicknameNormalized: SYSTEM_NICKNAME_NORMALIZED,
+          },
+          select: {id: true},
+        });
+
+        if (systemUser && systemUser.id !== user.id) {
+          const pair = this.normalizePairIds(systemUser.id, user.id);
+          const existingSystemDialog = await tx.dialog.findFirst({
+            where: {
+              kind: 'private',
+              memberAId: pair.memberAId,
+              memberBId: pair.memberBId,
+            },
+            select: {id: true},
+          });
+
+          if (!existingSystemDialog) {
+            try {
+              await tx.dialog.create({
+                data: {
+                  kind: 'private',
+                  memberAId: pair.memberAId,
+                  memberBId: pair.memberBId,
+                },
+              });
+            } catch {
+              // ignore concurrent create race
+            }
+          }
+        }
+
         return user;
       });
 
@@ -840,6 +920,30 @@ export class ChatService {
       targetUser: PublicUser;
       lastMessageAt: string;
     }>;
+
+    const systemUser = await db.user.findUnique({
+      where: {
+        nicknameNormalized: SYSTEM_NICKNAME_NORMALIZED,
+      },
+      select: {
+        id: true,
+        nickname: true,
+        name: true,
+        nicknameColor: true,
+      },
+    });
+
+    if (systemUser && systemUser.id !== userId) {
+      const systemDialog = await getOrCreatePrivateDialog(userId, systemUser.id);
+      const alreadyPresent = mapped.some((item) => item.dialogId === systemDialog.id);
+      if (!alreadyPresent) {
+        mapped.push({
+          dialogId: systemDialog.id,
+          targetUser: this.toPublicUser(systemUser),
+          lastMessageAt: new Date(0).toISOString(),
+        });
+      }
+    }
 
     mapped.sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
     return mapped;
@@ -1169,6 +1273,11 @@ export class ChatService {
 
     if (!userCanAccessDialog(state.user!.id, dialog)) {
       return {ok: false, error: 'forbidden'};
+    }
+
+    const systemUserId = await this.findSystemUserId();
+    if (systemUserId && (dialog.member_a === systemUserId || dialog.member_b === systemUserId)) {
+      return {ok: false, error: 'system_dialog_locked'};
     }
 
     const uploadRows = await db.message.findMany({

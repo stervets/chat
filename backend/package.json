@@ -11,6 +11,7 @@
     "prisma:push": "prisma db push",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
+    "db:init": "tsx src/cli/db-init.ts",
     "admin:tui": "tsx src/cli/admin-tui.ts",
     "invite:create": "tsx src/cli/invite-create.ts",
     "user:bootstrap": "tsx src/cli/bootstrap-user.ts",
@@ -24,12 +25,14 @@
     "@nestjs/platform-ws": "^11.1.6",
     "@nestjs/websockets": "^11.1.6",
     "argon2": "^0.41.1",
+    "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/pg": "^8.15.5",
     "prisma": "^6.7.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
