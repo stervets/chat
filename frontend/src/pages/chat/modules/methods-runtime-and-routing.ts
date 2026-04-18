@@ -24,82 +24,18 @@ import type {
   RouteMode,
   SoundRuntimeState,
 } from './shared';
+import {
+  fetchWebPushServerConfig,
+  getWebPushPermission,
+  isIosForWebPush,
+  isStandaloneDisplayMode,
+  isWebPushSupported,
+  subscribeWebPush,
+  type WebPushPermission,
+  unsubscribeWebPush,
+} from '@/composables/use-web-push';
 
-type WebPushPermission = 'default' | 'denied' | 'granted';
-
-type PushServerConfigResponse = {
-  ok?: boolean;
-  enabled?: boolean;
-  vapidPublicKey?: string;
-};
-
-function base64UrlToUint8Array(valueRaw: unknown) {
-  const value = String(valueRaw || '').trim();
-  if (!value) return new Uint8Array();
-
-  const normalized = value
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-  const withPadding = normalized + '='.repeat((4 - normalized.length % 4) % 4);
-  const decoded = atob(withPadding);
-  const output = new Uint8Array(decoded.length);
-  for (let index = 0; index < decoded.length; index += 1) {
-    output[index] = decoded.charCodeAt(index);
-  }
-  return output;
-}
-
-function normalizeWebPushPermission() {
-  if (typeof Notification === 'undefined') return 'denied' as WebPushPermission;
-  const permission = Notification.permission;
-  if (permission === 'granted' || permission === 'denied' || permission === 'default') {
-    return permission as WebPushPermission;
-  }
-  return 'default' as WebPushPermission;
-}
-
-function isWebPushSupportedRuntime() {
-  if (typeof window === 'undefined') return false;
-  if (!('serviceWorker' in navigator)) return false;
-  if (!('PushManager' in window)) return false;
-  if (!('Notification' in window)) return false;
-  return true;
-}
-
-function isIosDeviceForPush() {
-  if (typeof navigator === 'undefined') return false;
-  const userAgent = navigator.userAgent || '';
-  const platform = navigator.platform || '';
-  const maxTouchPoints = Number((navigator as any).maxTouchPoints || 0);
-  if (/iPad|iPhone|iPod/i.test(userAgent)) return true;
-  return platform === 'MacIntel' && maxTouchPoints > 1;
-}
-
-function isStandaloneMode() {
-  if (typeof window === 'undefined') return false;
-  const byDisplayMode = window.matchMedia('(display-mode: standalone)').matches;
-  const byNavigator = Boolean((navigator as any).standalone);
-  return byDisplayMode || byNavigator;
-}
-
-function serializePushSubscription(subscription: PushSubscription) {
-  const json = subscription.toJSON();
-  const endpoint = String(json.endpoint || '').trim();
-  const p256dh = String(json.keys?.p256dh || '').trim();
-  const auth = String(json.keys?.auth || '').trim();
-
-  if (!endpoint || !p256dh || !auth) {
-    return null;
-  }
-
-  return {
-    endpoint,
-    keys: {
-      p256dh,
-      auth,
-    },
-  };
-}
+const WEB_PUSH_ROLLOUT_VERSION = '2026-04-19-1';
 
 export const chatMethodsRuntimeAndRouting = {
     loadHandledMessageNotificationIds(this: any) {
@@ -314,6 +250,7 @@ export const chatMethodsRuntimeAndRouting = {
 
     showBrowserNotification(this: any, notification: NotificationItem) {
       if (!this.browserNotificationsEnabled) return;
+      if (this.webPushEnabled) return;
       if (this.browserNotificationPermission !== 'granted') return;
       if (!this.isWindowInactive()) return;
       if (!this.isBrowserNotificationsSupported()) return;
@@ -357,58 +294,40 @@ export const chatMethodsRuntimeAndRouting = {
       void this.requestBrowserNotificationPermission();
     },
 
-    async fetchWebPushServerConfig(this: any) {
-      try {
-        const response = await fetch(`${getApiBase()}/push/public-key`, {
-          method: 'GET',
-        });
-        if (!response.ok) {
-          return {enabled: false, vapidPublicKey: ''};
-        }
-
-        const payload = await response.json() as PushServerConfigResponse;
-        const enabled = !!payload?.enabled;
-        const vapidPublicKey = String(payload?.vapidPublicKey || '').trim();
-
-        return {
-          enabled: enabled && !!vapidPublicKey,
-          vapidPublicKey,
-        };
-      } catch {
-        return {enabled: false, vapidPublicKey: ''};
+    getWebPushRolloutStorageKey(this: any) {
+      const userId = Number(this.me?.id || 0);
+      if (Number.isFinite(userId) && userId > 0) {
+        return `__marxWebPushRolloutVersion:${userId}`;
       }
+      return '__marxWebPushRolloutVersion:guest';
     },
 
-    async syncWebPushSubscriptionWithBackend(this: any, subscription: PushSubscription) {
-      const payload = serializePushSubscription(subscription);
-      if (!payload) return false;
-
-      const token = getSessionToken();
-      if (!token) return false;
-
+    isWebPushRolloutApplied(this: any) {
+      if (typeof window === 'undefined') return true;
+      const key = this.getWebPushRolloutStorageKey();
       try {
-        const response = await fetch(`${getApiBase()}/push/subscribe`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) return false;
-        const result = await response.json();
-        return !!(result as any)?.ok;
+        const current = String(localStorage.getItem(key) || '').trim();
+        return current === WEB_PUSH_ROLLOUT_VERSION;
       } catch {
         return false;
       }
     },
 
+    markWebPushRolloutApplied(this: any) {
+      if (typeof window === 'undefined') return;
+      const key = this.getWebPushRolloutStorageKey();
+      try {
+        localStorage.setItem(key, WEB_PUSH_ROLLOUT_VERSION);
+      } catch {
+        // no-op
+      }
+    },
+
     async initWebPush(this: any) {
       this.webPushError = '';
-      this.webPushSupported = isWebPushSupportedRuntime();
-      this.webPushPermission = normalizeWebPushPermission();
-      this.webPushRequiresIosInstall = isIosDeviceForPush() && !isStandaloneMode();
+      this.webPushSupported = isWebPushSupported();
+      this.webPushPermission = getWebPushPermission();
+      this.webPushRequiresIosInstall = isIosForWebPush() && !isStandaloneDisplayMode();
 
       if (!this.webPushSupported) {
         this.webPushAvailable = false;
@@ -417,7 +336,8 @@ export const chatMethodsRuntimeAndRouting = {
         return;
       }
 
-      const serverConfig = await this.fetchWebPushServerConfig();
+      const apiBase = getApiBase();
+      const serverConfig = await fetchWebPushServerConfig(apiBase);
       this.webPushAvailable = !!serverConfig.enabled;
       this.webPushVapidPublicKey = serverConfig.vapidPublicKey;
       if (!this.webPushAvailable) {
@@ -436,7 +356,19 @@ export const chatMethodsRuntimeAndRouting = {
 
       if (!existing) return;
       if (this.webPushPermission !== 'granted') return;
-      await this.syncWebPushSubscriptionWithBackend(existing);
+      const token = getSessionToken();
+      const shouldForceRenew = !this.isWebPushRolloutApplied();
+      if (shouldForceRenew) {
+        await unsubscribeWebPush(apiBase, token);
+      }
+      const subscribeResult = await subscribeWebPush(apiBase, token, this.webPushVapidPublicKey);
+      if (!subscribeResult.ok) {
+        this.webPushEnabled = false;
+        this.webPushError = 'Подписка push не синхронизировалась. Нажми "Включить push-уведомления".';
+        return;
+      }
+      this.webPushEnabled = true;
+      this.markWebPushRolloutApplied();
     },
 
     async enableWebPush(this: any) {
@@ -450,8 +382,10 @@ export const chatMethodsRuntimeAndRouting = {
           return;
         }
 
+        const apiBase = getApiBase();
+        const token = getSessionToken();
         if (!this.webPushAvailable || !this.webPushVapidPublicKey) {
-          const serverConfig = await this.fetchWebPushServerConfig();
+          const serverConfig = await fetchWebPushServerConfig(apiBase);
           this.webPushAvailable = !!serverConfig.enabled;
           this.webPushVapidPublicKey = serverConfig.vapidPublicKey;
           if (!this.webPushAvailable || !this.webPushVapidPublicKey) {
@@ -460,7 +394,7 @@ export const chatMethodsRuntimeAndRouting = {
           }
         }
 
-        this.webPushPermission = normalizeWebPushPermission();
+        this.webPushPermission = getWebPushPermission();
         if (this.webPushPermission === 'denied') {
           this.webPushError = 'Уведомления запрещены в настройках браузера.';
           return;
@@ -471,7 +405,7 @@ export const chatMethodsRuntimeAndRouting = {
             const requested = await Notification.requestPermission();
             this.webPushPermission = requested as WebPushPermission;
           } catch {
-            this.webPushPermission = normalizeWebPushPermission();
+            this.webPushPermission = getWebPushPermission();
           }
         }
 
@@ -480,32 +414,16 @@ export const chatMethodsRuntimeAndRouting = {
           return;
         }
 
-        const registration = await navigator.serviceWorker.ready.catch(() => null);
-        if (!registration) {
-          this.webPushError = 'Service Worker ещё не готов.';
-          return;
-        }
-
-        let subscription = await registration.pushManager.getSubscription();
-        if (!subscription) {
-          const applicationServerKey = base64UrlToUint8Array(this.webPushVapidPublicKey);
-          if (!applicationServerKey.length) {
-            this.webPushError = 'Некорректный VAPID public key.';
-            return;
-          }
-          subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey,
-          });
-        }
-
-        const synced = await this.syncWebPushSubscriptionWithBackend(subscription);
-        if (!synced) {
-          this.webPushError = 'Не удалось сохранить push-подписку на сервере.';
+        const subscribeResult = await subscribeWebPush(apiBase, token, this.webPushVapidPublicKey);
+        if (!subscribeResult.ok) {
+          this.webPushError = subscribeResult.error === 'invalid_vapid_key'
+            ? 'Некорректный VAPID public key.'
+            : 'Не удалось сохранить push-подписку на сервере.';
           return;
         }
 
         this.webPushEnabled = true;
+        this.markWebPushRolloutApplied();
       } catch {
         this.webPushError = 'Не удалось включить push-уведомления.';
       } finally {
@@ -520,36 +438,9 @@ export const chatMethodsRuntimeAndRouting = {
       this.webPushError = '';
 
       try {
-        const registration = await navigator.serviceWorker.ready.catch(() => null);
-        if (!registration) {
-          this.webPushEnabled = false;
-          return;
-        }
-
-        const subscription = await registration.pushManager.getSubscription();
-        if (!subscription) {
-          this.webPushEnabled = false;
-          return;
-        }
-
-        const serialized = serializePushSubscription(subscription);
+        const apiBase = getApiBase();
         const token = getSessionToken();
-        if (serialized && token) {
-          try {
-            await fetch(`${getApiBase()}/push/unsubscribe`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({endpoint: serialized.endpoint}),
-            });
-          } catch {
-            // no-op
-          }
-        }
-
-        await subscription.unsubscribe().catch(() => false);
+        await unsubscribeWebPush(apiBase, token);
         this.webPushEnabled = false;
       } catch {
         this.webPushError = 'Не удалось отключить push-уведомления.';

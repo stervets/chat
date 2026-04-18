@@ -11,6 +11,19 @@ import type {
   DirectDialog,
   NotificationItem,
 } from './shared';
+
+const WS_LOST_ERROR_PREFIX = 'Соединение потеряно.';
+const WS_RECONNECT_SEND_ERROR = 'Подключение восстанавливается. Сообщение не отправлено.';
+const WS_OFFLINE_SEND_ERROR = 'Оффлайн. Сообщение не отправлено.';
+
+function isTransientConnectionError(errorRaw: unknown) {
+  const error = String(errorRaw || '').trim();
+  if (!error) return false;
+  if (error === WS_RECONNECT_SEND_ERROR) return true;
+  if (error === WS_OFFLINE_SEND_ERROR) return true;
+  return error.startsWith(WS_LOST_ERROR_PREFIX);
+}
+
 export const chatMethodsSendUploadAndRuntime = {
     normalizeUploadFileName(this: any, mimeRaw: string) {
       const mime = String(mimeRaw || '').toLowerCase();
@@ -137,9 +150,12 @@ export const chatMethodsSendUploadAndRuntime = {
       if (!this.activeDialog) return false;
       if (this.wsConnectionState !== 'connected') {
         this.error = this.wsConnectionState === 'connecting'
-          ? 'Подключение восстанавливается. Сообщение не отправлено.'
-          : 'Оффлайн. Сообщение не отправлено.';
+          ? WS_RECONNECT_SEND_ERROR
+          : WS_OFFLINE_SEND_ERROR;
         return false;
+      }
+      if (isTransientConnectionError(this.error)) {
+        this.error = '';
       }
 
       const text = String(textRaw || '').trim();
@@ -347,13 +363,13 @@ export const chatMethodsSendUploadAndRuntime = {
     },
 
     onDisconnected(this: any) {
-      if (!this.error || this.error.startsWith('Соединение потеряно.')) {
+      if (!this.error || isTransientConnectionError(this.error)) {
         this.error = 'Соединение потеряно. Переподключаюсь...';
       }
     },
 
     async onWsReconnected(this: any) {
-      if (this.error.startsWith('Соединение потеряно.')) {
+      if (isTransientConnectionError(this.error)) {
         this.error = '';
       }
       if (this.activeDialog?.kind === 'private') {

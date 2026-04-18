@@ -17,30 +17,17 @@ type SendChatPushParams = {
   dialog: DialogRow;
   message: ChatContextMessagePayload;
   senderId: number;
-  activeDialogUserAgentsByUserId?: Map<number, Set<string>>;
 };
 
 @Injectable()
 export class WebPushService {
   private readonly logger = new Logger(WebPushService.name);
-  private readonly enabled: boolean;
 
   constructor() {
-    this.enabled = this.initVapid();
-  }
-
-  isEnabled() {
-    return this.enabled;
+    this.initVapid();
   }
 
   getPublicConfig() {
-    if (!this.enabled) {
-      return {
-        ok: true,
-        enabled: false,
-      };
-    }
-
     return {
       ok: true,
       enabled: true,
@@ -49,10 +36,6 @@ export class WebPushService {
   }
 
   async upsertSubscription(userId: number, subscription: PushSubscriptionPayload, userAgentRaw?: unknown) {
-    if (!this.enabled) {
-      return {ok: false, error: 'push_disabled'} as const;
-    }
-
     const now = new Date();
     const userAgent = String(userAgentRaw || '').trim() || null;
 
@@ -100,8 +83,6 @@ export class WebPushService {
   }
 
   async sendChatMessagePush(params: SendChatPushParams) {
-    if (!this.enabled) return;
-
     try {
       const recipientUserIds = await this.resolveRecipientUserIds(params.dialog, params.senderId);
       if (!recipientUserIds.length) return;
@@ -125,12 +106,6 @@ export class WebPushService {
       if (!subscriptions.length) return;
 
       for (const subscription of subscriptions) {
-        const activeUserAgents = params.activeDialogUserAgentsByUserId?.get(subscription.userId);
-        const normalizedUserAgent = String(subscription.userAgent || '').trim();
-        if (normalizedUserAgent && activeUserAgents?.has(normalizedUserAgent)) {
-          continue;
-        }
-
         const url = this.buildUrlForRecipient(params.dialog, params.message, subscription.userId);
         const payload = this.buildNotificationPayload(params.message, params.dialog, url);
 
@@ -173,13 +148,11 @@ export class WebPushService {
     const vapidSubject = String(config.push.vapidSubject || '').trim();
 
     if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
-      this.logger.warn('Web Push disabled: set push.vapidPublicKey, push.vapidPrivateKey and push.vapidSubject in backend config.');
-      return false;
+      throw new Error('Web Push VAPID keys are not configured. Set push.vapidPublicKey, push.vapidPrivateKey and push.vapidSubject.');
     }
 
     webPush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
     this.logger.log('Web Push enabled');
-    return true;
   }
 
   private async resolveRecipientUserIds(dialog: DialogRow, senderId: number) {

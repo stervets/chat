@@ -9,7 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import {resolveSession} from '../common/auth.js';
-import {WebPushService} from '../common/web-push.service.js';
+import {WebPushService} from '../common/web-push.js';
 
 @Controller('push')
 export class PushController {

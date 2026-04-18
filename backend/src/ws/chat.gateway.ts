@@ -10,7 +10,7 @@ import type {IncomingMessage} from 'node:http';
 import {WebSocket, WebSocketServer as WsServer} from 'ws';
 import {config} from '../config.js';
 import {getDialogById, userCanAccessDialog, type DialogRow} from '../common/dialogs.js';
-import {WebPushService} from '../common/web-push.service.js';
+import {WebPushService} from '../common/web-push.js';
 import {ChatService} from './chat.service.js';
 import {
   BACKEND_PEER_ID,
@@ -183,26 +183,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private collectActiveDialogUserAgents(dialogId: number) {
-    const result = new Map<number, Set<string>>();
-
-    for (const rawClient of this.server.clients) {
-      const client = rawClient as ClientSocket;
-      const userId = Number(client.state?.user?.id || 0);
-      if (!Number.isFinite(userId) || userId <= 0) continue;
-      if (Number(client.state?.dialogId || 0) !== dialogId) continue;
-
-      const userAgent = String(client.state?.userAgent || '').trim();
-      if (!userAgent) continue;
-
-      const set = result.get(userId) || new Set<string>();
-      set.add(userAgent);
-      result.set(userId, set);
-    }
-
-    return result;
-  }
-
   private async dispatch(client: ClientSocket, com: string, args: any[]) {
     if (com === 'auth:login') return this.chatService.authLogin(client.state, args[0]);
     if (com === 'auth:session') return this.chatService.authSession(client.state, args[0]);
@@ -268,7 +248,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             dialog,
             message: (result as any).message,
             senderId: Number((result as any).message.authorId || 0),
-            activeDialogUserAgentsByUserId: this.collectActiveDialogUserAgents((result as any).message.dialogId),
           });
         } else {
           this.broadcast((result as any).message.dialogId, 'chat:message', (result as any).message);
