@@ -1,0 +1,22 @@
+{
+  "name": "MARX",
+  "short_name": "MARX",
+  "description": "Закрытый мессенджер для команды",
+  "start_url": "/login",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#171b22",
+  "theme_color": "#182437",
+  "icons": [
+    {
+      "src": "/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

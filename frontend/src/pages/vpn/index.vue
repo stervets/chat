@@ -14,6 +14,7 @@
         <p class="lead">
           Информация об актуальных ссылках VPN и прокси для Telegram.
         </p>
+        <PwaInstallCard class="vpn-pwa-install"/>
 
         <section class="block">
           <h2>Proxy для Telegram</h2>

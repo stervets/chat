@@ -18,16 +18,17 @@
     "db:reset": "tsx src/cli/db-reset.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.7.0",
     "@nestjs/common": "^11.1.6",
     "@nestjs/core": "^11.1.6",
     "@nestjs/platform-express": "^11.1.6",
     "@nestjs/platform-ws": "^11.1.6",
     "@nestjs/websockets": "^11.1.6",
+    "@prisma/client": "^6.7.0",
     "argon2": "^0.41.1",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "web-push": "^3.6.7",
     "ws": "^8.18.0"
   },
   "devDependencies": {

@@ -19,6 +19,11 @@ type ConfigFile = {
     donationPhone?: string;
     donationBank?: string;
   };
+  push?: {
+    vapidPublicKey?: string;
+    vapidPrivateKey?: string;
+    vapidSubject?: string;
+  };
   db?: {
     url?: string;
   };
@@ -74,5 +79,10 @@ export const config = {
   vpn: {
     donationPhone: String(fileConfig.vpn?.donationPhone || '').trim(),
     donationBank: String(fileConfig.vpn?.donationBank || '').trim(),
+  },
+  push: {
+    vapidPublicKey: String(fileConfig.push?.vapidPublicKey || process.env.VAPID_PUBLIC_KEY || '').trim(),
+    vapidPrivateKey: String(fileConfig.push?.vapidPrivateKey || process.env.VAPID_PRIVATE_KEY || '').trim(),
+    vapidSubject: String(fileConfig.push?.vapidSubject || process.env.VAPID_SUBJECT || '').trim(),
   },
 };

@@ -28,6 +28,7 @@ model User {
   sentMessages       Message[]         @relation("MessageSender")
   sessions           Session[]
   reactions          MessageReaction[]
+  pushSubscriptions  PushSubscription[]
 
   @@map("users")
 }
@@ -101,4 +102,20 @@ model Session {
 
   @@index([expiresAt], map: "sessions_expires_idx")
   @@map("sessions")
+}
+
+model PushSubscription {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String   @unique @db.Text
+  p256dh     String   @db.Text
+  auth       String   @db.Text
+  userAgent  String?  @map("user_agent") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(3)
+
+  @@index([userId], map: "push_subscriptions_user_idx")
+  @@map("push_subscriptions")
 }

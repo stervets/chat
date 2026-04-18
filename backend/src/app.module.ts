@@ -2,9 +2,11 @@ import {Module} from '@nestjs/common';
 import {ChatGateway} from './ws/chat.gateway.js';
 import {ChatService} from './ws/chat.service.js';
 import {UploadsController} from './http/uploads.controller.js';
+import {PushController} from './http/push.controller.js';
+import {WebPushService} from './common/web-push.service.js';
 
 @Module({
-  controllers: [UploadsController],
-  providers: [ChatGateway, ChatService],
+  controllers: [UploadsController, PushController],
+  providers: [ChatGateway, ChatService, WebPushService],
 })
 export class AppModule {}

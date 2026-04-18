@@ -13,6 +13,8 @@ import {
   HANDLED_MESSAGE_IDS_SAVE_DELAY_MS,
   NOTIFICATION_SOUND_VOLUME,
   MAX_ACTIVE_BROWSER_NOTIFICATIONS,
+  getApiBase,
+  getSessionToken,
 } from './shared';
 import type {
   Dialog,
@@ -22,6 +24,83 @@ import type {
   RouteMode,
   SoundRuntimeState,
 } from './shared';
+
+type WebPushPermission = 'default' | 'denied' | 'granted';
+
+type PushServerConfigResponse = {
+  ok?: boolean;
+  enabled?: boolean;
+  vapidPublicKey?: string;
+};
+
+function base64UrlToUint8Array(valueRaw: unknown) {
+  const value = String(valueRaw || '').trim();
+  if (!value) return new Uint8Array();
+
+  const normalized = value
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const withPadding = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const decoded = atob(withPadding);
+  const output = new Uint8Array(decoded.length);
+  for (let index = 0; index < decoded.length; index += 1) {
+    output[index] = decoded.charCodeAt(index);
+  }
+  return output;
+}
+
+function normalizeWebPushPermission() {
+  if (typeof Notification === 'undefined') return 'denied' as WebPushPermission;
+  const permission = Notification.permission;
+  if (permission === 'granted' || permission === 'denied' || permission === 'default') {
+    return permission as WebPushPermission;
+  }
+  return 'default' as WebPushPermission;
+}
+
+function isWebPushSupportedRuntime() {
+  if (typeof window === 'undefined') return false;
+  if (!('serviceWorker' in navigator)) return false;
+  if (!('PushManager' in window)) return false;
+  if (!('Notification' in window)) return false;
+  return true;
+}
+
+function isIosDeviceForPush() {
+  if (typeof navigator === 'undefined') return false;
+  const userAgent = navigator.userAgent || '';
+  const platform = navigator.platform || '';
+  const maxTouchPoints = Number((navigator as any).maxTouchPoints || 0);
+  if (/iPad|iPhone|iPod/i.test(userAgent)) return true;
+  return platform === 'MacIntel' && maxTouchPoints > 1;
+}
+
+function isStandaloneMode() {
+  if (typeof window === 'undefined') return false;
+  const byDisplayMode = window.matchMedia('(display-mode: standalone)').matches;
+  const byNavigator = Boolean((navigator as any).standalone);
+  return byDisplayMode || byNavigator;
+}
+
+function serializePushSubscription(subscription: PushSubscription) {
+  const json = subscription.toJSON();
+  const endpoint = String(json.endpoint || '').trim();
+  const p256dh = String(json.keys?.p256dh || '').trim();
+  const auth = String(json.keys?.auth || '').trim();
+
+  if (!endpoint || !p256dh || !auth) {
+    return null;
+  }
+
+  return {
+    endpoint,
+    keys: {
+      p256dh,
+      auth,
+    },
+  };
+}
+
 export const chatMethodsRuntimeAndRouting = {
     loadHandledMessageNotificationIds(this: any) {
       const storageKey = getHandledMessageIdsStorageKey(this.me?.id);
@@ -276,6 +355,207 @@ export const chatMethodsRuntimeAndRouting = {
       if (!this.browserNotificationsEnabled) return;
       if (this.browserNotificationPermission !== 'default') return;
       void this.requestBrowserNotificationPermission();
+    },
+
+    async fetchWebPushServerConfig(this: any) {
+      try {
+        const response = await fetch(`${getApiBase()}/push/public-key`, {
+          method: 'GET',
+        });
+        if (!response.ok) {
+          return {enabled: false, vapidPublicKey: ''};
+        }
+
+        const payload = await response.json() as PushServerConfigResponse;
+        const enabled = !!payload?.enabled;
+        const vapidPublicKey = String(payload?.vapidPublicKey || '').trim();
+
+        return {
+          enabled: enabled && !!vapidPublicKey,
+          vapidPublicKey,
+        };
+      } catch {
+        return {enabled: false, vapidPublicKey: ''};
+      }
+    },
+
+    async syncWebPushSubscriptionWithBackend(this: any, subscription: PushSubscription) {
+      const payload = serializePushSubscription(subscription);
+      if (!payload) return false;
+
+      const token = getSessionToken();
+      if (!token) return false;
+
+      try {
+        const response = await fetch(`${getApiBase()}/push/subscribe`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) return false;
+        const result = await response.json();
+        return !!(result as any)?.ok;
+      } catch {
+        return false;
+      }
+    },
+
+    async initWebPush(this: any) {
+      this.webPushError = '';
+      this.webPushSupported = isWebPushSupportedRuntime();
+      this.webPushPermission = normalizeWebPushPermission();
+      this.webPushRequiresIosInstall = isIosDeviceForPush() && !isStandaloneMode();
+
+      if (!this.webPushSupported) {
+        this.webPushAvailable = false;
+        this.webPushEnabled = false;
+        this.webPushVapidPublicKey = '';
+        return;
+      }
+
+      const serverConfig = await this.fetchWebPushServerConfig();
+      this.webPushAvailable = !!serverConfig.enabled;
+      this.webPushVapidPublicKey = serverConfig.vapidPublicKey;
+      if (!this.webPushAvailable) {
+        this.webPushEnabled = false;
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready.catch(() => null);
+      if (!registration) {
+        this.webPushEnabled = false;
+        return;
+      }
+
+      const existing = await registration.pushManager.getSubscription();
+      this.webPushEnabled = !!existing && this.webPushPermission === 'granted';
+
+      if (!existing) return;
+      if (this.webPushPermission !== 'granted') return;
+      await this.syncWebPushSubscriptionWithBackend(existing);
+    },
+
+    async enableWebPush(this: any) {
+      if (this.webPushBusy) return;
+      this.webPushBusy = true;
+      this.webPushError = '';
+
+      try {
+        if (!this.webPushSupported) {
+          this.webPushError = 'Браузер не поддерживает Web Push.';
+          return;
+        }
+
+        if (!this.webPushAvailable || !this.webPushVapidPublicKey) {
+          const serverConfig = await this.fetchWebPushServerConfig();
+          this.webPushAvailable = !!serverConfig.enabled;
+          this.webPushVapidPublicKey = serverConfig.vapidPublicKey;
+          if (!this.webPushAvailable || !this.webPushVapidPublicKey) {
+            this.webPushError = 'Web Push сейчас отключён на сервере.';
+            return;
+          }
+        }
+
+        this.webPushPermission = normalizeWebPushPermission();
+        if (this.webPushPermission === 'denied') {
+          this.webPushError = 'Уведомления запрещены в настройках браузера.';
+          return;
+        }
+
+        if (this.webPushPermission === 'default') {
+          try {
+            const requested = await Notification.requestPermission();
+            this.webPushPermission = requested as WebPushPermission;
+          } catch {
+            this.webPushPermission = normalizeWebPushPermission();
+          }
+        }
+
+        if (this.webPushPermission !== 'granted') {
+          this.webPushError = 'Без разрешения браузера push не включится.';
+          return;
+        }
+
+        const registration = await navigator.serviceWorker.ready.catch(() => null);
+        if (!registration) {
+          this.webPushError = 'Service Worker ещё не готов.';
+          return;
+        }
+
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          const applicationServerKey = base64UrlToUint8Array(this.webPushVapidPublicKey);
+          if (!applicationServerKey.length) {
+            this.webPushError = 'Некорректный VAPID public key.';
+            return;
+          }
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey,
+          });
+        }
+
+        const synced = await this.syncWebPushSubscriptionWithBackend(subscription);
+        if (!synced) {
+          this.webPushError = 'Не удалось сохранить push-подписку на сервере.';
+          return;
+        }
+
+        this.webPushEnabled = true;
+      } catch {
+        this.webPushError = 'Не удалось включить push-уведомления.';
+      } finally {
+        this.webPushBusy = false;
+      }
+    },
+
+    async disableWebPush(this: any) {
+      if (this.webPushBusy) return;
+      if (!this.webPushSupported) return;
+      this.webPushBusy = true;
+      this.webPushError = '';
+
+      try {
+        const registration = await navigator.serviceWorker.ready.catch(() => null);
+        if (!registration) {
+          this.webPushEnabled = false;
+          return;
+        }
+
+        const subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          this.webPushEnabled = false;
+          return;
+        }
+
+        const serialized = serializePushSubscription(subscription);
+        const token = getSessionToken();
+        if (serialized && token) {
+          try {
+            await fetch(`${getApiBase()}/push/unsubscribe`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({endpoint: serialized.endpoint}),
+            });
+          } catch {
+            // no-op
+          }
+        }
+
+        await subscription.unsubscribe().catch(() => false);
+        this.webPushEnabled = false;
+      } catch {
+        this.webPushError = 'Не удалось отключить push-уведомления.';
+      } finally {
+        this.webPushBusy = false;
+      }
     },
 
     normalizeRouteNickname(this: any, nicknameRaw: unknown) {

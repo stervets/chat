@@ -39,6 +39,10 @@
           </button>
           <div v-if="error" class="error">{{ error }}</div>
         </form>
+
+        <div class="pwa-install-wrap">
+          <PwaInstallCard/>
+        </div>
       </div>
     </div>
   </div>

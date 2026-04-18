@@ -15,6 +15,11 @@
     "donationPhone": "+7-999-999-9999",
     "donationBank": "Райффайзенбанк"
   },
+  "push": {
+    "vapidPublicKey": "",
+    "vapidPrivateKey": "",
+    "vapidSubject": "mailto:admin@example.com"
+  },
   "db": {
     "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"
   }

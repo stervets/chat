@@ -511,6 +511,30 @@
           Разрешить уведомления
         </button>
 
+        <div class="hint">
+          Web Push: {{ webPushStatusText }}
+        </div>
+        <button
+          v-if="webPushSupported && webPushAvailable && !webPushEnabled"
+          class="ghost-btn"
+          :disabled="webPushBusy"
+          @click="enableWebPush"
+        >
+          {{ webPushBusy ? 'Включаем push...' : 'Включить push-уведомления' }}
+        </button>
+        <button
+          v-if="webPushSupported && webPushAvailable && webPushEnabled"
+          class="ghost-btn"
+          :disabled="webPushBusy"
+          @click="disableWebPush"
+        >
+          {{ webPushBusy ? 'Отключаем push...' : 'Отключить push-уведомления' }}
+        </button>
+        <div v-if="webPushRequiresIosInstall" class="hint">
+          На iPhone Web Push работает только в установленном приложении с экрана Домой.
+        </div>
+        <div v-if="webPushError" class="error">{{ webPushError }}</div>
+
         <div class="section-title">Новый пароль</div>
         <input
           v-model="newPassword"

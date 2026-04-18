@@ -55,6 +55,15 @@ export default {
       return '';
     },
 
+    webPushStatusText(this: any) {
+      if (!this.webPushSupported) return 'не поддерживается';
+      if (!this.webPushAvailable) return 'отключено на сервере';
+      if (this.webPushPermission === 'denied') return 'запрещено в браузере';
+      if (this.webPushEnabled) return 'включено';
+      if (this.webPushPermission === 'granted') return 'готово к включению';
+      return 'не включено';
+    },
+
     unreadDirectDialogIds(this: any) {
       const ids: Record<number, true> = {};
       this.notifications.forEach((notification: NotificationItem) => {
@@ -139,6 +148,7 @@ export default {
     });
     this.resolveSoundStartupState();
     this.initBrowserNotifications();
+    await this.initWebPush();
 
     this.chatMessageHandler = (message: Message) => {
       void this.onChatMessage(message);
