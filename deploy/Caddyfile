@@ -1,6 +1,0 @@
-marx.core5.ru {
-  encode zstd gzip
-
-  reverse_proxy /ws* backend:8816
-  reverse_proxy frontend:8815
-}

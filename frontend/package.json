@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nuxt dev --host 0.0.0.0 --port 8815",
     "build": "nuxt build",
+    "generate": "nuxt generate",
     "preview": "nuxt preview"
   },
   "dependencies": {

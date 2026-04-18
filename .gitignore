@@ -3,6 +3,7 @@
 *.iml
 chat.zip
 .codex
+.postgres-data/
 
 # --- Node.js ---
 node_modules/
