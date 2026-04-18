@@ -10,7 +10,8 @@
     "amneziaFiles": {
       "windows": "AmneziaVPN_4.8.14.5_x64.exe",
       "linux": "AmneziaVPN_4.8.14.5_linux_x64.tar",
-      "android": "AmneziaVPN_4.8.14.5_android9+_arm64-v8a.apk"
+      "android": "AmneziaVPN_4.8.14.5_android9+_arm64-v8a.apk",
+      "macos": "AmneziaVPN_4.8.11.4_macos.zip"
     }
   }
 }

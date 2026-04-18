@@ -16,10 +16,7 @@
         </p>
 
         <section class="block">
-          <h2>MTProxy для Telegram</h2>
-          <p class="muted">
-            Прокси может поначалу долго соединяться (около минуты).
-          </p>
+          <h2>Proxy для Telegram</h2>
           <div class="links">
             <a
               class="vpn-link"
@@ -42,21 +39,17 @@
 
         <section class="block">
           <h2>AmneziaVPN</h2>
-          <p class="muted">
-            Для установки VPN установить клиент Amnezia и импортировать эту ссылку:
-          </p>
-
-          <button
-            class="mono-link"
-            type="button"
-            title="Скопировать ссылку конфигурации"
-            @click="copyAmneziaConfigUri"
-          >
-            {{ amneziaConfigUri }}
-          </button>
-          <div v-if="copiedConfigUri" class="copied-hint">Ссылка скопирована в буфер обмена.</div>
 
           <div class="downloads">
+            <a
+              class="download-btn"
+              :class="{disabled: !downloadHrefAndroid}"
+              :href="downloadHrefAndroid || '#'"
+              :download="amneziaFileAndroid || undefined"
+              @click.prevent="onDownloadClick(downloadHrefAndroid)"
+            >
+              Скачать для Android
+            </a>
             <a
               class="download-btn"
               :class="{disabled: !downloadHrefWindows}"
@@ -68,6 +61,15 @@
             </a>
             <a
               class="download-btn"
+              :class="{disabled: !downloadHrefMacOs}"
+              :href="downloadHrefMacOs || '#'"
+              :download="amneziaFileMacOs || undefined"
+              @click.prevent="onDownloadClick(downloadHrefMacOs)"
+            >
+              Скачать для Mac OS
+            </a>
+            <a
+              class="download-btn"
               :class="{disabled: !downloadHrefLinux}"
               :href="downloadHrefLinux || '#'"
               :download="amneziaFileLinux || undefined"
@@ -75,15 +77,41 @@
             >
               Скачать для Linux
             </a>
-            <a
-              class="download-btn"
-              :class="{disabled: !downloadHrefAndroid}"
-              :href="downloadHrefAndroid || '#'"
-              :download="amneziaFileAndroid || undefined"
-              @click.prevent="onDownloadClick(downloadHrefAndroid)"
+          </div>
+
+          <hr style='margin: 20px 25% 20px 25%; opacity: .1; width: 50%;'>
+          
+          <div v-if="vpnProvisionState === 'error'" class="error">{{ vpnProvisionError }}</div>
+          <div class="vpn-actions">
+            <button
+              class="download-btn get-vpn"
+              type="button"
+              :disabled="vpnProvisionState === 'loading'"
+              @click="requestVpnProvision"
             >
-              Скачать для Android
-            </a>
+              {{ vpnProvisionState === 'loading' ? 'Получаем VPN...' : 'Получить конфиг VPN' }}
+            </button>
+          </div>
+
+          <div v-if="vpnProvisionState === 'success'" class="vpn-result">
+            <p class="muted">Ссылка для импорта (нажать, чтобы скопировать). В клиенте вставить ссылку или сканировать QR-код.</p>
+            <button
+              class="mono-link"
+              type="button"
+              title="Скопировать VPN-ссылку"
+              @click="copyVpnLink"
+            >
+              {{ vpnProvisionLink }}
+            </button>
+
+            <div v-if="copiedVpnLink" class="copied-hint">Ссылка скопирована в буфер обмена.</div>
+            <div v-if="copyVpnError" class="error">{{ copyVpnError }}</div>
+
+            <p class="muted">QR для импорта:</p>
+            <div v-if="vpnProvisionQrDataUrl" class="qr-wrap">
+              <img class="qr-image" :src="vpnProvisionQrDataUrl" alt="VPN QR code">
+            </div>
+            <div v-else-if="vpnProvisionQrError" class="error">{{ vpnProvisionQrError }}</div>
           </div>
         </section>
 

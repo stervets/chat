@@ -66,6 +66,10 @@ export class ChatService {
     return this.invitesService.publicVpnInfo(state);
   }
 
+  publicVpnProvision(state: SocketState) {
+    return this.invitesService.publicVpnProvision(state);
+  }
+
   publicVpnDonation(state: SocketState, payload: any) {
     return this.invitesService.publicVpnDonation(state, payload);
   }

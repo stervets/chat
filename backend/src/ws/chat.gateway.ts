@@ -199,6 +199,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'invites:check') return this.chatService.invitesCheck(client.state, args[0]);
     if (com === 'invites:redeem') return this.chatService.invitesRedeem(client.state, args[0]);
     if (com === 'public:vpnInfo') return this.chatService.publicVpnInfo(client.state);
+    if (com === 'public:vpnProvision') return this.chatService.publicVpnProvision(client.state);
     if (com === 'public:vpnDonation') {
       const result = await this.chatService.publicVpnDonation(client.state, args[0]);
       if ((result as any)?.ok && (result as any)?.user) {

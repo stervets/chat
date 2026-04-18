@@ -1,6 +1,8 @@
 import {randomBytes} from 'node:crypto';
+import {Logger} from '@nestjs/common';
 import {createSession, hashPassword} from '../../common/auth.js';
 import {DEFAULT_NICKNAME_COLOR} from '../../common/const.js';
+import {WgAdminClient, WgAdminClientError} from '../../common/wg-admin.client.js';
 import {config} from '../../config.js';
 import {db} from '../../db.js';
 import {
@@ -15,6 +17,9 @@ import {
 import type {SocketState} from '../protocol.js';
 
 export class ChatInvitesService {
+  private readonly logger = new Logger(ChatInvitesService.name);
+  private readonly wgAdminClient = new WgAdminClient(config.wgAdminSocketPath);
+
   constructor(private readonly ctx: ChatContext) {}
 
   async invitesList(state: SocketState): Promise<ApiError | any[]> {
@@ -136,6 +141,40 @@ export class ChatInvitesService {
       donationPhone: String(config.vpn.donationPhone || ''),
       donationBank: String(config.vpn.donationBank || ''),
     };
+  }
+
+  async publicVpnProvision(state: SocketState): Promise<ApiError | ApiOk<{
+    link: string;
+    configText: string;
+    qrText: string;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const awgUserName = String(state.user?.nickname || '').trim();
+    if (!awgUserName) return this.ctx.unauthorized();
+
+    try {
+      const artifacts = await this.wgAdminClient.createOrGetUser(awgUserName);
+      return {
+        ok: true,
+        link: artifacts.link,
+        configText: artifacts.configText,
+        qrText: artifacts.qrText,
+      };
+    } catch (err: any) {
+      if (err instanceof WgAdminClientError) {
+        this.logger.error(`vpn provision failed for "${awgUserName}": ${JSON.stringify({
+          code: err.code,
+          message: err.message,
+          details: err.details || null,
+        })}`);
+      } else {
+        this.logger.error(`vpn provision failed for "${awgUserName}": ${String(err?.message || err)}`);
+      }
+
+      return {ok: false, error: 'vpn_provision_failed'};
+    }
   }
 
   async publicVpnDonation(state: SocketState, payload: any): Promise<ApiError | ApiOk<{user: PublicUser}>> {

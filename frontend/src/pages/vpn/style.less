@@ -119,10 +119,15 @@ h2 {
   margin-top: 12px;
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .download-btn {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   text-decoration: none;
   border: 1px solid rgba(129, 157, 193, 0.38);
   border-radius: 9px;
@@ -133,6 +138,10 @@ h2 {
   font-size: 13px;
   font-weight: 600;
   transition: border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
+
+  &.get-vpn {
+    filter: brightness(1.4)
+  }
 }
 
 .download-btn:hover {
@@ -144,6 +153,42 @@ h2 {
 .download-btn.disabled {
   pointer-events: none;
   opacity: 0.45;
+}
+
+.download-btn:disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.vpn-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.vpn-actions .download-btn {
+  min-width: 50%;
+}
+
+.vpn-result {
+  margin-top: 12px;
+}
+
+.qr-wrap {
+  margin-top: 10px;
+  margin-left: auto;
+  margin-right: auto;
+  width: fit-content;
+  padding: 10px;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.qr-image {
+  display: block;
+  width: 400px;
+  max-width: 100%;
+  height: auto;
 }
 
 .donation-contact {
@@ -173,12 +218,13 @@ h2 {
   font-size: 18px;
   font-weight: 700;
   color: #f1f9f2;
-  background: linear-gradient(180deg, #2f4a6d 0%, #0c2d49 100%);
+  background: linear-gradient(180deg, #2f3a4d 0%, #0c1d29 100%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   cursor: pointer;
+  filter: brightness(1.5)
 }
 
 .done-btn.done-btn-undo {

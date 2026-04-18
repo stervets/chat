@@ -280,3 +280,9 @@ export async function wsSetVpnDonation(sent: boolean) {
   if (!(session as any)?.ok) return session;
   return ws.request('public:vpnDonation', {sent: !!sent});
 }
+
+export async function wsProvisionVpn() {
+  const session = await restoreSession();
+  if (!(session as any)?.ok) return session;
+  return ws.request('public:vpnProvision');
+}

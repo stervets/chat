@@ -7,6 +7,7 @@ type ConfigFile = {
   host?: string;
   port?: number;
   wsPath?: string;
+  wgAdminSocketPath?: string;
   messagesTtlDays?: number;
   inviteBaseUrl?: string;
   corsOrigins?: string[];
@@ -57,6 +58,7 @@ export const config = {
   host: fileConfig.host || '0.0.0.0',
   port: fileConfig.port || 8816,
   wsPath: fileConfig.wsPath || WS_PATH,
+  wgAdminSocketPath: String(fileConfig.wgAdminSocketPath || '/run/wg-admin.sock').trim() || '/run/wg-admin.sock',
   messagesTtlDays: fileConfig.messagesTtlDays || MESSAGES_TTL_DAYS,
   inviteBaseUrl,
   corsOrigins: resolvedCorsOrigins,
