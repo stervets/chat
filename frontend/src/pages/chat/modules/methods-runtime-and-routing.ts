@@ -2,8 +2,7 @@ import {
   BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY,
   HANDLED_MESSAGE_IDS_LIMIT,
   SOUND_ENABLED_STORAGE_KEY,
-  SOUND_OVERLAY_SKIP_ONCE_KEY,
-  consumeSessionFlagOnce,
+  WEB_PUSH_ENABLED_STORAGE_KEY,
   getHandledMessageIdsStorageKey,
   loadBooleanSetting,
   loadHandledMessageIds,
@@ -100,10 +99,6 @@ export const chatMethodsRuntimeAndRouting = {
       return next;
     },
 
-    consumeSoundOverlaySkipOnce(this: any) {
-      return consumeSessionFlagOnce(SOUND_OVERLAY_SKIP_ONCE_KEY, '1');
-    },
-
     ensureNotificationAudio(this: any) {
       if (typeof window === 'undefined') return null;
       if (this.notificationAudioEl) return this.notificationAudioEl as HTMLAudioElement;
@@ -135,33 +130,20 @@ export const chatMethodsRuntimeAndRouting = {
         return;
       }
 
-      const skipOverlayOnce = this.consumeSoundOverlaySkipOnce();
-      if (skipOverlayOnce) {
-        this.soundOverlayVisible = false;
-        this.markSoundReady();
-        return;
-      }
-
+      this.soundOverlayVisible = false;
       if (runtime.soundReady) {
-        this.soundOverlayVisible = false;
         this.soundReady = true;
         runtime.overlayHandled = true;
         return;
       }
 
-      if (runtime.overlayHandled) {
-        this.soundOverlayVisible = false;
-        this.soundReady = false;
-        return;
-      }
-
-      this.soundOverlayVisible = true;
       this.soundReady = false;
       runtime.overlayHandled = true;
     },
 
     async playNotificationSound(this: any) {
       if (!this.soundEnabled || !this.soundReady) return;
+      if (this.isWindowInactive()) return;
 
       const audio = this.ensureNotificationAudio();
       if (!audio) return;
@@ -217,6 +199,14 @@ export const chatMethodsRuntimeAndRouting = {
       persistBooleanSetting(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY, !!this.browserNotificationsEnabled);
     },
 
+    loadWebPushEnabledSetting(this: any) {
+      this.webPushSettingEnabled = loadBooleanSetting(WEB_PUSH_ENABLED_STORAGE_KEY, true);
+    },
+
+    persistWebPushEnabledSetting(this: any) {
+      persistBooleanSetting(WEB_PUSH_ENABLED_STORAGE_KEY, !!this.webPushSettingEnabled);
+    },
+
     async requestBrowserNotificationPermission(this: any) {
       this.syncBrowserNotificationPermission();
       if (!this.isBrowserNotificationsSupported()) return;
@@ -251,6 +241,7 @@ export const chatMethodsRuntimeAndRouting = {
     },
 
     showBrowserNotification(this: any, notification: NotificationItem) {
+      if (this.isStandaloneApp) return;
       if (!this.browserNotificationsEnabled) return;
       if (this.webPushEnabled) return;
       if (this.browserNotificationPermission !== 'granted') return;
@@ -289,6 +280,10 @@ export const chatMethodsRuntimeAndRouting = {
     },
 
     initBrowserNotifications(this: any) {
+      if (this.isStandaloneApp) {
+        this.browserNotificationsEnabled = false;
+        return;
+      }
       this.loadBrowserNotificationsEnabledSetting();
       this.syncBrowserNotificationPermission();
       if (!this.browserNotificationsEnabled) return;
@@ -347,8 +342,14 @@ export const chatMethodsRuntimeAndRouting = {
     },
 
     onWebPushDiagnostic(this: any, eventRaw: WebPushDiagEvent) {
+      if (!this.isDevMode) return;
       const line = this.formatWebPushDiagnosticEvent(eventRaw);
       this.appendWebPushDiagnosticLine(line);
+    },
+
+    getWebPushDiagReporter(this: any) {
+      if (!this.isDevMode) return undefined;
+      return (event: WebPushDiagEvent) => this.onWebPushDiagnostic(event);
     },
 
     async initWebPush(this: any) {
@@ -356,6 +357,7 @@ export const chatMethodsRuntimeAndRouting = {
       this.webPushTestStatus = '';
       this.webPushSynced = false;
       this.clearWebPushDiagnostic();
+      this.loadWebPushEnabledSetting();
       this.webPushSupported = isWebPushSupported();
       this.webPushPermission = getWebPushPermission();
       this.webPushRequiresIosInstall = isIosForWebPush() && !isStandaloneDisplayMode();
@@ -389,28 +391,37 @@ export const chatMethodsRuntimeAndRouting = {
       this.webPushEnabled = !!existing && this.webPushPermission === 'granted';
       this.webPushSynced = false;
 
-      if (!existing) return;
-      if (this.webPushPermission !== 'granted') return;
-      const token = getSessionToken();
-      const shouldForceRenew = !this.isWebPushRolloutApplied();
-      if (shouldForceRenew) {
-        await unsubscribeWebPush(apiBase, token);
+      if (existing && this.webPushPermission === 'granted') {
+        const token = getSessionToken();
+        const shouldForceRenew = !this.isWebPushRolloutApplied();
+        if (shouldForceRenew) {
+          await unsubscribeWebPush(apiBase, token);
+        }
+        const subscribeResult = await subscribeWebPush(
+          apiBase,
+          token,
+          this.webPushVapidPublicKey,
+          this.getWebPushDiagReporter(),
+        );
+        if (!subscribeResult.ok) {
+          this.webPushEnabled = false;
+          this.webPushSynced = false;
+          this.webPushError = this.resolveWebPushSubscribeError(subscribeResult.error, subscribeResult.details);
+          return;
+        }
+        this.webPushEnabled = true;
+        this.webPushSynced = true;
+        this.markWebPushRolloutApplied();
       }
-      const subscribeResult = await subscribeWebPush(
-        apiBase,
-        token,
-        this.webPushVapidPublicKey,
-        (event: WebPushDiagEvent) => this.onWebPushDiagnostic(event),
-      );
-      if (!subscribeResult.ok) {
-        this.webPushEnabled = false;
-        this.webPushSynced = false;
-        this.webPushError = this.resolveWebPushSubscribeError(subscribeResult.error, subscribeResult.details);
+
+      if (!this.isStandaloneApp) return;
+      if (!this.webPushSettingEnabled && this.webPushEnabled) {
+        await this.disableWebPush();
         return;
       }
-      this.webPushEnabled = true;
-      this.webPushSynced = true;
-      this.markWebPushRolloutApplied();
+      if (this.webPushSettingEnabled && !this.webPushEnabled && this.webPushPermission !== 'denied') {
+        await this.enableWebPush();
+      }
     },
 
     resolveWebPushSubscribeError(this: any, errorCodeRaw: unknown, detailsRaw?: unknown) {
@@ -462,10 +473,14 @@ export const chatMethodsRuntimeAndRouting = {
         }
 
         this.webPushPermission = getWebPushPermission();
-        console.info('[web-push] Notification.permission before request', {
-          permission: this.webPushPermission,
-        });
-        this.appendWebPushDiagnosticLine(`permission_before=${this.webPushPermission}`);
+        if (this.isDevMode) {
+          console.info('[web-push] Notification.permission before request', {
+            permission: this.webPushPermission,
+          });
+        }
+        if (this.isDevMode) {
+          this.appendWebPushDiagnosticLine(`permission_before=${this.webPushPermission}`);
+        }
         if (this.webPushPermission === 'denied') {
           this.webPushError = 'Уведомления запрещены в настройках браузера.';
           this.webPushSynced = false;
@@ -481,10 +496,14 @@ export const chatMethodsRuntimeAndRouting = {
           }
         }
 
-        console.info('[web-push] Notification.permission after request', {
-          permission: this.webPushPermission,
-        });
-        this.appendWebPushDiagnosticLine(`permission_after=${this.webPushPermission}`);
+        if (this.isDevMode) {
+          console.info('[web-push] Notification.permission after request', {
+            permission: this.webPushPermission,
+          });
+        }
+        if (this.isDevMode) {
+          this.appendWebPushDiagnosticLine(`permission_after=${this.webPushPermission}`);
+        }
 
         if (this.webPushPermission !== 'granted') {
           this.webPushError = 'Без разрешения браузера push не включится.';
@@ -496,7 +515,7 @@ export const chatMethodsRuntimeAndRouting = {
           apiBase,
           token,
           this.webPushVapidPublicKey,
-          (event: WebPushDiagEvent) => this.onWebPushDiagnostic(event),
+          this.getWebPushDiagReporter(),
         );
         if (!subscribeResult.ok) {
           this.webPushEnabled = false;
@@ -536,7 +555,18 @@ export const chatMethodsRuntimeAndRouting = {
       }
     },
 
+    onWebPushEnabledChange(this: any) {
+      this.webPushSettingEnabled = !!this.webPushSettingEnabled;
+      this.persistWebPushEnabledSetting();
+      if (this.webPushSettingEnabled) {
+        void this.enableWebPush();
+        return;
+      }
+      void this.disableWebPush();
+    },
+
     async sendWebPushTest(this: any) {
+      if (!this.isDevMode) return;
       if (this.webPushTestBusy) return;
       if (!this.canSendWebPushTest) {
         this.webPushError = 'Для теста нужен granted permission или включённый Web Push.';

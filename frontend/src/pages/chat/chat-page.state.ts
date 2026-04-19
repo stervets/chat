@@ -85,6 +85,7 @@ export function createChatPageState() {
     activeBrowserNotifications: ref<Notification[]>([]),
     webPushSupported: ref(false),
     webPushAvailable: ref(false),
+    webPushSettingEnabled: ref(true),
     webPushEnabled: ref(false),
     webPushSynced: ref(false),
     webPushBusy: ref(false),

@@ -52,6 +52,7 @@ export type WebPushDiagEvent = {
 type WebPushDiagReporter = (event: WebPushDiagEvent) => void;
 
 function logWebPushInfo(stage: string, detailsRaw?: Record<string, unknown>, diag?: WebPushDiagReporter) {
+  if (!diag) return;
   if (detailsRaw) {
     console.info(`[web-push] ${stage}`, detailsRaw);
     diag?.({level: 'info', stage, details: detailsRaw});
@@ -62,6 +63,7 @@ function logWebPushInfo(stage: string, detailsRaw?: Record<string, unknown>, dia
 }
 
 function logWebPushWarn(stage: string, detailsRaw?: Record<string, unknown>, diag?: WebPushDiagReporter) {
+  if (!diag) return;
   if (detailsRaw) {
     console.warn(`[web-push] ${stage}`, detailsRaw);
     diag?.({level: 'warn', stage, details: detailsRaw});

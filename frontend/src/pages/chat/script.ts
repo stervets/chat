@@ -1,6 +1,7 @@
 import type {Message, User} from '@/composables/types';
 import {on, off} from '@/composables/event-bus';
 import {setWsReconnectDialogResolver} from '@/composables/ws-rpc';
+import {isStandaloneDisplayMode} from '@/composables/use-web-push';
 import ChatMessageItem from './message-item/index.vue';
 import {
   VIRTUAL_MAX_ITEMS,
@@ -21,14 +22,25 @@ export default {
   },
 
   async setup() {
+    const runtimeConfig = useRuntimeConfig();
     return {
       router: useRouter(),
       route: useRoute(),
+      appMode: String(runtimeConfig.public.mode || '').trim().toLowerCase(),
       ...createChatPageState(),
     };
   },
 
   computed: {
+    isDevMode(this: any) {
+      return this.appMode === 'dev';
+    },
+
+    isStandaloneApp(this: any) {
+      if (typeof window === 'undefined') return false;
+      return isStandaloneDisplayMode();
+    },
+
     filteredUsers(this: any) {
       const query = this.searchQuery.trim().toLowerCase().replace(/^@+/, '');
       if (!query) return [];
@@ -58,6 +70,7 @@ export default {
     webPushStatusText(this: any) {
       if (!this.webPushSupported) return 'не поддерживается';
       if (!this.webPushAvailable) return 'backend /push/public-key отключен или недоступен';
+      if (this.isStandaloneApp && !this.webPushSettingEnabled) return 'выключено';
       if (this.webPushPermission === 'denied') return 'запрещено в браузере';
       if (this.webPushEnabled) return 'включено';
       if (this.webPushPermission === 'granted' && !this.webPushSynced) {

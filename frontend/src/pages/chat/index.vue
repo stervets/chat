@@ -1,32 +1,5 @@
 <template>
   <div class="page page-chat">
-    <div v-if="soundOverlayVisible" class="sound-overlay">
-      <div class="sound-overlay-card">
-        <img
-          class="sound-overlay-logo"
-          src="/marx_logo.png"
-          alt="MARX logo"
-          loading="eager"
-          decoding="async"
-        />
-        <div class="sound-overlay-title">MARX</div>
-        <div class="sound-overlay-subtitle">наднациональный мессенджер</div>
-        <div class="sound-overlay-actions">
-          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">
-            <span class="sound-overlay-btn-label">СВОБОДА</span>
-          </button>
-          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">
-            <span class="sound-overlay-btn-label">СПЛОЧЁННОСТЬ</span>
-          </button>
-          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">
-            <span class="sound-overlay-btn-label">СОЛИДАРНОСТЬ</span>
-          </button>
-          <button class="sound-overlay-btn" @click="onSoundOverlayConfirm">
-            <span class="sound-overlay-btn-label">РАВЕНСТВО</span>
-          </button>
-        </div>
-      </div>
-    </div>
     <div class="chat-shell">
       <aside class="drawer drawer-left" :class="{open: leftMenuOpen}">
         <div class="drawer-head">
@@ -492,7 +465,7 @@
           />
           <span>Звук уведомлений</span>
         </label>
-        <label class="sound-toggle">
+        <label v-if="!isStandaloneApp" class="sound-toggle">
           <input
             v-model="browserNotificationsEnabled"
             type="checkbox"
@@ -500,53 +473,46 @@
           />
           <span>Уведомления браузера</span>
         </label>
-        <div class="hint">
+        <div v-if="!isStandaloneApp" class="hint">
           Статус: {{ browserNotificationPermission }}
         </div>
         <button
-          v-if="browserNotificationsEnabled && browserNotificationPermission !== 'granted'"
+          v-if="!isStandaloneApp && browserNotificationsEnabled && browserNotificationPermission !== 'granted'"
           class="ghost-btn"
           @click="requestBrowserNotificationPermission"
         >
           Разрешить уведомления
         </button>
 
-        <div class="hint">
+        <div v-if="isStandaloneApp" class="hint">
           Web Push: {{ webPushStatusText }}
         </div>
+        <label v-if="isStandaloneApp" class="sound-toggle">
+          <input
+            v-model="webPushSettingEnabled"
+            type="checkbox"
+            :disabled="webPushBusy || !webPushSupported || !webPushAvailable"
+            @change="onWebPushEnabledChange"
+          />
+          <span>{{ webPushBusy ? 'Push-уведомления (обновляем...)' : 'Push-уведомления' }}</span>
+        </label>
         <button
-          v-if="webPushSupported && webPushAvailable && !webPushEnabled"
-          class="ghost-btn"
-          :disabled="webPushBusy"
-          @click="enableWebPush"
-        >
-          {{ webPushBusy ? 'Включаем push...' : 'Включить push-уведомления' }}
-        </button>
-        <button
-          v-if="webPushSupported && webPushAvailable && webPushEnabled"
-          class="ghost-btn"
-          :disabled="webPushBusy"
-          @click="disableWebPush"
-        >
-          {{ webPushBusy ? 'Отключаем push...' : 'Отключить push-уведомления' }}
-        </button>
-        <button
-          v-if="webPushSupported"
+          v-if="isDevMode && webPushSupported"
           class="ghost-btn"
           :disabled="webPushTestBusy || !canSendWebPushTest"
           @click="sendWebPushTest"
         >
           {{ webPushTestBusy ? 'Отправляем тестовый push...' : 'Отправить тестовый push' }}
         </button>
-        <div v-if="webPushTestStatus" class="hint">
+        <div v-if="isDevMode && webPushTestStatus" class="hint">
           {{ webPushTestStatus }}
         </div>
-        <div v-if="webPushDiagnosticLines.length" class="hint">
+        <div v-if="isDevMode && webPushDiagnosticLines.length" class="hint">
           <div v-for="(line, index) in webPushDiagnosticLines" :key="`web-push-diag-${index}`">
             {{ line }}
           </div>
         </div>
-        <div v-if="webPushRequiresIosInstall" class="hint">
+        <div v-if="isStandaloneApp && webPushRequiresIosInstall" class="hint">
           На iPhone Web Push работает только в установленном приложении с экрана Домой.
         </div>
         <div v-if="webPushError" class="error">{{ webPushError }}</div>

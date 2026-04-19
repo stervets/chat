@@ -2,6 +2,7 @@ import {
   nextTick,
   ws,
   restoreSession,
+  getSessionToken,
   wsChangePassword,
   wsUpdateProfile,
   COLOR_HEX_RE,
@@ -108,21 +109,32 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async ensureAuth(this: any) {
-      const session = await restoreSession();
-      if (!(session as any)?.ok) {
+      const token = String(getSessionToken() || '').trim();
+      if (!token) {
         await this.router.push('/login');
         return false;
       }
 
-      const me = await ws.request('auth:me');
-      if (!(me as any)?.id) {
-        await this.router.push('/login');
-        return false;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const session = await restoreSession();
+        if ((session as any)?.ok && (session as any)?.user?.id) {
+          this.applyMe((session as any).user as User);
+          this.loadHandledMessageNotificationIds();
+          return true;
+        }
+
+        if ((session as any)?.error === 'unauthorized') {
+          await this.router.push('/login');
+          return false;
+        }
+
+        if (attempt < 5) {
+          await new Promise((resolve) => setTimeout(resolve, 450));
+        }
       }
 
-      this.applyMe(me as User);
-      this.loadHandledMessageNotificationIds();
-      return true;
+      this.error = 'Связь с сервером недоступна. Проверь интернет, авторизация не сброшена.';
+      return false;
     },
 
     async fetchUsers(this: any) {

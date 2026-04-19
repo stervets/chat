@@ -164,6 +164,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  private getOnlineUserIds() {
+    const ids = new Set<number>();
+    for (const rawClient of this.server.clients) {
+      const client = rawClient as ClientSocket;
+      const userId = Number(client.state?.user?.id || 0);
+      if (!Number.isFinite(userId) || userId <= 0) continue;
+      ids.add(userId);
+    }
+    return Array.from(ids);
+  }
+
   private closeDialogSubscriptions(dialogId: number) {
     const set = this.subscriptions.get(dialogId);
     if (set) {
@@ -248,6 +259,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             dialog,
             message: (result as any).message,
             senderId: Number((result as any).message.authorId || 0),
+            excludeUserIds: this.getOnlineUserIds(),
           });
         } else {
           this.broadcast((result as any).message.dialogId, 'chat:message', (result as any).message);

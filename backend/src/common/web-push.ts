@@ -17,6 +17,7 @@ type SendChatPushParams = {
   dialog: DialogRow;
   message: ChatContextMessagePayload;
   senderId: number;
+  excludeUserIds?: number[];
 };
 
 type StoredPushSubscription = {
@@ -115,10 +116,17 @@ export class WebPushService {
   async sendChatMessagePush(params: SendChatPushParams) {
     try {
       const recipientUserIds = await this.resolveRecipientUserIds(params.dialog, params.senderId);
+      const excluded = new Set(
+        Array.isArray(params.excludeUserIds)
+          ? params.excludeUserIds.filter((value) => Number.isFinite(value) && value > 0)
+          : [],
+      );
+      const filteredRecipientUserIds = recipientUserIds.filter((userId) => !excluded.has(userId));
       this.logger.log(`Web Push chat recipients=${recipientUserIds.length} dialogId=${params.dialog.id}`);
-      if (!recipientUserIds.length) return;
+      this.logger.log(`Web Push chat recipients_after_exclude=${filteredRecipientUserIds.length} dialogId=${params.dialog.id}`);
+      if (!filteredRecipientUserIds.length) return;
 
-      const subscriptions = await this.findSubscriptionsByUserIds(recipientUserIds);
+      const subscriptions = await this.findSubscriptionsByUserIds(filteredRecipientUserIds);
       this.logger.log(`Web Push chat subscriptions=${subscriptions.length} dialogId=${params.dialog.id}`);
 
       if (!subscriptions.length) return;
