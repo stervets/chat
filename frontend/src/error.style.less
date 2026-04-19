@@ -1,0 +1,98 @@
+.page-error {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(920px 520px at -12% -18%, rgba(229, 192, 123, 0.10) 0%, rgba(229, 192, 123, 0) 64%),
+    radial-gradient(860px 500px at 116% 0%, rgba(152, 195, 121, 0.08) 0%, rgba(152, 195, 121, 0) 66%),
+    linear-gradient(160deg, #171b22 0%, #1b2028 48%, #1a1f27 100%);
+
+  .error-shell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: min(92vw, 460px);
+  }
+
+  .project-logo {
+    width: min(52vw, 220px);
+    max-width: 220px;
+    height: auto;
+    display: block;
+    filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.34));
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .content {
+    width: 100%;
+    text-align: center;
+    background: linear-gradient(180deg, rgba(35, 43, 56, 0.96) 0%, rgba(25, 31, 40, 0.98) 100%);
+    border: 1px solid rgba(123, 151, 188, 0.34);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.32);
+  }
+
+  .code {
+    font-size: 34px;
+    font-weight: 700;
+    color: #d8e4f2;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 600;
+    color: #d8e4f2;
+  }
+
+  p {
+    margin: 10px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .actions {
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    min-width: 130px;
+    border-radius: 8px;
+    border: 1px solid rgba(119, 157, 192, 0.38);
+    background: linear-gradient(180deg, #4f8abd 0%, #3c6d99 100%);
+    color: #e2ecfa;
+    padding: 10px 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .btn:hover {
+    border-color: rgba(145, 181, 214, 0.52);
+    background: linear-gradient(180deg, #5c96c8 0%, #477aa6 100%);
+  }
+
+  .btn-ghost {
+    border-color: rgba(123, 151, 188, 0.36);
+    background: rgba(24, 32, 43, 0.72);
+    color: var(--text);
+  }
+
+  .btn-ghost:hover {
+    border-color: rgba(145, 181, 214, 0.46);
+    background: rgba(34, 44, 58, 0.86);
+  }
+}
