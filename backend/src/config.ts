@@ -1,14 +1,13 @@
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {MESSAGES_TTL_DAYS, WS_PATH} from './common/const.js';
+import {WS_PATH} from './common/const.js';
 
 type ConfigFile = {
   host?: string;
   port?: number;
   wsPath?: string;
   wgAdminSocketPath?: string;
-  messagesTtlDays?: number;
   inviteBaseUrl?: string;
   corsOrigins?: string[];
   uploads?: {
@@ -64,7 +63,6 @@ export const config = {
   port: fileConfig.port || 8816,
   wsPath: fileConfig.wsPath || WS_PATH,
   wgAdminSocketPath: String(fileConfig.wgAdminSocketPath || '/run/wg-admin.sock').trim() || '/run/wg-admin.sock',
-  messagesTtlDays: fileConfig.messagesTtlDays || MESSAGES_TTL_DAYS,
   inviteBaseUrl,
   corsOrigins: resolvedCorsOrigins,
   db: {

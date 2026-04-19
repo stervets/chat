@@ -38,7 +38,6 @@ export class ChatMessagesService {
       : trimmed;
     const compiled = await this.ctx.compileMessageForDialog(dialogId, rawText);
 
-    await this.ctx.pruneExpiredMessages();
     const created = await db.message.create({
       data: {
         dialogId,
@@ -78,8 +77,6 @@ export class ChatMessagesService {
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
-    await this.ctx.pruneExpiredMessages();
-
     const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
     if (!Number.isFinite(messageId) || messageId <= 0) {
       return {ok: false, error: 'invalid_message'};
@@ -158,8 +155,6 @@ export class ChatMessagesService {
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
-    await this.ctx.pruneExpiredMessages();
-
     const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
     if (!Number.isFinite(messageId) || messageId <= 0) {
       return {ok: false, error: 'invalid_message'};

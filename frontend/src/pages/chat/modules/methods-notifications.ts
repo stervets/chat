@@ -325,6 +325,7 @@ export const chatMethodsNotifications = {
     },
 
     toggleNotificationsMenu(this: any) {
+      this.hapticTap();
       this.notificationsMenuOpen = !this.notificationsMenuOpen;
       if (this.notificationsMenuOpen) {
         this.rightMenuOpen = false;
@@ -333,6 +334,7 @@ export const chatMethodsNotifications = {
     },
 
     clearNotifications(this: any) {
+      this.hapticTap();
       this.notifications.forEach((notification: NotificationItem) => {
         if (notification.notificationType === 'message' && notification.targetMessageId) {
           this.markMessageNotificationHandled(notification.targetMessageId);
@@ -399,6 +401,7 @@ export const chatMethodsNotifications = {
     },
 
     async openNotification(this: any, notification: NotificationItem) {
+      this.hapticTap();
       const targetMessageId = Number(notification.targetMessageId || 0) || null;
       if (notification.notificationType === 'reaction' || !targetMessageId) {
         this.markNotificationRead(notification.id);

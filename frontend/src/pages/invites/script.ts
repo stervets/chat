@@ -1,6 +1,7 @@
 import {ref} from 'vue';
 import {ws} from '@/composables/classes/ws';
 import {restoreSession} from '@/composables/ws-rpc';
+import {vibrateConfirm, vibrateError} from '@/utils/vibrate';
 
 export default {
   async setup() {
@@ -51,6 +52,7 @@ export default {
       try {
         const created = await ws.request('invites:create');
         if ((created as any)?.error === 'unauthorized' || (created as any)?.ok === false) {
+          vibrateError();
           await this.router.push('/login');
           return;
         }
@@ -61,8 +63,10 @@ export default {
         this.lastLink = link;
         await this.copyToClipboard(link);
         this.copied = true;
+        vibrateConfirm();
       } catch {
         this.error = 'Сервер недоступен.';
+        vibrateError();
       } finally {
         this.creating = false;
       }

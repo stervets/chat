@@ -82,8 +82,6 @@ export class ChatDialogsService {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    await this.ctx.pruneExpiredMessages();
-    const cutoffDate = this.ctx.messagesCutoffDate();
     const userId = state.user!.id;
 
     const rows = await db.dialog.findMany({
@@ -93,13 +91,6 @@ export class ChatDialogsService {
           {memberAId: userId},
           {memberBId: userId},
         ],
-        messages: {
-          some: {
-            createdAt: {
-              gte: cutoffDate,
-            },
-          },
-        },
       },
       include: {
         memberA: {
@@ -121,11 +112,6 @@ export class ChatDialogsService {
           },
         },
         messages: {
-          where: {
-            createdAt: {
-              gte: cutoffDate,
-            },
-          },
           orderBy: [
             {createdAt: 'desc'},
             {id: 'desc'},
@@ -193,8 +179,6 @@ export class ChatDialogsService {
   ): Promise<ApiError | any[]> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
-    await this.ctx.pruneExpiredMessages();
-
     const dialogId = this.ctx.parseDialogId(dialogIdRaw);
     if (!dialogId) {
       return {ok: false, error: 'invalid_dialog'};
@@ -211,15 +195,11 @@ export class ChatDialogsService {
 
     await this.ctx.pruneDialogOverflow(dialogId);
     const limit = this.ctx.parseLimit(limitRaw);
-    const cutoffDate = this.ctx.messagesCutoffDate();
     const beforeMessageId = this.ctx.parseBeforeMessageId(beforeMessageIdRaw);
 
     const result = await db.message.findMany({
       where: {
         dialogId,
-        createdAt: {
-          gte: cutoffDate,
-        },
         ...(beforeMessageId ? {id: {lt: beforeMessageId}} : {}),
       },
       orderBy: [

@@ -1,5 +1,6 @@
 import {ref} from 'vue';
 import {wsCheckInvite, wsRedeemInvite} from '@/composables/ws-rpc';
+import {vibrateConfirm, vibrateError} from '@/utils/vibrate';
 
 export default {
   async setup() {
@@ -55,10 +56,12 @@ export default {
       const password = String(this.password || '');
       if (!this.inviteValid) {
         this.error = 'Регистрация по этому инвайту недоступна.';
+        vibrateError();
         return;
       }
       if (!nickname || !password || !this.code) {
         this.error = 'Заполните все поля.';
+        vibrateError();
         return;
       }
 
@@ -74,12 +77,15 @@ export default {
           else if (err === 'invalid_nickname') message = 'Никнейм: только a-z, 0-9, _ и -, длина 3-32.';
           else if (err === 'invalid_input') message = 'Заполните все поля.';
           this.error = message;
+          vibrateError();
           return;
         }
 
+        vibrateConfirm();
         await this.router.push('/chat');
       } catch {
         this.error = 'Сервер недоступен.';
+        vibrateError();
       } finally {
         this.loading = false;
       }

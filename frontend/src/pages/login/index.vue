@@ -8,7 +8,8 @@
         loading="eager"
         decoding="async"
       />
-      <div class="content">
+      <div v-if="checkingSession" class="session-checking"/>
+      <div v-else class="content">
         <h1>Вход</h1>
         <form class="form" autocomplete="on" @submit.prevent="onLogin">
           <input

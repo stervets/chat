@@ -2,6 +2,7 @@ import {ref} from 'vue';
 import QRCode from 'qrcode';
 import {ws} from '@/composables/classes/ws';
 import {ensureWsConnected, wsProvisionVpn, wsSetVpnDonation} from '@/composables/ws-rpc';
+import {vibrateTap} from '@/utils/vibrate';
 
 const DEFAULT_MTPROXY_DEEP_LINK = 'tg://proxy?server=151.245.137.79&port=8443&secret=c6fab0c23452644261db3661aa963f50';
 const DEFAULT_MTPROXY_WEB_LINK = 'https://t.me/proxy?server=151.245.137.79&port=8443&secret=c6fab0c23452644261db3661aa963f50';
@@ -129,6 +130,7 @@ export default {
 
     async requestVpnProvision(this: any) {
       if (this.vpnProvisionState === 'loading') return;
+      vibrateTap();
 
       this.vpnProvisionState = 'loading';
       this.vpnProvisionError = '';
@@ -198,6 +200,7 @@ export default {
     },
 
     async onDonationButtonClick(this: any) {
+      vibrateTap();
       const shouldSetDonation = !this.donationButtonUndoMode;
       this.donationActionError = '';
 

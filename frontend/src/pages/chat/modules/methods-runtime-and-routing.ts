@@ -2,6 +2,7 @@ import {
   BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY,
   HANDLED_MESSAGE_IDS_LIMIT,
   SOUND_ENABLED_STORAGE_KEY,
+  VIBRATION_ENABLED_STORAGE_KEY,
   WEB_PUSH_ENABLED_STORAGE_KEY,
   getHandledMessageIdsStorageKey,
   loadBooleanSetting,
@@ -35,6 +36,7 @@ import {
   type WebPushPermission,
   unsubscribeWebPush,
 } from '@/composables/use-web-push';
+import {vibrateConfirm, vibrateError, vibrateTap} from '@/utils/vibrate';
 
 const WEB_PUSH_ROLLOUT_VERSION = '2026-04-19-1';
 
@@ -77,6 +79,29 @@ export const chatMethodsRuntimeAndRouting = {
 
     persistSoundEnabledSetting(this: any) {
       persistBooleanSetting(SOUND_ENABLED_STORAGE_KEY, !!this.soundEnabled);
+    },
+
+    loadVibrationEnabledSetting(this: any) {
+      this.vibrationEnabled = loadBooleanSetting(VIBRATION_ENABLED_STORAGE_KEY, true);
+    },
+
+    persistVibrationEnabledSetting(this: any) {
+      persistBooleanSetting(VIBRATION_ENABLED_STORAGE_KEY, !!this.vibrationEnabled);
+    },
+
+    hapticTap(this: any) {
+      if (!this.vibrationEnabled) return;
+      vibrateTap();
+    },
+
+    hapticConfirm(this: any) {
+      if (!this.vibrationEnabled) return;
+      vibrateConfirm();
+    },
+
+    hapticError(this: any) {
+      if (!this.vibrationEnabled) return;
+      vibrateError();
     },
 
     getSoundRuntimeState(this: any): SoundRuntimeState {
@@ -122,6 +147,7 @@ export const chatMethodsRuntimeAndRouting = {
     resolveSoundStartupState(this: any) {
       const runtime = this.getSoundRuntimeState();
       this.loadSoundEnabledSetting();
+      this.loadVibrationEnabledSetting();
       if (!this.soundEnabled) {
         this.soundOverlayVisible = false;
         this.soundReady = false;
@@ -177,6 +203,12 @@ export const chatMethodsRuntimeAndRouting = {
       }
       runtime.overlayHandled = true;
       this.markSoundReady();
+    },
+
+    onVibrationEnabledChange(this: any) {
+      this.vibrationEnabled = !!this.vibrationEnabled;
+      this.persistVibrationEnabledSetting();
+      this.hapticTap();
     },
 
     isBrowserNotificationsSupported(this: any) {

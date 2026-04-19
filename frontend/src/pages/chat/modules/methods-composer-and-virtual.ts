@@ -293,6 +293,7 @@ export const chatMethodsComposerAndVirtual = {
     },
 
     toggleComposerTools(this: any) {
+      this.hapticTap();
       this.composerToolsOpen = !this.composerToolsOpen;
       if (this.composerToolsOpen) {
         this.captureInputSelection();
@@ -356,6 +357,7 @@ export const chatMethodsComposerAndVirtual = {
     },
 
     applyNamedColorWrapper(this: any, colorNameRaw: unknown) {
+      this.hapticTap();
       const colorName = String(colorNameRaw || '').trim().toLowerCase();
       if (!colorName) return;
       this.applyWrapperToSelection(`c#${colorName}(`);
@@ -363,6 +365,7 @@ export const chatMethodsComposerAndVirtual = {
     },
 
     applyCustomColorWrapper(this: any) {
+      this.hapticTap();
       const color = String(this.composerColorPicker || '').trim();
       if (!COLOR_HEX_FULL_RE.test(color)) {
         this.closeComposerTools();
@@ -375,6 +378,7 @@ export const chatMethodsComposerAndVirtual = {
     },
 
     applyFormatWrapper(this: any, tagRaw: unknown) {
+      this.hapticTap();
       const tag = String(tagRaw || '').trim().toLowerCase();
       if (!['b', 'u', 's', 'h', 'm'].includes(tag)) {
         this.closeComposerTools();
@@ -396,6 +400,7 @@ export const chatMethodsComposerAndVirtual = {
     },
 
     onComposerEmojiClick(this: any, emojiRaw: unknown) {
+      this.hapticTap();
       const emoji = String(emojiRaw || '');
       if (!emoji) {
         this.closeComposerTools();
@@ -411,6 +416,7 @@ export const chatMethodsComposerAndVirtual = {
         this.closeComposerTools();
         return;
       }
+      this.hapticTap();
       this.closeComposerTools();
       input.click();
     },
@@ -490,10 +496,12 @@ export const chatMethodsComposerAndVirtual = {
     },
 
     onAuthorClick(this: any, message: Message) {
+      this.hapticTap();
       this.appendToInput(`${this.formatUsername(message.authorNickname)}, `);
     },
 
     onMessageTimeClick(this: any, message: Message) {
+      this.hapticTap();
       this.appendToInput(`${this.formatUsername(message.authorNickname)} [${this.formatMessageTime(message.createdAt)}], `);
     },
 
@@ -505,13 +513,14 @@ export const chatMethodsComposerAndVirtual = {
 
     async onDirectFromMessageClick(this: any, message: Message) {
       if (!this.canOpenDirectFromMessage(message)) return;
+      this.hapticTap();
       await this.selectPrivate({
         id: message.authorId,
         nickname: message.authorNickname,
         name: message.authorName,
         nicknameColor: message.authorNicknameColor,
         donationBadgeUntil: message.authorDonationBadgeUntil || null,
-      } as User);
+      } as User, {haptic: false});
     },
 
     isOwnMessage(this: any, message: Message) {
@@ -520,6 +529,7 @@ export const chatMethodsComposerAndVirtual = {
 
     startMessageEdit(this: any, message: Message) {
       if (!this.isOwnMessage(message)) return;
+      this.hapticTap();
       this.editingMessageId = message.id;
       this.editingMessageText = this.getMessageRawText(message);
       this.reactionPickerMessageId = null;
@@ -569,6 +579,7 @@ export const chatMethodsComposerAndVirtual = {
 
     async saveMessageEdit(this: any, message: Message) {
       if (!this.isOwnMessage(message)) return;
+      this.hapticTap();
       const body = String(this.editingMessageText || '').trim();
       if (!body) {
         this.error = 'Сообщение не может быть пустым.';
@@ -592,6 +603,7 @@ export const chatMethodsComposerAndVirtual = {
 
     async deleteOwnMessage(this: any, message: Message) {
       if (!this.isOwnMessage(message)) return;
+      this.hapticTap();
       if (!window.confirm('Удалить это сообщение?')) return;
 
       this.messageActionPendingId = message.id;

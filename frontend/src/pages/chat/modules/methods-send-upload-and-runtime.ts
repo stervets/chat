@@ -167,6 +167,7 @@ export const chatMethodsSendUploadAndRuntime = {
         return false;
       }
 
+      this.hapticConfirm();
       this.forceOwnScrollDown = true;
       this.scrollToBottomPinned();
       if (this.activeDialog.kind === 'private') {
@@ -208,6 +209,7 @@ export const chatMethodsSendUploadAndRuntime = {
     },
 
     async onLogout(this: any) {
+      this.hapticTap();
       this.error = '';
       await wsLogout();
       await this.router.push('/login');

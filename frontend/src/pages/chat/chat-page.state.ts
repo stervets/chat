@@ -77,6 +77,7 @@ export function createChatPageState() {
     profileError: ref(''),
     directDeletePending: ref(false),
     soundEnabled: ref(true),
+    vibrationEnabled: ref(true),
     soundOverlayVisible: ref(false),
     soundReady: ref(false),
     notificationAudioEl: ref<HTMLAudioElement | null>(null),

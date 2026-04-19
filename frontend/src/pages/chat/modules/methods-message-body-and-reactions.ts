@@ -39,6 +39,15 @@ export const chatMethodsMessageBodyAndReactions = {
       const target = event.target as HTMLElement | null;
       if (!target) return;
 
+      const spoilerEl = target.closest('.message-spoiler') as HTMLElement | null;
+      if (spoilerEl) {
+        const bodyEl = target.closest('.message-body') as HTMLElement | null;
+        const alreadyRevealed = !!bodyEl?.classList.contains('message-body-show-hidden');
+        if (!alreadyRevealed) {
+          this.hapticTap();
+        }
+      }
+
       const codeEl = target.closest('code') as HTMLElement | null;
       if (codeEl) {
         this.timeTooltipVisible = false;
@@ -148,6 +157,7 @@ export const chatMethodsMessageBodyAndReactions = {
     },
 
     toggleReactionPicker(this: any, message: Message) {
+      this.hapticTap();
       this.reactionPickerMessageId = this.reactionPickerMessageId === message.id
         ? null
         : message.id;
@@ -166,6 +176,7 @@ export const chatMethodsMessageBodyAndReactions = {
     },
 
     async onReactionSelect(this: any, message: Message, emoji: string) {
+      this.hapticTap();
       const current = this.findMyReactionEmoji(message);
       const nextEmoji = current === emoji ? null : emoji;
       const ok = await this.sendReaction(message, nextEmoji);
@@ -174,6 +185,7 @@ export const chatMethodsMessageBodyAndReactions = {
     },
 
     async onReactionChipClick(this: any, message: Message, reaction: MessageReaction) {
+      this.hapticTap();
       const current = this.findMyReactionEmoji(message);
       const nextEmoji = current === reaction.emoji ? null : reaction.emoji;
       await this.sendReaction(message, nextEmoji);

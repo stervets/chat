@@ -9,7 +9,8 @@ export default {
 
   computed: {
     shouldRender(this: any) {
-      return this.isInstalled || this.isInstallAvailable || this.isIos;
+      if (this.isInstalled) return false;
+      return this.isInstallAvailable || this.isIos;
     },
 
     showInstallButton(this: any) {

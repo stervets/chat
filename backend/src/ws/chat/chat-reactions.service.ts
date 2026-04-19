@@ -23,7 +23,6 @@ export class ChatReactionsService {
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
-    await this.ctx.pruneExpiredMessages();
 
     const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
     if (!Number.isFinite(messageId) || messageId <= 0) {

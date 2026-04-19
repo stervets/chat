@@ -3,7 +3,6 @@
   "port": 8816,
   "wsPath": "/ws",
   "wgAdminSocketPath": "/run/wg-admin.sock",
-  "messagesTtlDays": 7,
   "corsOrigins": [
     "*"
   ],

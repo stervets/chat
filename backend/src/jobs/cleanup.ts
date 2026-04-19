@@ -1,9 +1,9 @@
-import {config} from '../config.js';
 import {Prisma} from '@prisma/client';
 import {db} from '../db.js';
 import {pruneExpiredUploads} from '../common/uploads.js';
 
 const MAX_MESSAGES_PER_DIALOG = 5000;
+const UPLOADS_TTL_DAYS = 30;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 type CleanupLogger = {
@@ -12,15 +12,7 @@ type CleanupLogger = {
 };
 
 export async function runMessagesCleanup(logger: CleanupLogger = console as CleanupLogger) {
-  const ttlDays = Math.max(1, Math.floor(config.messagesTtlDays || 1));
   try {
-    const cutoffDate = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
-    const cutoffMs = Date.now() - ttlDays * 24 * 60 * 60 * 1000;
-    const ttlResult = await db.message.deleteMany({
-      where: {
-        createdAt: {lt: cutoffDate},
-      },
-    });
     const limitResult = await db.$executeRaw(
       Prisma.sql`
         delete from messages
@@ -35,19 +27,18 @@ export async function runMessagesCleanup(logger: CleanupLogger = console as Clea
         )
       `
     );
-    const uploadsDeleted = pruneExpiredUploads(cutoffMs);
-    const deletedByTtl = Number(ttlResult.count);
+    const uploadsCutoffMs = Date.now() - UPLOADS_TTL_DAYS * 24 * 60 * 60 * 1000;
+    const uploadsDeleted = pruneExpiredUploads(uploadsCutoffMs);
     const deletedByLimit = Number(limitResult || 0);
     logger.info({
-      deletedByTtl,
       deletedByLimit,
-      deleted: deletedByTtl + deletedByLimit,
+      deleted: deletedByLimit,
       uploadsDeleted,
-      ttlDays,
+      uploadsTtlDays: UPLOADS_TTL_DAYS,
       maxMessagesPerDialog: MAX_MESSAGES_PER_DIALOG,
     }, 'Messages cleanup completed');
   } catch (err) {
-    logger.error({err, ttlDays}, 'Messages cleanup failed');
+    logger.error({err}, 'Messages cleanup failed');
   }
 }
 

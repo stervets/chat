@@ -1,5 +1,6 @@
 import { ref } from 'vue';
-import { wsLogin, restoreSession } from '@/composables/ws-rpc';
+import { wsLogin, restoreSession, getSessionToken } from '@/composables/ws-rpc';
+import {vibrateConfirm, vibrateError} from '@/utils/vibrate';
 
 export default {
     async setup() {
@@ -9,18 +10,31 @@ export default {
             nickname: ref(''),
             password: ref(''),
             error: ref(''),
-            loading: ref(false)
+            loading: ref(false),
+            checkingSession: ref(true),
         };
     },
 
     methods: {
         async ensureAuth(this: any) {
-            const session = await restoreSession();
-            if (!(session as any)?.ok || !(session as any)?.user?.id) {
+            const token = String(getSessionToken() || '').trim();
+            if (!token) {
+                this.checkingSession = false;
                 return false;
             }
-            await this.router.replace('/chat');
-            return true;
+
+            try {
+                const session = await restoreSession();
+                if (!(session as any)?.ok || !(session as any)?.user?.id) {
+                    this.checkingSession = false;
+                    return false;
+                }
+                await this.router.replace('/chat');
+                return true;
+            } catch {
+                this.checkingSession = false;
+                return false;
+            }
         },
 
         async onLogin(this: any) {
@@ -29,6 +43,7 @@ export default {
             const password = String(this.password || '');
             if (!nickname || !password) {
                 this.error = 'Введите nickname и пароль.';
+                vibrateError();
                 return;
             }
 
@@ -38,14 +53,18 @@ export default {
                 if (!(result as any)?.ok) {
                     if ((result as any)?.error === 'invalid_nickname') {
                         this.error = 'Никнейм: только a-z, 0-9, _ и -, длина 3-32.';
+                        vibrateError();
                         return;
                     }
                     this.error = 'Неверный nickname или пароль.';
+                    vibrateError();
                     return;
                 }
+                vibrateConfirm();
                 await this.router.push('/chat');
             } catch (e) {
                 this.error = 'Сервер недоступен.';
+                vibrateError();
             } finally {
                 this.loading = false;
             }

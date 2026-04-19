@@ -276,8 +276,11 @@ export const chatMethodsAuthDialogsAndProfile = {
       await this.syncRouteForDialog(dialog, optionsRaw?.routeMode || 'push');
     },
 
-    async selectGeneral(this: any, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean}) {
+    async selectGeneral(this: any, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; haptic?: boolean}) {
       if (!this.generalDialog) return;
+      if (optionsRaw?.haptic) {
+        this.hapticTap();
+      }
       await this.selectDialog(this.generalDialog, {routeMode: optionsRaw?.routeMode || 'push'});
       if (optionsRaw?.closeMenu !== false) {
         this.closeLeftMenu();
@@ -285,17 +288,21 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async onGoToGeneralChat(this: any) {
-      await this.selectGeneral();
+      await this.selectGeneral({haptic: true});
     },
 
     async onOpenVpnPage(this: any) {
+      this.hapticTap();
       this.notificationsMenuOpen = false;
       this.leftMenuOpen = false;
       this.rightMenuOpen = false;
       await this.router.push('/vpn');
     },
 
-    async selectPrivate(this: any, user: User, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; refreshDirects?: boolean}) {
+    async selectPrivate(this: any, user: User, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; refreshDirects?: boolean; haptic?: boolean}) {
+      if (optionsRaw?.haptic) {
+        this.hapticTap();
+      }
       const dialog = await this.fetchPrivateDialog(user);
       if (!dialog) return;
       await this.selectDialog(dialog, {routeMode: optionsRaw?.routeMode || 'push'});
@@ -308,10 +315,11 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async selectUser(this: any, user: User) {
-      await this.selectPrivate(user);
+      await this.selectPrivate(user, {haptic: true});
     },
 
     async selectDirectDialog(this: any, dialog: DirectDialog) {
+      this.hapticTap();
       await this.selectDialog({
         id: dialog.dialogId,
         kind: 'private',
@@ -324,6 +332,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     async onDeleteActiveDirect(this: any) {
       if (this.activeDialog?.kind !== 'private') return;
       if (this.directDeletePending) return;
+      this.hapticTap();
       if (!window.confirm('Удалить директ полностью? Это удалит всю переписку у обоих участников.')) return;
 
       this.directDeletePending = true;
@@ -341,6 +350,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     toggleLeftMenu(this: any) {
+      this.hapticTap();
       this.leftMenuOpen = !this.leftMenuOpen;
       if (this.leftMenuOpen) {
         this.rightMenuOpen = false;
@@ -353,6 +363,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     toggleRightMenu(this: any) {
+      this.hapticTap();
       this.rightMenuOpen = !this.rightMenuOpen;
       if (this.rightMenuOpen) {
         this.leftMenuOpen = false;
@@ -366,6 +377,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     clearNicknameColor(this: any) {
+      this.hapticTap();
       this.profileNicknameColor = '';
       this.profileColorPicker = '#61afef';
     },
@@ -378,12 +390,14 @@ export const chatMethodsAuthDialogsAndProfile = {
       const name = this.profileName.trim();
       if (!name) {
         this.profileError = 'Имя не может быть пустым.';
+        this.hapticError();
         return;
       }
 
       const normalizedColor = this.normalizeColor(this.profileNicknameColor);
       if (normalizedColor && !COLOR_HEX_RE.test(normalizedColor)) {
         this.profileError = 'Цвет должен быть в формате #RRGGBB.';
+        this.hapticError();
         return;
       }
 
@@ -403,6 +417,7 @@ export const chatMethodsAuthDialogsAndProfile = {
             return;
           }
           this.profileError = 'Не удалось сохранить профиль.';
+          this.hapticError();
           return;
         }
 
@@ -429,17 +444,21 @@ export const chatMethodsAuthDialogsAndProfile = {
             }
             if (code === 'invalid_password') {
               this.profileError = 'Пароль слишком короткий.';
+              this.hapticError();
               return;
             }
             this.profileError = 'Не удалось сменить пароль.';
+            this.hapticError();
             return;
           }
         }
 
         this.newPassword = '';
         this.rightMenuOpen = false;
+        this.hapticConfirm();
       } catch {
         this.profileError = 'Сервер недоступен.';
+        this.hapticError();
       } finally {
         this.profileSaving = false;
       }

@@ -4,6 +4,7 @@ export const SOUND_ENABLED_STORAGE_KEY = 'chat:notifications-sound-enabled:v1';
 export const SOUND_OVERLAY_SKIP_ONCE_KEY = 'chat:sound-overlay-skip-once:v1';
 export const BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY = 'chat:browser-notifications-enabled:v1';
 export const WEB_PUSH_ENABLED_STORAGE_KEY = 'chat:web-push-enabled:v1';
+export const VIBRATION_ENABLED_STORAGE_KEY = 'chat:vibration-enabled:v1';
 
 function hasWindow() {
   return typeof window !== 'undefined';

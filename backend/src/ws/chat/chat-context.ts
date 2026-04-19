@@ -1,6 +1,5 @@
 import {Prisma} from '@prisma/client';
 import {db} from '../../db.js';
-import {config} from '../../config.js';
 import {DEFAULT_NICKNAME_COLOR} from '../../common/const.js';
 import {isValidNickname, normalizeNickname} from '../../common/nickname.js';
 import {
@@ -115,21 +114,6 @@ export class ChatContext {
     const parsed = Number.parseInt(String(value), 10);
     if (!Number.isFinite(parsed) || parsed <= 0) return null;
     return parsed;
-  }
-
-  messagesCutoffDate() {
-    const ttlDays = Math.max(1, Math.floor(config.messagesTtlDays || 7));
-    return new Date(Date.now() - ttlDays * DAY_MS);
-  }
-
-  async pruneExpiredMessages() {
-    await db.message.deleteMany({
-      where: {
-        createdAt: {
-          lt: this.messagesCutoffDate(),
-        },
-      },
-    });
   }
 
   async pruneDialogOverflow(dialogId: number) {
@@ -306,9 +290,6 @@ export class ChatContext {
       const timelineRows = await db.message.findMany({
         where: {
           dialogId,
-          createdAt: {
-            gte: this.messagesCutoffDate(),
-          },
         },
         orderBy: [
           {createdAt: 'asc'},

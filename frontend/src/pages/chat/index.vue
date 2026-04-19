@@ -19,7 +19,7 @@
           <button
             class="menu-item menu-item-general"
             :class="{active: activeDialog?.kind === 'general'}"
-            @click="selectGeneral"
+            @click="selectGeneral({haptic: true})"
           >
             Общий чат
           </button>
@@ -464,6 +464,14 @@
             @change="onSoundEnabledChange"
           />
           <span>Звук уведомлений</span>
+        </label>
+        <label class="sound-toggle">
+          <input
+            v-model="vibrationEnabled"
+            type="checkbox"
+            @change="onVibrationEnabledChange"
+          />
+          <span>Вибрация</span>
         </label>
         <label v-if="!isStandaloneApp" class="sound-toggle">
           <input
