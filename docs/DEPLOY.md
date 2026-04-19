@@ -18,6 +18,8 @@ podman compose up -d
 Caddy завершает HTTPS и проксирует:
 
 - `/ws*` → backend
+- `/push*` → backend
+- `/uploads*` → backend
 - остальное → frontend
 
 ## Конфиг

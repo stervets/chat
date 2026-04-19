@@ -30,7 +30,9 @@ import {
   isIosForWebPush,
   isStandaloneDisplayMode,
   isWebPushSupported,
+  sendWebPushTest,
   subscribeWebPush,
+  type WebPushDiagEvent,
   type WebPushPermission,
   unsubscribeWebPush,
 } from '@/composables/use-web-push';
@@ -323,8 +325,37 @@ export const chatMethodsRuntimeAndRouting = {
       }
     },
 
+    clearWebPushDiagnostic(this: any) {
+      this.webPushDiagnosticLines = [];
+    },
+
+    appendWebPushDiagnosticLine(this: any, lineRaw: unknown) {
+      const line = String(lineRaw || '').replace(/\s+/g, ' ').trim();
+      if (!line) return;
+      this.webPushDiagnosticLines = [line, ...this.webPushDiagnosticLines].slice(0, 12);
+    },
+
+    formatWebPushDiagnosticEvent(this: any, eventRaw: WebPushDiagEvent) {
+      const stage = String(eventRaw?.stage || '').trim() || 'unknown_stage';
+      const level = eventRaw?.level === 'warn' ? 'warn' : 'info';
+      const details = eventRaw?.details && typeof eventRaw.details === 'object'
+        ? Object.entries(eventRaw.details)
+          .map(([key, value]) => `${key}=${String(value ?? '').replace(/\s+/g, ' ').trim() || 'empty'}`)
+          .join(', ')
+        : '';
+      return details ? `[${level}] ${stage} | ${details}` : `[${level}] ${stage}`;
+    },
+
+    onWebPushDiagnostic(this: any, eventRaw: WebPushDiagEvent) {
+      const line = this.formatWebPushDiagnosticEvent(eventRaw);
+      this.appendWebPushDiagnosticLine(line);
+    },
+
     async initWebPush(this: any) {
       this.webPushError = '';
+      this.webPushTestStatus = '';
+      this.webPushSynced = false;
+      this.clearWebPushDiagnostic();
       this.webPushSupported = isWebPushSupported();
       this.webPushPermission = getWebPushPermission();
       this.webPushRequiresIosInstall = isIosForWebPush() && !isStandaloneDisplayMode();
@@ -332,6 +363,7 @@ export const chatMethodsRuntimeAndRouting = {
       if (!this.webPushSupported) {
         this.webPushAvailable = false;
         this.webPushEnabled = false;
+        this.webPushSynced = false;
         this.webPushVapidPublicKey = '';
         return;
       }
@@ -342,17 +374,20 @@ export const chatMethodsRuntimeAndRouting = {
       this.webPushVapidPublicKey = serverConfig.vapidPublicKey;
       if (!this.webPushAvailable) {
         this.webPushEnabled = false;
+        this.webPushSynced = false;
         return;
       }
 
       const registration = await navigator.serviceWorker.ready.catch(() => null);
       if (!registration) {
         this.webPushEnabled = false;
+        this.webPushSynced = false;
         return;
       }
 
       const existing = await registration.pushManager.getSubscription();
       this.webPushEnabled = !!existing && this.webPushPermission === 'granted';
+      this.webPushSynced = false;
 
       if (!existing) return;
       if (this.webPushPermission !== 'granted') return;
@@ -361,24 +396,55 @@ export const chatMethodsRuntimeAndRouting = {
       if (shouldForceRenew) {
         await unsubscribeWebPush(apiBase, token);
       }
-      const subscribeResult = await subscribeWebPush(apiBase, token, this.webPushVapidPublicKey);
+      const subscribeResult = await subscribeWebPush(
+        apiBase,
+        token,
+        this.webPushVapidPublicKey,
+        (event: WebPushDiagEvent) => this.onWebPushDiagnostic(event),
+      );
       if (!subscribeResult.ok) {
         this.webPushEnabled = false;
-        this.webPushError = 'Подписка push не синхронизировалась. Нажми "Включить push-уведомления".';
+        this.webPushSynced = false;
+        this.webPushError = this.resolveWebPushSubscribeError(subscribeResult.error, subscribeResult.details);
         return;
       }
       this.webPushEnabled = true;
+      this.webPushSynced = true;
       this.markWebPushRolloutApplied();
+    },
+
+    resolveWebPushSubscribeError(this: any, errorCodeRaw: unknown, detailsRaw?: unknown) {
+      const errorCode = String(errorCodeRaw || '').trim();
+      const details = String(detailsRaw || '').trim();
+      if (errorCode === 'invalid_vapid_key') {
+        return 'Некорректный VAPID public key.';
+      }
+      if (errorCode === 'service_worker_ready_failed') {
+        return 'Service worker не активировался. Обнови страницу и попробуй снова.';
+      }
+      if (errorCode === 'get_subscription_failed') {
+        return `Не удалось прочитать текущую push-подписку: ${details || 'unknown_error'}`;
+      }
+      if (errorCode === 'subscribe_failed') {
+        return `Браузер отклонил создание push-подписки: ${details || 'unknown_error'}`;
+      }
+      if (errorCode === 'sync_failed') {
+        return `Разрешение есть, но backend не сохранил подписку (sync_failed): ${details || 'unknown_error'}`;
+      }
+      return 'Не удалось сохранить push-подписку на сервере.';
     },
 
     async enableWebPush(this: any) {
       if (this.webPushBusy) return;
       this.webPushBusy = true;
       this.webPushError = '';
+      this.webPushTestStatus = '';
+      this.clearWebPushDiagnostic();
 
       try {
         if (!this.webPushSupported) {
           this.webPushError = 'Браузер не поддерживает Web Push.';
+          this.webPushSynced = false;
           return;
         }
 
@@ -390,13 +456,19 @@ export const chatMethodsRuntimeAndRouting = {
           this.webPushVapidPublicKey = serverConfig.vapidPublicKey;
           if (!this.webPushAvailable || !this.webPushVapidPublicKey) {
             this.webPushError = 'Web Push сейчас отключён на сервере.';
+            this.webPushSynced = false;
             return;
           }
         }
 
         this.webPushPermission = getWebPushPermission();
+        console.info('[web-push] Notification.permission before request', {
+          permission: this.webPushPermission,
+        });
+        this.appendWebPushDiagnosticLine(`permission_before=${this.webPushPermission}`);
         if (this.webPushPermission === 'denied') {
           this.webPushError = 'Уведомления запрещены в настройках браузера.';
+          this.webPushSynced = false;
           return;
         }
 
@@ -409,23 +481,36 @@ export const chatMethodsRuntimeAndRouting = {
           }
         }
 
+        console.info('[web-push] Notification.permission after request', {
+          permission: this.webPushPermission,
+        });
+        this.appendWebPushDiagnosticLine(`permission_after=${this.webPushPermission}`);
+
         if (this.webPushPermission !== 'granted') {
           this.webPushError = 'Без разрешения браузера push не включится.';
+          this.webPushSynced = false;
           return;
         }
 
-        const subscribeResult = await subscribeWebPush(apiBase, token, this.webPushVapidPublicKey);
+        const subscribeResult = await subscribeWebPush(
+          apiBase,
+          token,
+          this.webPushVapidPublicKey,
+          (event: WebPushDiagEvent) => this.onWebPushDiagnostic(event),
+        );
         if (!subscribeResult.ok) {
-          this.webPushError = subscribeResult.error === 'invalid_vapid_key'
-            ? 'Некорректный VAPID public key.'
-            : 'Не удалось сохранить push-подписку на сервере.';
+          this.webPushEnabled = false;
+          this.webPushSynced = false;
+          this.webPushError = this.resolveWebPushSubscribeError(subscribeResult.error, subscribeResult.details);
           return;
         }
 
         this.webPushEnabled = true;
+        this.webPushSynced = true;
         this.markWebPushRolloutApplied();
       } catch {
         this.webPushError = 'Не удалось включить push-уведомления.';
+        this.webPushSynced = false;
       } finally {
         this.webPushBusy = false;
       }
@@ -436,16 +521,70 @@ export const chatMethodsRuntimeAndRouting = {
       if (!this.webPushSupported) return;
       this.webPushBusy = true;
       this.webPushError = '';
+      this.webPushTestStatus = '';
 
       try {
         const apiBase = getApiBase();
         const token = getSessionToken();
         await unsubscribeWebPush(apiBase, token);
         this.webPushEnabled = false;
+        this.webPushSynced = false;
       } catch {
         this.webPushError = 'Не удалось отключить push-уведомления.';
       } finally {
         this.webPushBusy = false;
+      }
+    },
+
+    async sendWebPushTest(this: any) {
+      if (this.webPushTestBusy) return;
+      if (!this.canSendWebPushTest) {
+        this.webPushError = 'Для теста нужен granted permission или включённый Web Push.';
+        return;
+      }
+
+      this.webPushTestBusy = true;
+      this.webPushError = '';
+      this.webPushTestStatus = '';
+
+      try {
+        const apiBase = getApiBase();
+        const token = getSessionToken();
+        const result = await sendWebPushTest(apiBase, token);
+
+        if (!result.ok) {
+          if (result.error === 'no_subscriptions') {
+            this.webPushSynced = false;
+            this.webPushTestStatus = 'Нет активных подписок';
+            this.pushToast('Web Push', 'Нет активных подписок');
+            return;
+          }
+
+          this.webPushTestStatus = 'Ошибка тестовой отправки';
+          this.webPushError = result.error === 'unauthorized'
+            ? 'Сессия истекла. Перезайди и повтори тест.'
+            : 'Тестовый push не отправился. Проверь backend логи Web Push.';
+          this.pushToast('Web Push', 'Ошибка тестовой отправки');
+          return;
+        }
+
+        if (result.errorCount > 0) {
+          this.webPushSynced = false;
+          this.webPushTestStatus = 'Тестовый push отправлен';
+          this.webPushError = `Часть подписок не отправилась: ${result.errorCount}/${result.totalSubscriptions}. Смотри backend логи Web Push.`;
+          this.pushToast('Web Push', `Тестовый push отправлен, ошибок: ${result.errorCount}`);
+          return;
+        }
+
+        this.webPushSynced = true;
+        this.webPushTestStatus = 'Тестовый push отправлен';
+        this.pushToast('Web Push', 'Тестовый push отправлен');
+      } catch {
+        this.webPushTestStatus = 'Ошибка тестовой отправки';
+        this.webPushError = 'Тестовый push не отправился. Проверь backend логи Web Push.';
+        this.pushToast('Web Push', 'Ошибка тестовой отправки');
+      } finally {
+        this.webPushTestBusy = false;
       }
     },
 

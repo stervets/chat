@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Logger,
   Post,
   Req,
   UnauthorizedException,
@@ -13,6 +14,8 @@ import {WebPushService} from '../common/web-push.js';
 
 @Controller('push')
 export class PushController {
+  private readonly logger = new Logger(PushController.name);
+
   constructor(private readonly webPushService: WebPushService) {}
 
   private resolveToken(req: any) {
@@ -57,6 +60,13 @@ export class PushController {
     };
   }
 
+  private shortEndpoint(endpointRaw: unknown) {
+    const endpoint = String(endpointRaw || '').trim();
+    if (!endpoint) return 'empty';
+    if (endpoint.length <= 40) return endpoint;
+    return `${endpoint.slice(0, 18)}...${endpoint.slice(-12)}`;
+  }
+
   @Get('public-key')
   @HttpCode(200)
   getPublicKey() {
@@ -71,7 +81,18 @@ export class PushController {
   ) {
     const session = await this.resolveSessionOrThrow(req);
     const subscription = this.parseSubscription(body);
-    return this.webPushService.upsertSubscription(session.user.id, subscription, req?.headers?.['user-agent']);
+    this.logger.log(`Push subscribe request userId=${session.user.id} endpoint=${this.shortEndpoint(subscription.endpoint)}`);
+
+    try {
+      const result = await this.webPushService.upsertSubscription(session.user.id, subscription, req?.headers?.['user-agent']);
+      this.logger.log(`Push subscribe success userId=${session.user.id} endpoint=${this.shortEndpoint(subscription.endpoint)}`);
+      return result;
+    } catch (error: any) {
+      this.logger.error(
+        `Push subscribe failed userId=${session.user.id} endpoint=${this.shortEndpoint(subscription.endpoint)} dbError="${String(error?.message || error || 'unknown_error').replace(/\s+/g, ' ').trim()}"`
+      );
+      throw error;
+    }
   }
 
   @Post('unsubscribe')
@@ -87,5 +108,14 @@ export class PushController {
     }
 
     return this.webPushService.removeSubscription(session.user.id, endpoint);
+  }
+
+  @Post('test')
+  @HttpCode(200)
+  async test(
+    @Req() req: any,
+  ) {
+    const session = await this.resolveSessionOrThrow(req);
+    return this.webPushService.sendTestPushToUser(session.user.id);
   }
 }

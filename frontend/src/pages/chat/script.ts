@@ -57,11 +57,19 @@ export default {
 
     webPushStatusText(this: any) {
       if (!this.webPushSupported) return 'не поддерживается';
-      if (!this.webPushAvailable) return 'отключено на сервере';
+      if (!this.webPushAvailable) return 'backend /push/public-key отключен или недоступен';
       if (this.webPushPermission === 'denied') return 'запрещено в браузере';
       if (this.webPushEnabled) return 'включено';
+      if (this.webPushPermission === 'granted' && !this.webPushSynced) {
+        return 'разрешено, но подписка не синхронизирована с сервером';
+      }
       if (this.webPushPermission === 'granted') return 'готово к включению';
       return 'не включено';
+    },
+
+    canSendWebPushTest(this: any) {
+      if (this.webPushEnabled) return true;
+      return this.webPushSupported && this.webPushPermission === 'granted';
     },
 
     unreadDirectDialogIds(this: any) {

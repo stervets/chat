@@ -530,6 +530,22 @@
         >
           {{ webPushBusy ? 'Отключаем push...' : 'Отключить push-уведомления' }}
         </button>
+        <button
+          v-if="webPushSupported"
+          class="ghost-btn"
+          :disabled="webPushTestBusy || !canSendWebPushTest"
+          @click="sendWebPushTest"
+        >
+          {{ webPushTestBusy ? 'Отправляем тестовый push...' : 'Отправить тестовый push' }}
+        </button>
+        <div v-if="webPushTestStatus" class="hint">
+          {{ webPushTestStatus }}
+        </div>
+        <div v-if="webPushDiagnosticLines.length" class="hint">
+          <div v-for="(line, index) in webPushDiagnosticLines" :key="`web-push-diag-${index}`">
+            {{ line }}
+          </div>
+        </div>
         <div v-if="webPushRequiresIosInstall" class="hint">
           На iPhone Web Push работает только в установленном приложении с экрана Домой.
         </div>

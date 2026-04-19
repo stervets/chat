@@ -6,7 +6,19 @@ export default defineNuxtPlugin(() => {
   if (!('serviceWorker' in navigator)) return;
 
   const registerServiceWorker = () => {
-    void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+    void navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.info('[web-push] service worker register success', {
+          scope: registration.scope,
+          scriptUrl: '/sw.js',
+        });
+      })
+      .catch((error: any) => {
+        console.warn('[web-push] service worker register failed', {
+          scriptUrl: '/sw.js',
+          error: String(error?.message || error || 'unknown_error').trim() || 'unknown_error',
+        });
+      });
   };
 
   if (document.readyState === 'complete') {

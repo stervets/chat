@@ -19,6 +19,34 @@ type SendChatPushParams = {
   senderId: number;
 };
 
+type StoredPushSubscription = {
+  id: number;
+  userId: number;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+};
+
+type PushSendError = {
+  subscriptionId: number;
+  userId: number;
+  endpointShort: string;
+  statusCode: number;
+  message: string;
+  removed: boolean;
+};
+
+export type SendTestPushResult = {
+  ok: true;
+  totalSubscriptions: number;
+  successCount: number;
+  errorCount: number;
+  errors: PushSendError[];
+} | {
+  ok: false;
+  error: 'no_subscriptions';
+};
+
 @Injectable()
 export class WebPushService {
   private readonly logger = new Logger(WebPushService.name);
@@ -60,6 +88,7 @@ export class WebPushService {
       },
     });
 
+    this.logger.log(`Web Push subscription upsert userId=${userId} endpoint=${this.shortEndpoint(subscription.endpoint)}`);
     return {ok: true} as const;
   }
 
@@ -76,6 +105,7 @@ export class WebPushService {
       },
     });
 
+    this.logger.log(`Web Push subscription remove userId=${userId} endpoint=${this.shortEndpoint(endpoint)} removed=${result.count}`);
     return {
       ok: true,
       removed: result.count,
@@ -85,23 +115,11 @@ export class WebPushService {
   async sendChatMessagePush(params: SendChatPushParams) {
     try {
       const recipientUserIds = await this.resolveRecipientUserIds(params.dialog, params.senderId);
+      this.logger.log(`Web Push chat recipients=${recipientUserIds.length} dialogId=${params.dialog.id}`);
       if (!recipientUserIds.length) return;
 
-      const subscriptions = await db.pushSubscription.findMany({
-        where: {
-          userId: {
-            in: recipientUserIds,
-          },
-        },
-        select: {
-          id: true,
-          userId: true,
-          endpoint: true,
-          p256dh: true,
-          auth: true,
-          userAgent: true,
-        },
-      });
+      const subscriptions = await this.findSubscriptionsByUserIds(recipientUserIds);
+      this.logger.log(`Web Push chat subscriptions=${subscriptions.length} dialogId=${params.dialog.id}`);
 
       if (!subscriptions.length) return;
 
@@ -109,7 +127,7 @@ export class WebPushService {
         const url = this.buildUrlForRecipient(params.dialog, params.message, subscription.userId);
         const payload = this.buildNotificationPayload(params.message, params.dialog, url);
 
-        const statusCode = await this.sendToSubscription({
+        const sendResult = await this.sendToSubscription({
           endpoint: subscription.endpoint,
           keys: {
             p256dh: subscription.p256dh,
@@ -117,16 +135,8 @@ export class WebPushService {
           },
         }, payload);
 
-        if (statusCode === 404 || statusCode === 410) {
-          await db.pushSubscription.deleteMany({
-            where: {
-              id: subscription.id,
-            },
-          });
-          continue;
-        }
-
-        if (statusCode === 0) {
+        if (sendResult.ok) {
+          this.logger.log(`Web Push chat success userId=${subscription.userId} subscriptionId=${subscription.id}`);
           await db.pushSubscription.update({
             where: {
               id: subscription.id,
@@ -135,11 +145,98 @@ export class WebPushService {
               lastUsedAt: new Date(),
             },
           });
+          continue;
         }
+
+        const removed = sendResult.statusCode === 404 || sendResult.statusCode === 410;
+        if (removed) {
+          await db.pushSubscription.deleteMany({
+            where: {
+              id: subscription.id,
+            },
+          });
+        }
+
+        this.logger.warn(
+          `Web Push chat failed userId=${subscription.userId} subscriptionId=${subscription.id} statusCode=${sendResult.statusCode || 'unknown_status'} message="${sendResult.message}" removed=${removed}`
+        );
       }
     } catch (error: any) {
       this.logger.error(error?.message || String(error));
     }
+  }
+
+  async sendTestPushToUser(userId: number): Promise<SendTestPushResult> {
+    const subscriptions = await this.findSubscriptionsByUserIds([userId]);
+    if (!subscriptions.length) {
+      this.logger.warn(`Web Push test no subscriptions userId=${userId}`);
+      return {ok: false, error: 'no_subscriptions'};
+    }
+
+    const payload = {
+      title: 'MARX TEST',
+      body: 'Тестовое push-уведомление',
+      url: '/chat',
+      tag: 'marx-test-push',
+    };
+
+    let successCount = 0;
+    const errors: PushSendError[] = [];
+
+    this.logger.log(`Web Push test start userId=${userId} subscriptions=${subscriptions.length}`);
+    for (const subscription of subscriptions) {
+      const sendResult = await this.sendToSubscription({
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: subscription.p256dh,
+          auth: subscription.auth,
+        },
+      }, payload);
+
+      if (sendResult.ok) {
+        successCount += 1;
+        this.logger.log(`Web Push test success userId=${subscription.userId} subscriptionId=${subscription.id}`);
+        await db.pushSubscription.update({
+          where: {
+            id: subscription.id,
+          },
+          data: {
+            lastUsedAt: new Date(),
+          },
+        });
+        continue;
+      }
+
+      const removed = sendResult.statusCode === 404 || sendResult.statusCode === 410;
+      if (removed) {
+        await db.pushSubscription.deleteMany({
+          where: {
+            id: subscription.id,
+          },
+        });
+      }
+
+      this.logger.warn(
+        `Web Push test failed userId=${subscription.userId} subscriptionId=${subscription.id} statusCode=${sendResult.statusCode || 'unknown_status'} message="${sendResult.message}" removed=${removed}`
+      );
+
+      errors.push({
+        subscriptionId: subscription.id,
+        userId: subscription.userId,
+        endpointShort: this.shortEndpoint(subscription.endpoint),
+        statusCode: sendResult.statusCode,
+        message: sendResult.message,
+        removed,
+      });
+    }
+
+    return {
+      ok: true,
+      totalSubscriptions: subscriptions.length,
+      successCount,
+      errorCount: errors.length,
+      errors,
+    };
   }
 
   private initVapid() {
@@ -219,21 +316,53 @@ export class WebPushService {
     return `${normalized.slice(0, 117)}...`;
   }
 
+  private shortEndpoint(endpointRaw: unknown) {
+    const endpoint = String(endpointRaw || '').trim();
+    if (!endpoint) return 'empty';
+    if (endpoint.length <= 40) return endpoint;
+    return `${endpoint.slice(0, 18)}...${endpoint.slice(-12)}`;
+  }
+
+  private normalizeErrorMessage(errorRaw: unknown) {
+    const value = String(errorRaw || '').replace(/\s+/g, ' ').trim();
+    if (!value) return 'unknown_error';
+    if (value.length <= 220) return value;
+    return `${value.slice(0, 217)}...`;
+  }
+
+  private async findSubscriptionsByUserIds(userIds: number[]) {
+    if (!userIds.length) return [] as StoredPushSubscription[];
+
+    return db.pushSubscription.findMany({
+      where: {
+        userId: {
+          in: userIds,
+        },
+      },
+      select: {
+        id: true,
+        userId: true,
+        endpoint: true,
+        p256dh: true,
+        auth: true,
+      },
+    });
+  }
+
   private async sendToSubscription(subscription: PushSubscriptionPayload, payload: Record<string, unknown>) {
     try {
       await webPush.sendNotification(subscription as any, JSON.stringify(payload), {
         TTL: 120,
         urgency: 'normal',
       });
-      return 0;
+      return {ok: true, statusCode: 0, message: ''} as const;
     } catch (error: any) {
       const statusCode = Number(error?.statusCode || 0);
-      if (statusCode === 404 || statusCode === 410) {
-        return statusCode;
-      }
-
-      this.logger.warn(`Web Push send failed: ${statusCode || 'unknown_status'} ${error?.message || ''}`.trim());
-      return statusCode || -1;
+      return {
+        ok: false,
+        statusCode,
+        message: this.normalizeErrorMessage(error?.message || error?.body || error),
+      } as const;
     }
   }
 }
