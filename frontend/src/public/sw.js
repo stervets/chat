@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'marx-static-v8';
+const STATIC_CACHE = 'marx-static-v9';
 const STATIC_ASSETS = [
   '/manifest.webmanifest',
   '/favicon.png',
