@@ -46,26 +46,34 @@ export type SendTestPushResult = {
   errors: PushSendError[];
 } | {
   ok: false;
-  error: 'no_subscriptions';
+  error: 'no_subscriptions' | 'push_disabled';
 };
 
 @Injectable()
 export class WebPushService {
   private readonly logger = new Logger(WebPushService.name);
+  private readonly vapidPublicKey: string;
+  private readonly enabled: boolean;
 
   constructor() {
-    this.initVapid();
+    this.vapidPublicKey = String(config.push.vapidPublicKey || '').trim();
+    this.enabled = this.initVapid();
   }
 
   getPublicConfig() {
     return {
       ok: true,
-      enabled: true,
-      vapidPublicKey: config.push.vapidPublicKey,
+      enabled: this.enabled,
+      vapidPublicKey: this.enabled ? this.vapidPublicKey : '',
     };
   }
 
   async upsertSubscription(userId: number, subscription: PushSubscriptionPayload, userAgentRaw?: unknown) {
+    if (!this.enabled) {
+      this.logger.warn(`Web Push subscription upsert skipped: disabled userId=${userId} endpoint=${this.shortEndpoint(subscription?.endpoint)}`);
+      return {ok: false, error: 'push_disabled'} as const;
+    }
+
     const now = new Date();
     const userAgent = String(userAgentRaw || '').trim() || null;
 
@@ -115,6 +123,8 @@ export class WebPushService {
   }
 
   async sendChatMessagePush(params: SendChatPushParams) {
+    if (!this.enabled) return;
+
     try {
       const recipientUserIds = await this.resolveRecipientUserIds(params.dialog, params.senderId, params.message.rawText);
       const excluded = new Set(
@@ -176,6 +186,11 @@ export class WebPushService {
   }
 
   async sendTestPushToUser(userId: number): Promise<SendTestPushResult> {
+    if (!this.enabled) {
+      this.logger.warn(`Web Push test skipped: disabled userId=${userId}`);
+      return {ok: false, error: 'push_disabled'};
+    }
+
     const subscriptions = await this.findSubscriptionsByUserIds([userId]);
     if (!subscriptions.length) {
       this.logger.warn(`Web Push test no subscriptions userId=${userId}`);
@@ -254,11 +269,13 @@ export class WebPushService {
     const vapidSubject = String(config.push.vapidSubject || '').trim();
 
     if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
-      throw new Error('Web Push VAPID keys are not configured. Set push.vapidPublicKey, push.vapidPrivateKey and push.vapidSubject.');
+      this.logger.warn('Web Push disabled: VAPID keys are not configured');
+      return false;
     }
 
     webPush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
     this.logger.log('Web Push enabled');
+    return true;
   }
 
   private async resolveRecipientUserIds(dialog: DialogRow, senderId: number, messageRawText: unknown) {

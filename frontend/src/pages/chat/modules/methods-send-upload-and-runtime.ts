@@ -4,6 +4,7 @@ import {
   getApiBase,
   getSessionToken,
   wsLogout,
+  HISTORY_BATCH_SIZE,
   MAX_PASTE_IMAGE_BYTES,
 } from './shared';
 import type {
@@ -77,6 +78,83 @@ export const chatMethodsSendUploadAndRuntime = {
         ...this.freshMessageTimers,
         [messageId]: timeoutId,
       };
+    },
+
+    async catchUpDialogMessages(this: any, dialogIdRaw: unknown) {
+      const dialogId = Number(dialogIdRaw || 0);
+      if (!Number.isFinite(dialogId) || dialogId <= 0) return false;
+      if (this.wsConnectionState !== 'connected') return false;
+
+      const result = await ws.request('dialogs:messages', dialogId, HISTORY_BATCH_SIZE);
+      if (!Array.isArray(result)) return false;
+
+      const incoming = result
+        .map((row: any) => this.normalizeMessage(row))
+        .filter((message: Message) => Number(message.dialogId || 0) === dialogId);
+      if (!incoming.length) return true;
+
+      const currentMessages = Array.isArray(this.messages) ? this.messages : [];
+      const currentById = new Map<number, Message>();
+      currentMessages.forEach((message: Message) => {
+        const id = Number(message?.id || 0);
+        if (!Number.isFinite(id) || id <= 0) return;
+        currentById.set(id, message);
+      });
+
+      let changed = false;
+      incoming.forEach((message: Message) => {
+        const id = Number(message?.id || 0);
+        if (!Number.isFinite(id) || id <= 0) return;
+
+        const prev = currentById.get(id);
+        if (!prev) {
+          currentById.set(id, message);
+          changed = true;
+          return;
+        }
+
+        const prevReactionsCount = Array.isArray(prev.reactions) ? prev.reactions.length : 0;
+        const nextReactionsCount = Array.isArray(message.reactions) ? message.reactions.length : 0;
+        const shouldReplace = prev.rawText !== message.rawText
+          || prev.renderedHtml !== message.renderedHtml
+          || String(prev.createdAt || '') !== String(message.createdAt || '')
+          || prevReactionsCount !== nextReactionsCount;
+
+        if (shouldReplace) {
+          currentById.set(id, {
+            ...prev,
+            ...message,
+          });
+          changed = true;
+        }
+      });
+
+      if (!changed) return true;
+
+      const wasNearBottom = this.isNearBottom();
+      const prevScrollTop = Number(this.messagesEl?.scrollTop || 0);
+
+      const merged = Array.from(currentById.values()).sort((left: Message, right: Message) => {
+        const leftTs = Date.parse(String(left.createdAt || ''));
+        const rightTs = Date.parse(String(right.createdAt || ''));
+        const leftTime = Number.isFinite(leftTs) ? leftTs : 0;
+        const rightTime = Number.isFinite(rightTs) ? rightTs : 0;
+        if (leftTime !== rightTime) return leftTime - rightTime;
+        return Number(left.id || 0) - Number(right.id || 0);
+      });
+
+      this.messages = merged;
+      this.notifyMessagesChanged();
+      await nextTick();
+
+      if (wasNearBottom) {
+        this.scrollToBottomPinned('auto');
+      } else if (this.messagesEl) {
+        this.messagesEl.scrollTop = prevScrollTop;
+        this.scheduleVirtualSync();
+      }
+      this.updateScrollDownVisibility();
+      return true;
     },
 
     normalizeUploadFileName(this: any, mimeRaw: string) {
@@ -434,6 +512,12 @@ export const chatMethodsSendUploadAndRuntime = {
       if (isTransientConnectionError(this.error)) {
         this.error = '';
       }
+
+      const activeDialogId = Number(this.activeDialog?.id || 0);
+      if (Number.isFinite(activeDialogId) && activeDialogId > 0) {
+        await this.catchUpDialogMessages(activeDialogId);
+      }
+
       if (this.activeDialog?.kind === 'private') {
         await this.fetchDirectDialogs();
       }

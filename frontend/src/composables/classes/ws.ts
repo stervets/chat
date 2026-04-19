@@ -91,7 +91,18 @@ export class WsClient {
       if (!this.lastUrl) {
         return {ok: false, error: 'not_connected'};
       }
-      await this.connect(this.lastUrl);
+      try {
+        await this.connect(this.lastUrl);
+      } catch (error: any) {
+        return {
+          ok: false,
+          error: String(error?.message || error || 'ws_connect_error').trim() || 'ws_connect_error',
+        };
+      }
+    }
+
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return {ok: false, error: 'not_connected'};
     }
 
     const requestId = this.genId();
@@ -105,7 +116,15 @@ export class WsClient {
 
     return new Promise((resolve) => {
       this.requests[requestId] = resolve;
-      this.socket!.send(JSON.stringify(packet));
+      try {
+        this.socket!.send(JSON.stringify(packet));
+      } catch (error: any) {
+        delete this.requests[requestId];
+        resolve({
+          ok: false,
+          error: String(error?.message || error || 'ws_send_error').trim() || 'ws_send_error',
+        });
+      }
     });
   }
 

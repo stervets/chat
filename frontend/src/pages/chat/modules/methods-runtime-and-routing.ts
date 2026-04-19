@@ -660,6 +660,16 @@ export const chatMethodsRuntimeAndRouting = {
       return `/direct/${encodeURIComponent(nickname)}`;
     },
 
+    safeDecodeRouteParam(this: any, valueRaw: unknown) {
+      const value = String(valueRaw || '');
+      if (!value) return '';
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return value;
+      }
+    },
+
     getDirectNicknameFromRoute(this: any) {
       const path = String(this.route?.path || '');
       if (!path.startsWith('/direct/')) return '';
@@ -667,7 +677,7 @@ export const chatMethodsRuntimeAndRouting = {
       const raw = Array.isArray(this.route?.params?.username)
         ? this.route.params.username[0]
         : this.route?.params?.username;
-      const decoded = decodeURIComponent(String(raw || ''));
+      const decoded = this.safeDecodeRouteParam(raw);
       return this.normalizeRouteNickname(decoded);
     },
 

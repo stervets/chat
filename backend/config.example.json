@@ -17,7 +17,7 @@
   "push": {
     "vapidPublicKey": "",
     "vapidPrivateKey": "",
-    "vapidSubject": "mailto:admin@example.com"
+    "vapidSubject": ""
   },
   "db": {
     "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"

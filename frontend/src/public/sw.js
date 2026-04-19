@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'marx-static-v7';
+const STATIC_CACHE = 'marx-static-v8';
 const STATIC_ASSETS = [
   '/manifest.webmanifest',
   '/favicon.png',
@@ -54,40 +54,47 @@ self.addEventListener('fetch', (event) => {
   })());
 });
 
-function parsePushPayload(event) {
+async function parsePushPayload(event) {
   if (!event.data) return null;
 
   try {
     return event.data.json();
   } catch {
-    const text = String(event.data.text() || '').trim();
-    if (!text) return null;
-    return {
-      body: text,
-    };
+    try {
+      const textRaw = event.data.text();
+      const text = String(await Promise.resolve(textRaw || '')).trim();
+      if (!text) return null;
+      return {
+        body: text,
+      };
+    } catch {
+      return null;
+    }
   }
 }
 
 self.addEventListener('push', (event) => {
-  const payload = parsePushPayload(event) || {};
-  const title = String(payload.title || 'MARX');
-  const body = String(payload.body || '').trim() || 'Новое сообщение';
-  const url = String(payload.url || '/chat').trim() || '/chat';
-  const dialogId = Number(payload.dialogId || 0) || null;
-  const messageId = Number(payload.messageId || 0) || null;
+  event.waitUntil((async () => {
+    const payload = await parsePushPayload(event) || {};
+    const title = String(payload.title || 'MARX');
+    const body = String(payload.body || '').trim() || 'Новое сообщение';
+    const url = String(payload.url || '/chat').trim() || '/chat';
+    const dialogId = Number(payload.dialogId || 0) || null;
+    const messageId = Number(payload.messageId || 0) || null;
 
-  event.waitUntil(self.registration.showNotification(title, {
-    body,
-    icon: String(payload.icon || '/favicon-alert.png'),
-    badge: String(payload.badge || '/pwa-192.png'),
-    tag: String(payload.tag || `marx-push-${dialogId || 'chat'}`),
-    renotify: false,
-    data: {
-      url,
-      dialogId,
-      messageId,
-    },
-  }));
+    await self.registration.showNotification(title, {
+      body,
+      icon: String(payload.icon || '/favicon-alert.png'),
+      badge: String(payload.badge || '/pwa-192.png'),
+      tag: String(payload.tag || `marx-push-${dialogId || 'chat'}`),
+      renotify: false,
+      data: {
+        url,
+        dialogId,
+        messageId,
+      },
+    });
+  })());
 });
 
 self.addEventListener('notificationclick', (event) => {

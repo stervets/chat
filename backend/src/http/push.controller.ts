@@ -85,7 +85,11 @@ export class PushController {
 
     try {
       const result = await this.webPushService.upsertSubscription(session.user.id, subscription, req?.headers?.['user-agent']);
-      this.logger.log(`Push subscribe success userId=${session.user.id} endpoint=${this.shortEndpoint(subscription.endpoint)}`);
+      if ((result as any)?.ok) {
+        this.logger.log(`Push subscribe success userId=${session.user.id} endpoint=${this.shortEndpoint(subscription.endpoint)}`);
+      } else {
+        this.logger.warn(`Push subscribe skipped userId=${session.user.id} endpoint=${this.shortEndpoint(subscription.endpoint)} reason=${String((result as any)?.error || 'unknown')}`);
+      }
       return result;
     } catch (error: any) {
       this.logger.error(

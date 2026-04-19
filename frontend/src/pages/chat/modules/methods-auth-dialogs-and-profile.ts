@@ -273,7 +273,14 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.virtualRangeStart = 0;
       this.virtualRangeEnd = 0;
       await this.loadHistory(dialog.id, seq);
+      if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
+
       await this.joinDialog(dialog.id);
+      if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
+
+      await this.catchUpDialogMessages(dialog.id);
+      if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
+
       await this.syncRouteForDialog(dialog, optionsRaw?.routeMode || 'push');
     },
 
