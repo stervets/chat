@@ -25,6 +25,60 @@ function isTransientConnectionError(errorRaw: unknown) {
 }
 
 export const chatMethodsSendUploadAndRuntime = {
+    isFreshMessage(this: any, messageIdRaw: unknown) {
+      const messageId = Number(messageIdRaw || 0);
+      if (!Number.isFinite(messageId) || messageId <= 0) return false;
+      return !!this.freshMessageIds?.[messageId];
+    },
+
+    clearFreshMessageMarks(this: any) {
+      if (typeof window !== 'undefined') {
+        Object.values(this.freshMessageTimers as Record<number, number>).forEach((timerId) => {
+          clearTimeout(Number(timerId));
+        });
+      }
+      this.freshMessageTimers = {};
+      this.freshMessageIds = {};
+    },
+
+    markFreshMessage(this: any, messageIdRaw: unknown) {
+      const messageId = Number(messageIdRaw || 0);
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+
+      if (typeof window === 'undefined') {
+        this.freshMessageIds = {
+          ...this.freshMessageIds,
+          [messageId]: true,
+        };
+        return;
+      }
+
+      const existingTimer = Number(this.freshMessageTimers?.[messageId] || 0);
+      if (existingTimer > 0) {
+        clearTimeout(existingTimer);
+      }
+
+      this.freshMessageIds = {
+        ...this.freshMessageIds,
+        [messageId]: true,
+      };
+
+      const timeoutId = window.setTimeout(() => {
+        const nextIds = {...(this.freshMessageIds || {})};
+        delete nextIds[messageId];
+        this.freshMessageIds = nextIds;
+
+        const nextTimers = {...(this.freshMessageTimers || {})};
+        delete nextTimers[messageId];
+        this.freshMessageTimers = nextTimers;
+      }, 520);
+
+      this.freshMessageTimers = {
+        ...this.freshMessageTimers,
+        [messageId]: timeoutId,
+      };
+    },
+
     normalizeUploadFileName(this: any, mimeRaw: string) {
       const mime = String(mimeRaw || '').toLowerCase();
       if (mime.includes('png')) return `paste-${Date.now()}.png`;
@@ -242,6 +296,7 @@ export const chatMethodsSendUploadAndRuntime = {
     },
 
     onScrollDownClick(this: any) {
+      this.hapticTap();
       this.scrollToBottomPinned('smooth');
     },
 
@@ -293,6 +348,7 @@ export const chatMethodsSendUploadAndRuntime = {
       }
 
       const shouldAutoScroll = this.isNearBottom() || (ownMessage && this.forceOwnScrollDown);
+      this.markFreshMessage(normalized.id);
       this.messages.push(normalized);
       this.notifyMessagesChanged();
       await nextTick();
@@ -328,6 +384,10 @@ export const chatMethodsSendUploadAndRuntime = {
       const dialogId = Number(payload?.dialogId);
       const messageId = Number(payload?.messageId);
       if (!Number.isFinite(dialogId) || !Number.isFinite(messageId)) return;
+
+      const nextFreshIds = {...(this.freshMessageIds || {})};
+      delete nextFreshIds[messageId];
+      this.freshMessageIds = nextFreshIds;
 
       if (this.activeDialog?.id === dialogId) {
         this.applyMessageDelete(dialogId, messageId);

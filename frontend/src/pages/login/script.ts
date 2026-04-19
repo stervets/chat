@@ -12,10 +12,28 @@ export default {
             error: ref(''),
             loading: ref(false),
             checkingSession: ref(true),
+            submitErrorPulse: ref(false),
+            submitErrorPulseTimer: ref<number | null>(null),
         };
     },
 
     methods: {
+        triggerSubmitErrorPulse(this: any) {
+            if (typeof window === 'undefined') return;
+            this.submitErrorPulse = false;
+            if (this.submitErrorPulseTimer) {
+                clearTimeout(this.submitErrorPulseTimer);
+                this.submitErrorPulseTimer = null;
+            }
+            window.requestAnimationFrame(() => {
+                this.submitErrorPulse = true;
+                this.submitErrorPulseTimer = window.setTimeout(() => {
+                    this.submitErrorPulse = false;
+                    this.submitErrorPulseTimer = null;
+                }, 220);
+            });
+        },
+
         async ensureAuth(this: any) {
             const token = String(getSessionToken() || '').trim();
             if (!token) {
@@ -43,6 +61,7 @@ export default {
             const password = String(this.password || '');
             if (!nickname || !password) {
                 this.error = 'Введите nickname и пароль.';
+                this.triggerSubmitErrorPulse();
                 vibrateError();
                 return;
             }
@@ -53,10 +72,12 @@ export default {
                 if (!(result as any)?.ok) {
                     if ((result as any)?.error === 'invalid_nickname') {
                         this.error = 'Никнейм: только a-z, 0-9, _ и -, длина 3-32.';
+                        this.triggerSubmitErrorPulse();
                         vibrateError();
                         return;
                     }
                     this.error = 'Неверный nickname или пароль.';
+                    this.triggerSubmitErrorPulse();
                     vibrateError();
                     return;
                 }
@@ -64,6 +85,7 @@ export default {
                 await this.router.push('/chat');
             } catch (e) {
                 this.error = 'Сервер недоступен.';
+                this.triggerSubmitErrorPulse();
                 vibrateError();
             } finally {
                 this.loading = false;
@@ -79,5 +101,11 @@ export default {
 
     mounted(this: any) {
         void this.ensureAuth();
+    },
+
+    beforeUnmount(this: any) {
+        if (!this.submitErrorPulseTimer) return;
+        clearTimeout(this.submitErrorPulseTimer);
+        this.submitErrorPulseTimer = null;
     }
 };

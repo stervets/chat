@@ -32,6 +32,10 @@
     animation: message-blink 1.5s ease;
   }
 
+  &.message-fresh {
+    animation: message-enter 220ms ease-out;
+  }
+
   .message-meta {
     display: flex;
     gap: 8px;
@@ -59,10 +63,16 @@
 
   .message-meta-action {
     cursor: pointer;
+    transition: opacity .14s ease, filter .14s ease, transform .12s ease;
   }
 
   .message-meta-action:hover {
     opacity: 0.95;
+  }
+
+  .message-meta-action:active {
+    transform: scale(0.98);
+    filter: brightness(0.96);
   }
 
   .nickname {
@@ -95,6 +105,7 @@
     line-height: 1;
     padding: 4px 6px;
     cursor: pointer;
+    transition: transform .12s ease, filter .12s ease, border-color .2s ease, color .2s ease, background-color .2s ease;
   }
 
   .message-inline-btn:hover {
@@ -203,7 +214,7 @@
     user-select: none;
     filter: blur(8px);
     -webkit-filter: blur(8px);
-    transition: filter .2s ease;
+    transition: filter .18s ease-out, -webkit-filter .18s ease-out, opacity .18s ease-out;
   }
 
   .message-body :deep(.message-spoiler:hover) {
@@ -339,6 +350,7 @@
     font-size: 14px;
     line-height: 1;
     padding: 0;
+    transition: transform .12s ease, filter .12s ease, border-color .2s ease, color .2s ease, background-color .2s ease;
   }
 
   .reaction-add-btn:hover {
@@ -383,6 +395,7 @@
     font-size: 16px;
     line-height: 1;
     padding: 0;
+    transition: transform .12s ease, filter .12s ease, border-color .2s ease, background-color .2s ease;
   }
 
   .reaction-picker-item:hover {
@@ -402,6 +415,7 @@
     align-items: center;
     gap: 4px;
     line-height: 1.2;
+    transition: transform .12s ease, filter .12s ease, border-color .2s ease, background-color .2s ease;
   }
 
   .reaction-chip:hover {
@@ -411,6 +425,10 @@
   .reaction-chip-own {
     border-color: rgba(97, 175, 239, 0.65);
     background: #223148;
+  }
+
+  .reaction-chip-pop {
+    animation: reaction-pop 220ms ease-out;
   }
 
   .reaction-emoji {
@@ -437,6 +455,17 @@
   }
 }
 
+@keyframes message-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes spoiler-shimmer {
   0% {
     filter: brightness(0.92);
@@ -446,6 +475,18 @@
   }
   100% {
     filter: brightness(0.92);
+  }
+}
+
+@keyframes reaction-pop {
+  0% {
+    transform: scale(0.92);
+  }
+  65% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 
@@ -472,6 +513,19 @@
 
     .preview-embed {
       height: min(220px, 56vw);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-message-item {
+    &.message-fresh,
+    &.message-blink-target {
+      animation: none !important;
+    }
+
+    .reaction-chip-pop {
+      animation: none !important;
     }
   }
 }

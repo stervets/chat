@@ -9,7 +9,7 @@
         decoding="async"
       />
       <div v-if="checkingSession" class="session-checking"/>
-      <div v-else class="content">
+      <div v-else class="content" :class="{'content-submit-error': submitErrorPulse}">
         <h1>Вход</h1>
         <form class="form" autocomplete="on" @submit.prevent="onLogin">
           <input

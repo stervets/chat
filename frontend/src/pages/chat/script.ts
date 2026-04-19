@@ -279,6 +279,7 @@ export default {
       clearInterval(this.badgeTickTimer);
       this.badgeTickTimer = null;
     }
+    this.clearFreshMessageMarks();
     if (Array.isArray(this.activeBrowserNotifications) && this.activeBrowserNotifications.length) {
       this.activeBrowserNotifications.forEach((item: Notification) => item.close());
       this.activeBrowserNotifications = [];

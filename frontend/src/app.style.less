@@ -95,9 +95,70 @@ button,
 .reaction-chip,
 .message-inline-btn,
 .nav-link {
-  transition: background .3s ease, background-color .3s ease, border-color .3s ease;
+  transition:
+    transform 110ms ease,
+    filter 110ms ease,
+    opacity 110ms ease,
+    background .24s ease,
+    background-color .24s ease,
+    border-color .24s ease,
+    color .24s ease,
+    box-shadow .24s ease;
+}
+
+button:not(:disabled):active,
+.btn:not(:disabled):active,
+.icon-btn:not(:disabled):active,
+.header-center-btn:not(:disabled):active,
+.notifications-clear-btn:not(:disabled):active,
+.composer-tools-toggle:not(:disabled):active,
+.composer-format-btn:not(:disabled):active,
+.composer-color-btn:not(:disabled):active,
+.composer-emoji-btn:not(:disabled):active,
+.scroll-down-btn:not(:disabled):active,
+.send-btn:not(:disabled):active,
+.drawer-close:not(:disabled):active,
+.menu-item:not(:disabled):active,
+.menu-link:not(:disabled):active,
+.menu-logout:not(:disabled):active,
+.ghost-btn:not(:disabled):active,
+.logout:not(:disabled):active,
+.reaction-add-btn:not(:disabled):active,
+.reaction-picker-item:not(:disabled):active,
+.reaction-chip:not(:disabled):active,
+.message-inline-btn:not(:disabled):active,
+.nav-link:not(:disabled):active {
+  transform: scale(0.97);
+  filter: brightness(0.96);
 }
 
 .layout, .page {
   @apply h-screen;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  .btn,
+  .icon-btn,
+  .header-center-btn,
+  .notifications-clear-btn,
+  .composer-tools-toggle,
+  .composer-format-btn,
+  .composer-color-btn,
+  .composer-emoji-btn,
+  .scroll-down-btn,
+  .send-btn,
+  .drawer-close,
+  .menu-item,
+  .menu-link,
+  .menu-logout,
+  .ghost-btn,
+  .logout,
+  .reaction-add-btn,
+  .reaction-picker-item,
+  .reaction-chip,
+  .message-inline-btn,
+  .nav-link {
+    transition: none !important;
+  }
 }

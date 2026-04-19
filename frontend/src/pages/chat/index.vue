@@ -4,7 +4,7 @@
       <aside class="drawer drawer-left" :class="{open: leftMenuOpen}">
         <div class="drawer-head">
           <div class="drawer-title">Навигация</div>
-          <button class="drawer-close" @click="closeLeftMenu">Закрыть</button>
+          <button class="drawer-close" @click="onCloseLeftMenuClick">Закрыть</button>
         </div>
 
         <div class="drawer-layout">
@@ -270,6 +270,7 @@
               :author-badge-opacity="getMessageAuthorDonationBadgeOpacity(item.message)"
               :formatted-username="formatUsername(item.message.authorNickname)"
               :formatted-time="formatMessageTime(item.message.createdAt)"
+              :is-fresh-message="isFreshMessage(item.message.id)"
               :rendered-html="getRenderedMessageHtml(item.message, item.sourceIndex)"
               :extra-previews="getMessageExtraPreviews(item.message)"
               :reaction-picker-open="reactionPickerMessageId === item.message.id"
@@ -428,7 +429,7 @@
       <aside class="drawer drawer-right" :class="{open: rightMenuOpen}">
         <div class="drawer-head">
           <div class="drawer-title">Опции</div>
-          <button class="drawer-close" @click="closeRightMenu">Закрыть</button>
+          <button class="drawer-close" @click="onCloseRightMenuClick">Закрыть</button>
         </div>
 
         <div class="section-title">Профиль</div>

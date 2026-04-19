@@ -36,6 +36,8 @@ export function createChatPageState() {
     galleryInputEl: ref<HTMLInputElement | null>(null),
     showScrollDown: ref(false),
     forceOwnScrollDown: ref(false),
+    freshMessageIds: ref<Record<number, true>>({}),
+    freshMessageTimers: ref<Record<number, number>>({}),
     blinkMessageId: ref<number | null>(null),
     blinkTimer: ref<number | null>(null),
     timeTooltipVisible: ref(false),

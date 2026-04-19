@@ -6,6 +6,7 @@
       'message-own': isOwnMessage(),
       'message-mention-me': isMentionedForMe,
       'message-blink-target': isBlinkTarget,
+      'message-fresh': isFreshMessage,
     }"
     :data-message-id="message.id"
   >
@@ -143,7 +144,10 @@
         v-for="reaction in message.reactions"
         :key="`${message.id}-${reaction.emoji}`"
         class="reaction-chip"
-        :class="{'reaction-chip-own': isMyReaction(reaction)}"
+        :class="{
+          'reaction-chip-own': isMyReaction(reaction),
+          'reaction-chip-pop': isReactionPopping(reaction),
+        }"
         @click="onReactionChipClick(reaction)"
         @mouseenter="onReactionMouseEnter($event, reaction)"
         @mousemove="onReactionMouseMove"

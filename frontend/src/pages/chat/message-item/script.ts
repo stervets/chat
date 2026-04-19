@@ -30,6 +30,10 @@ export default {
       type: Boolean,
       required: true,
     },
+    isFreshMessage: {
+      type: Boolean,
+      default: false,
+    },
     isEditing: {
       type: Boolean,
       required: true,
@@ -114,6 +118,8 @@ export default {
       reactionPickerEl: ref<HTMLElement | null>(null),
       reactionPickerDirection: ref<'up' | 'down'>('down'),
       reactionPickerMaxHeight: ref(220),
+      reactionPopUntilByKey: ref<Record<string, number>>({}),
+      reactionPopTimerByKey: ref<Record<string, number>>({}),
       resizeObserver: null as ResizeObserver | null,
     };
   },
@@ -124,6 +130,33 @@ export default {
       nextTick(() => {
         this.updateReactionPickerPlacement();
       });
+    },
+    'message.reactions': {
+      handler(this: any, nextRaw: unknown, prevRaw: unknown) {
+        if (!Array.isArray(prevRaw)) return;
+        const nextReactions = Array.isArray(nextRaw) ? nextRaw : [];
+        const prevReactions = Array.isArray(prevRaw) ? prevRaw : [];
+        const prevCountByEmoji = new Map<string, number>();
+
+        prevReactions.forEach((reaction: any) => {
+          const emoji = String(reaction?.emoji || '');
+          if (!emoji) return;
+          const count = Array.isArray(reaction?.users) ? reaction.users.length : 0;
+          prevCountByEmoji.set(emoji, count);
+        });
+
+        nextReactions.forEach((reaction: any) => {
+          const emoji = String(reaction?.emoji || '');
+          if (!emoji) return;
+          const nextCount = Array.isArray(reaction?.users) ? reaction.users.length : 0;
+          const prevCount = Number(prevCountByEmoji.get(emoji) || 0);
+          if (nextCount <= 0) return;
+          if (nextCount !== prevCount) {
+            this.markReactionPop(emoji);
+          }
+        });
+      },
+      deep: true,
     },
   },
 
@@ -218,6 +251,50 @@ export default {
       this.$emit('reaction-mouseleave');
     },
 
+    markReactionPop(this: any, emojiRaw: unknown) {
+      const emoji = String(emojiRaw || '');
+      if (!emoji) return;
+      const now = Date.now();
+      const key = `${this.message.id}:${emoji}`;
+      const until = now + 280;
+
+      if (typeof window !== 'undefined') {
+        const timerId = Number(this.reactionPopTimerByKey?.[key] || 0);
+        if (timerId > 0) {
+          clearTimeout(timerId);
+        }
+      }
+
+      this.reactionPopUntilByKey = {
+        ...this.reactionPopUntilByKey,
+        [key]: until,
+      };
+
+      if (typeof window === 'undefined') return;
+      const timeoutId = window.setTimeout(() => {
+        const nextUntil = {...(this.reactionPopUntilByKey || {})};
+        delete nextUntil[key];
+        this.reactionPopUntilByKey = nextUntil;
+
+        const nextTimers = {...(this.reactionPopTimerByKey || {})};
+        delete nextTimers[key];
+        this.reactionPopTimerByKey = nextTimers;
+      }, 300);
+
+      this.reactionPopTimerByKey = {
+        ...this.reactionPopTimerByKey,
+        [key]: timeoutId,
+      };
+    },
+
+    isReactionPopping(this: any, reaction: MessageReaction) {
+      const emoji = String(reaction?.emoji || '');
+      if (!emoji) return false;
+      const key = `${this.message.id}:${emoji}`;
+      const until = Number(this.reactionPopUntilByKey?.[key] || 0);
+      return until > Date.now();
+    },
+
     emitHeight(this: any) {
       const root = this.rootEl as HTMLElement | null;
       if (!root) return;
@@ -270,6 +347,13 @@ export default {
   },
 
   beforeUnmount(this: any) {
+    if (typeof window !== 'undefined') {
+      Object.values(this.reactionPopTimerByKey as Record<string, number>).forEach((timerId) => {
+        clearTimeout(Number(timerId));
+      });
+    }
+    this.reactionPopTimerByKey = {};
+    this.reactionPopUntilByKey = {};
     if (!this.resizeObserver) return;
     this.resizeObserver.disconnect();
     this.resizeObserver = null;

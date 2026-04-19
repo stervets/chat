@@ -259,6 +259,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     async selectDialog(this: any, dialog: Dialog, optionsRaw?: {routeMode?: RouteMode}) {
       const seq = this.historyLoadSeq + 1;
       this.historyLoadSeq = seq;
+      this.clearFreshMessageMarks();
       this.activeDialog = dialog;
       this.messages = [];
       this.historyHasMore = true;
@@ -362,6 +363,11 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.leftMenuOpen = false;
     },
 
+    onCloseLeftMenuClick(this: any) {
+      this.hapticTap();
+      this.closeLeftMenu();
+    },
+
     toggleRightMenu(this: any) {
       this.hapticTap();
       this.rightMenuOpen = !this.rightMenuOpen;
@@ -374,6 +380,11 @@ export const chatMethodsAuthDialogsAndProfile = {
 
     closeRightMenu(this: any) {
       this.rightMenuOpen = false;
+    },
+
+    onCloseRightMenuClick(this: any) {
+      this.hapticTap();
+      this.closeRightMenu();
     },
 
     clearNicknameColor(this: any) {
