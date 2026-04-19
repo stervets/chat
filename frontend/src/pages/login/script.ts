@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import { wsLogin } from '@/composables/ws-rpc';
+import { wsLogin, restoreSession } from '@/composables/ws-rpc';
 
 export default {
     async setup() {
@@ -14,6 +14,15 @@ export default {
     },
 
     methods: {
+        async ensureAuth(this: any) {
+            const session = await restoreSession();
+            if (!(session as any)?.ok || !(session as any)?.user?.id) {
+                return false;
+            }
+            await this.router.replace('/chat');
+            return true;
+        },
+
         async onLogin(this: any) {
             this.error = '';
             const nickname = String(this.nickname || '').trim().toLowerCase();
@@ -47,5 +56,9 @@ export default {
             event.preventDefault();
             void this.onLogin();
         }
+    },
+
+    mounted(this: any) {
+        void this.ensureAuth();
     }
 };

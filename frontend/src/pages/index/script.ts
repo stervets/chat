@@ -1,5 +1,4 @@
-import {ws} from '@/composables/classes/ws';
-import {restoreSession} from '@/composables/ws-rpc';
+import {getSessionToken, restoreSession} from '@/composables/ws-rpc';
 
 export default {
   async setup() {
@@ -10,20 +9,34 @@ export default {
 
   methods: {
     async redirect(this: any) {
-      try {
-        const session = await restoreSession();
-        if ((session as any)?.ok) {
-          const me = await ws.request('auth:me');
-          if ((me as any)?.id) {
+      const token = String(getSessionToken() || '').trim();
+      if (!token) {
+        await this.router.replace('/login');
+        return;
+      }
+
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        try {
+          const session = await restoreSession();
+          if ((session as any)?.ok && (session as any)?.user?.id) {
             await this.router.replace('/chat');
             return;
           }
+
+          if ((session as any)?.error === 'unauthorized') {
+            await this.router.replace('/login');
+            return;
+          }
+        } catch {
+          // keep retrying, then fallback to chat
         }
-      } catch {
-        // fall through to login
+
+        if (attempt < 5) {
+          await new Promise((resolve) => setTimeout(resolve, 450));
+        }
       }
 
-      await this.router.replace('/login');
+      await this.router.replace('/chat');
     }
   },
 

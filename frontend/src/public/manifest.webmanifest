@@ -2,7 +2,7 @@
   "name": "MARX",
   "short_name": "MARX",
   "description": "Закрытый мессенджер для команды",
-  "start_url": "/login",
+  "start_url": "/chat",
   "scope": "/",
   "display": "standalone",
   "background_color": "#171b22",

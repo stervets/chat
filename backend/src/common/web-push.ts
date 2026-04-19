@@ -4,6 +4,7 @@ import {db} from '../db.js';
 import {config} from '../config.js';
 import type {DialogRow} from './dialogs.js';
 import type {ChatContextMessagePayload} from '../ws/chat/chat-context.js';
+import {extractMessageFormatTokens} from './message-format.js';
 
 type PushSubscriptionPayload = {
   endpoint: string;
@@ -115,7 +116,7 @@ export class WebPushService {
 
   async sendChatMessagePush(params: SendChatPushParams) {
     try {
-      const recipientUserIds = await this.resolveRecipientUserIds(params.dialog, params.senderId);
+      const recipientUserIds = await this.resolveRecipientUserIds(params.dialog, params.senderId, params.message.rawText);
       const excluded = new Set(
         Array.isArray(params.excludeUserIds)
           ? params.excludeUserIds.filter((value) => Number.isFinite(value) && value > 0)
@@ -260,7 +261,7 @@ export class WebPushService {
     this.logger.log('Web Push enabled');
   }
 
-  private async resolveRecipientUserIds(dialog: DialogRow, senderId: number) {
+  private async resolveRecipientUserIds(dialog: DialogRow, senderId: number, messageRawText: unknown) {
     if (dialog.kind === 'private') {
       const ids = [dialog.member_a, dialog.member_b]
         .map((value) => Number(value || 0))
@@ -269,16 +270,51 @@ export class WebPushService {
     }
 
     if (dialog.kind === 'general') {
+      const tokens = extractMessageFormatTokens(messageRawText);
+      const mentionNicknames = Array.from(new Set(
+        (tokens.mentionNicknames || [])
+          .map((value) => String(value || '').trim().toLowerCase())
+          .filter(Boolean),
+      ));
+      const hasMentionAll = mentionNicknames.includes('all');
+      const directMentionNicknames = mentionNicknames.filter((nickname) => nickname !== 'all');
+
+      if (!hasMentionAll && !directMentionNicknames.length) {
+        this.logger.log(`Web Push chat general mentions=0 mentionAll=false dialogId=${dialog.id}`);
+        return [];
+      }
+
+      if (hasMentionAll) {
+        const users = await db.user.findMany({
+          where: {
+            id: {
+              not: senderId,
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
+        this.logger.log(`Web Push chat general mentionAll=true recipients=${users.length} dialogId=${dialog.id}`);
+        return users.map((item) => item.id);
+      }
+
       const users = await db.user.findMany({
         where: {
-          id: {
-            not: senderId,
+          nickname: {
+            in: directMentionNicknames,
+          },
+          NOT: {
+            id: senderId,
           },
         },
         select: {
           id: true,
         },
       });
+      this.logger.log(
+        `Web Push chat general mentionAll=false mentionNicknames=${directMentionNicknames.length} recipients=${users.length} dialogId=${dialog.id}`
+      );
       return users.map((item) => item.id);
     }
 
