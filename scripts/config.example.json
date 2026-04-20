@@ -1,0 +1,30 @@
+{
+  "playwright": {
+    "channel": "chromium",
+    "executablePath": ""
+  },
+  "e2eLogin": {
+    "baseUrl": "http://127.0.0.1:8815",
+    "nickname": "lisov",
+    "password": "123"
+  },
+  "smokeE2E": {
+    "backendWsUrl": "ws://localhost:8816/ws",
+    "frontendUrl": "http://localhost:8815",
+    "baseUrl": "http://localhost:8815",
+    "browser": {
+      "channel": "chromium",
+      "executablePath": ""
+    }
+  },
+  "stressSeed": {
+    "wsUrl": "ws://127.0.0.1:8816/ws",
+    "adminNickname": "lisov",
+    "adminPassword": "123",
+    "defaultUserPassword": "123",
+    "userCount": 100,
+    "generalMessages": 10000,
+    "directDialogs": 50,
+    "directMessagesPerDialog": 24
+  }
+}

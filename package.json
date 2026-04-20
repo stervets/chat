@@ -3,19 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "cli": "cd backend && yarn run",
     "db:init": "cd backend && yarn run db:init",
     "invite:create": "cd backend && yarn run invite:create",
     "user:bootstrap": "cd backend && yarn run user:bootstrap",
+    "message:send": "cd backend && yarn run message:send",
     "frontend:dev": "cd frontend && yarn run dev",
     "backend:dev": "cd backend && yarn run dev",
+    "telegram:login": "tsx scripts/telegram-news/login.ts",
+    "telegram:fetch": "tsx scripts/telegram-news/fetch.ts",
+    "telegram:pick-hot": "tsx scripts/telegram-news/pick-hot.ts",
+    "telegram:rewrite": "tsx scripts/telegram-news/rewrite.ts",
+    "telegram:digest": "tsx scripts/telegram-news/digest.ts",
     "smoke": "node scripts/smoke-e2e.js",
     "test:login": "playwright test tests/login.spec.ts --config=playwright.config.ts --project=chromium",
     "stress:seed": "node scripts/stress-seed.js"
   },
   "dependencies": {
-    "@playwright/test": "^1.58.2"
+    "@playwright/test": "^1.58.2",
+    "telegram": "^2.26.22"
   },
   "devDependencies": {
-    "playwright": "^1.58.2"
+    "playwright": "^1.58.2",
+    "tsx": "^4.21.0"
   }
 }

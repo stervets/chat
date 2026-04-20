@@ -13,6 +13,9 @@ import {getDialogById, userCanAccessDialog, type DialogRow} from '../common/dial
 import {WebPushService} from '../common/web-push.js';
 import {ChatService} from './chat.service.js';
 import {
+  SYSTEM_NICKNAME,
+} from './chat/chat-context.js';
+import {
   BACKEND_PEER_ID,
   FRONTEND_PEER_ID,
   RESULT_COMMAND,
@@ -253,14 +256,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const result = await this.chatService.chatSend(client.state, args[0], args[1]);
       if ((result as any)?.ok && (result as any)?.message) {
         const dialog = await getDialogById((result as any).message.dialogId);
+        const silentRequested = Boolean((args[2] as any)?.silent);
+        const skipPush = silentRequested && client.state?.user?.nickname === SYSTEM_NICKNAME;
         if (dialog) {
           this.broadcastToDialogMembers(dialog, 'chat:message', (result as any).message);
-          void this.webPushService.sendChatMessagePush({
-            dialog,
-            message: (result as any).message,
-            senderId: Number((result as any).message.authorId || 0),
-            excludeUserIds: this.getOnlineUserIds(),
-          });
+          if (!skipPush) {
+            void this.webPushService.sendChatMessagePush({
+              dialog,
+              message: (result as any).message,
+              senderId: Number((result as any).message.authorId || 0),
+              excludeUserIds: this.getOnlineUserIds(),
+            });
+          }
         } else {
           this.broadcast((result as any).message.dialogId, 'chat:message', (result as any).message);
         }

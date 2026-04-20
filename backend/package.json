@@ -15,7 +15,8 @@
     "admin:tui": "tsx src/cli/admin-tui.ts",
     "invite:create": "tsx src/cli/invite-create.ts",
     "user:bootstrap": "tsx src/cli/bootstrap-user.ts",
-    "db:reset": "tsx src/cli/db-reset.ts"
+    "db:reset": "tsx src/cli/db-reset.ts",
+    "message:send": "tsx src/cli/message-send.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",

@@ -1,14 +1,39 @@
 #!/usr/bin/env node
 
-const WS_URL = process.env.WS_URL || 'ws://127.0.0.1:8816/ws';
-const ADMIN_NICKNAME = (process.env.STRESS_ADMIN_NICKNAME || 'lisov').toLowerCase();
-const ADMIN_PASSWORD = process.env.STRESS_ADMIN_PASSWORD || '123';
-const DEFAULT_USER_PASSWORD = process.env.STRESS_USER_PASSWORD || '123';
+const {readFileSync} = require('node:fs');
+const path = require('node:path');
 
-const STRESS_USER_COUNT = Number.parseInt(process.env.STRESS_USER_COUNT || '100', 10);
-const GENERAL_MESSAGE_COUNT = Number.parseInt(process.env.STRESS_GENERAL_MESSAGES || '10000', 10);
-const DIRECT_DIALOGS_COUNT = Number.parseInt(process.env.STRESS_DIRECTS_COUNT || '50', 10);
-const DIRECT_MESSAGES_PER_DIALOG = Number.parseInt(process.env.STRESS_DIRECT_MESSAGES || '24', 10);
+function loadScriptsConfig() {
+  const configPath = path.resolve(__dirname, 'config.json');
+  const examplePath = path.resolve(__dirname, 'config.example.json');
+
+  try {
+    const raw = readFileSync(configPath, 'utf-8');
+    return JSON.parse(raw);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      const fallbackRaw = readFileSync(examplePath, 'utf-8');
+      return JSON.parse(fallbackRaw);
+    }
+    if (error instanceof SyntaxError) {
+      throw new Error(`scripts/config.json invalid JSON: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+const scriptConfig = loadScriptsConfig();
+const stressConfig = scriptConfig.stressSeed || {};
+
+const WS_URL = String(stressConfig.wsUrl || 'ws://127.0.0.1:8816/ws').trim();
+const ADMIN_NICKNAME = String(stressConfig.adminNickname || 'lisov').trim().toLowerCase();
+const ADMIN_PASSWORD = String(stressConfig.adminPassword || '123');
+const DEFAULT_USER_PASSWORD = String(stressConfig.defaultUserPassword || '123');
+
+const STRESS_USER_COUNT = Number.parseInt(String(stressConfig.userCount || 100), 10);
+const GENERAL_MESSAGE_COUNT = Number.parseInt(String(stressConfig.generalMessages || 10000), 10);
+const DIRECT_DIALOGS_COUNT = Number.parseInt(String(stressConfig.directDialogs || 50), 10);
+const DIRECT_MESSAGES_PER_DIALOG = Number.parseInt(String(stressConfig.directMessagesPerDialog || 24), 10);
 
 const IMAGE_URLS = [
   'https://cs8.pikabu.ru/post_img/2016/09/16/10/og_og_1474048544294839279.jpg',

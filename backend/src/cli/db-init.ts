@@ -1,4 +1,8 @@
 import {spawnSync} from 'node:child_process';
+import {randomBytes} from 'node:crypto';
+import {readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
 import {PrismaClient} from '@prisma/client';
 import {Client} from 'pg';
 import argon2 from 'argon2';
@@ -48,19 +52,33 @@ async function recreateDatabase(connectionString: string) {
   }
 }
 
-function runPrismaPush() {
+function quotePrismaString(raw: string) {
+  return String(raw || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function createTempPrismaSchema(connectionString: string) {
+  const sourceSchemaPath = resolve(process.cwd(), 'prisma', 'schema.prisma');
+  const tempSchemaPath = resolve(tmpdir(), `marx-db-init-${Date.now()}-${randomBytes(6).toString('hex')}.prisma`);
+  const source = readFileSync(sourceSchemaPath, 'utf-8');
+  const replaced = source.replace(
+    /url\s*=\s*env\("DATABASE_URL"\)/,
+    `url      = "${quotePrismaString(connectionString)}"`,
+  );
+  writeFileSync(tempSchemaPath, replaced, 'utf-8');
+  return tempSchemaPath;
+}
+
+function runPrismaPush(connectionString: string) {
+  const tempSchemaPath = createTempPrismaSchema(connectionString);
   const result = spawnSync(
     process.platform === 'win32' ? 'yarn.cmd' : 'yarn',
-    ['prisma:push'],
+    ['prisma', 'db', 'push', '--schema', tempSchemaPath],
     {
       cwd: process.cwd(),
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        DATABASE_URL: config.db.url,
-      },
     },
   );
+  rmSync(tempSchemaPath, {force: true});
 
   if (result.status !== 0) {
     throw new Error('prisma db push failed');
@@ -148,7 +166,7 @@ async function run() {
   await recreateDatabase(config.db.url);
 
   process.stdout.write('Applying Prisma schema...\n');
-  runPrismaPush();
+  runPrismaPush(config.db.url);
 
   process.stdout.write('Seeding system users and default dialogs...\n');
   await seedInitialData(config.db.url);

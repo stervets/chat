@@ -66,9 +66,7 @@ export const config = {
   inviteBaseUrl,
   corsOrigins: resolvedCorsOrigins,
   db: {
-    url: fileConfig.db?.url
-      || process.env.DATABASE_URL
-      || 'postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public',
+    url: String(fileConfig.db?.url || 'postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public').trim(),
   },
   uploads: {
     path: fileConfig.uploads?.path || './data/uploads',
@@ -79,8 +77,8 @@ export const config = {
     donationBank: String(fileConfig.vpn?.donationBank || '').trim(),
   },
   push: {
-    vapidPublicKey: String(fileConfig.push?.vapidPublicKey || process.env.VAPID_PUBLIC_KEY || '').trim(),
-    vapidPrivateKey: String(fileConfig.push?.vapidPrivateKey || process.env.VAPID_PRIVATE_KEY || '').trim(),
-    vapidSubject: String(fileConfig.push?.vapidSubject || process.env.VAPID_SUBJECT || '').trim(),
+    vapidPublicKey: String(fileConfig.push?.vapidPublicKey || '').trim(),
+    vapidPrivateKey: String(fileConfig.push?.vapidPrivateKey || '').trim(),
+    vapidSubject: String(fileConfig.push?.vapidSubject || '').trim(),
   },
 };

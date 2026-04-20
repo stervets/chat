@@ -2,12 +2,39 @@
 
 const {spawn, spawnSync} = require('node:child_process');
 const path = require('node:path');
+const {readFileSync} = require('node:fs');
 const {chromium} = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
-const BACKEND_WS_URL = 'ws://localhost:8816/ws';
-const FRONTEND_URL = 'http://localhost:8815';
-const BASE_URL = 'http://localhost:8815';
+
+const loadScriptsConfig = () => {
+  const configPath = path.resolve(__dirname, 'config.json');
+  const examplePath = path.resolve(__dirname, 'config.example.json');
+
+  try {
+    const raw = readFileSync(configPath, 'utf-8');
+    return JSON.parse(raw);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      const fallbackRaw = readFileSync(examplePath, 'utf-8');
+      return JSON.parse(fallbackRaw);
+    }
+    if (error instanceof SyntaxError) {
+      throw new Error(`scripts/config.json invalid JSON: ${error.message}`);
+    }
+    throw error;
+  }
+};
+
+const scriptConfig = loadScriptsConfig();
+const smokeConfig = scriptConfig.smokeE2E || {};
+const smokeBrowserConfig = smokeConfig.browser || {};
+
+const BACKEND_WS_URL = String(smokeConfig.backendWsUrl || 'ws://localhost:8816/ws').trim();
+const FRONTEND_URL = String(smokeConfig.frontendUrl || 'http://localhost:8815').trim();
+const BASE_URL = String(smokeConfig.baseUrl || 'http://localhost:8815').trim();
+const BROWSER_CHANNEL = String(smokeBrowserConfig.channel || 'chromium').trim();
+const BROWSER_EXECUTABLE_PATH = String(smokeBrowserConfig.executablePath || '').trim();
 
 const log = (msg) => process.stdout.write(`${msg}\n`);
 const err = (msg) => process.stderr.write(`${msg}\n`);
@@ -227,9 +254,9 @@ async function closeLeftDrawerIfOpen(page) {
 
   log('Run headless flow');
   const browser = await chromium.launch({
-    ...(process.env.PW_EXECUTABLE_PATH
-      ? {executablePath: process.env.PW_EXECUTABLE_PATH}
-      : {channel: process.env.PW_CHANNEL || 'chromium'}),
+    ...(BROWSER_EXECUTABLE_PATH
+      ? {executablePath: BROWSER_EXECUTABLE_PATH}
+      : {channel: BROWSER_CHANNEL}),
     headless: true,
     args: [
       '--no-sandbox',

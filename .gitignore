@@ -4,6 +4,7 @@
 chat.zip
 .codex
 .postgres-data/
+tmp/
 
 # --- Node.js ---
 node_modules/
@@ -38,6 +39,8 @@ backend/logs/
 # --- Local config ---
 frontend/config.json
 backend/config.json
+scripts/config.json
+scripts/telegram-news/config.json
 !frontend/config.example.json
 !backend/config.example.json
 
