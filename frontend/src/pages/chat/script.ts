@@ -90,10 +90,10 @@ export default {
       this.notifications.forEach((notification: NotificationItem) => {
         if (!notification.unread) return;
         if (notification.notificationType !== 'message') return;
-        if (notification.dialogKind !== 'private') return;
-        const dialogId = Number(notification.dialogId || 0);
-        if (!Number.isFinite(dialogId) || dialogId <= 0) return;
-        ids[dialogId] = true;
+        if (notification.roomKind !== 'direct') return;
+        const roomId = Number(notification.roomId || 0);
+        if (!Number.isFinite(roomId) || roomId <= 0) return;
+        ids[roomId] = true;
       });
       return ids;
     },
@@ -101,8 +101,8 @@ export default {
     sortedDirectDialogs(this: any) {
       const unreadIds = this.unreadDirectDialogIds || {};
       return [...this.directDialogs].sort((left: DirectDialog, right: DirectDialog) => {
-        const leftUnread = !!unreadIds[left.dialogId];
-        const rightUnread = !!unreadIds[right.dialogId];
+        const leftUnread = !!unreadIds[left.roomId];
+        const rightUnread = !!unreadIds[right.roomId];
         if (leftUnread !== rightUnread) return leftUnread ? -1 : 1;
 
         const leftTs = Date.parse(String(left.lastMessageAt || ''));
@@ -111,7 +111,7 @@ export default {
         const rightTime = Number.isFinite(rightTs) ? rightTs : 0;
         if (leftTime !== rightTime) return rightTime - leftTime;
 
-        return Number(right.dialogId || 0) - Number(left.dialogId || 0);
+        return Number(right.roomId || 0) - Number(left.roomId || 0);
       });
     },
 
@@ -164,8 +164,8 @@ export default {
     const ok = await this.ensureAuth();
     if (!ok) return;
     setWsReconnectDialogResolver(() => {
-      const dialogId = Number(this.activeDialog?.id || 0);
-      return Number.isFinite(dialogId) && dialogId > 0 ? dialogId : null;
+      const roomId = Number(this.activeDialog?.id || 0);
+      return Number.isFinite(roomId) && roomId > 0 ? roomId : null;
     });
     this.resolveSoundStartupState();
     this.initBrowserNotifications();

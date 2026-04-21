@@ -1,110 +1,103 @@
 # MARX
 
-Закрытый чат для аварийной связи. Регистрация по invite-кодам, логин по `nickname + password`, общий чат и приватные диалоги.
+Закрытый чат для аварийной связи, mobile/PWA-first.
 
-## Никнеймы
+## Что умеет сейчас
 
-- `nickname` хранится только в lowercase.
-- `USER` и `user` считаются одним и тем же никнеймом.
-- Формат: `^[a-z0-9_-]{3,32}$`.
+- invite-only регистрация;
+- логин по `nickname + password` (nickname нормализуется в lowercase);
+- комнаты `group`/`direct` + сообщения/редактирование/удаление/реакции;
+- игровой модуль King (`/games`), solo: 1 человек + 3 бота;
+- автосоздание direct с системным пользователем `marx`;
+- серверный рендер форматирования сообщений (`rawText` + `renderedHtml`);
+- upload изображений (`/upload/image`, `/uploads/*`);
+- web push (`/push/*` + service worker);
+- VPN страница (`/vpn`) с WireGuard provisioning через `wg-admin`;
+- Telegram news pipeline в `scripts/telegram-news`;
+- smoke/e2e/stress скрипты.
+
+## Стек
+
+- `frontend/` — Nuxt 3 SPA (`ssr: false`), Element Plus, Tailwind, Less.
+- `backend/` — NestJS + WS + HTTP, Prisma, PostgreSQL.
+- Конфиг через JSON (`frontend/config.json`, `backend/config.json`, `scripts/config.json`).
 
 ## Быстрый старт (dev)
 
 Нужно:
 - Node.js 22+
 - Yarn
-- PostgreSQL 16+ (или контейнер с Postgres)
+- PostgreSQL 16+
 
-1. Установи зависимости.
-
+Установка:
 ```bash
-cd backend
+cd /path/to/chat
 yarn install
-cd ../frontend
-yarn install
+cd backend && yarn install
+cd ../frontend && yarn install
 ```
 
-2. Создай локальные конфиги.
-
+Конфиги:
 ```bash
 cp backend/config.example.json backend/config.json
 cp frontend/config.example.json frontend/config.json
+cp scripts/config.example.json scripts/config.json
 ```
 
-3. Запусти сервисы в двух терминалах (из корня проекта).
-
+Запуск:
 ```bash
 yarn run backend:dev
 yarn run frontend:dev
 ```
 
-## Адреса
+Адреса:
+- Frontend: `http://localhost:8815`
+- Backend: `http://localhost:8816`
+- WS: `ws://localhost:8816/ws`
 
-- Frontend: `http://localhost:8815` или `http://127.0.0.1:8815`
-- Backend: `http://localhost:8816` или `http://127.0.0.1:8816`
-- БД по умолчанию: `postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public`
+## Первый пользователь
 
-## Auth модель
-
-- Используются session token-ы (не JWT).
-- `auth:login` и `invites:redeem` возвращают `token` и `expiresAt`.
-- Токен хранится на клиенте в `localStorage` (`marx_session_token`).
-- Восстановление сессии идёт через WS команду `auth:session`.
-- Upload (`POST /upload/image`) принимает `Authorization: Bearer <token>`.
-- Cookie-based сессии не используются.
-
-## Проверка БД при старте
-
-- Backend при старте проверяет подключение к PostgreSQL.
-- Backend создаёт runtime partial unique indexes, если их нет:
-  - `dialogs_general_unique`
-  - `dialogs_private_unique`
-- Это runtime safety-шаг, а не Prisma migration.
-
-## Первый пользователь (без invite)
-
-1. Если нужно начать с нуля, сбрось БД:
-
-```bash
-cd backend
-yarn run db:reset
-```
-
-2. Создай первого пользователя **секретной командой** (из корня):
-
+Для пустой БД:
 ```bash
 yarn run user:bootstrap -- --nickname <name> --password <pass>
 ```
 
-3. Зайди через `/login` и дальше выдавай инвайты.
-
-## Как получить инвайт
-
-Через UI: страница `/invites`, кнопка `Создать инвайт`.
-
-Через CLI (из корня):
+## Полезные команды
 
 ```bash
 yarn run invite:create
 yarn run invite:create -- --count 5
+yarn run bots:seed
+yarn run message:send -- --from <nickname> --chat group --text "текст"
+yarn run db:init
+cd backend && yarn run db:reset
+yarn run test:login
+yarn run smoke
+yarn run stress:seed
 ```
 
-## Базовый flow
+`db:init` пересоздаёт БД и сидит dev-данные (`marx`, `lisov`, пароль `123`).
 
-1. Первый пользователь создаётся командой `user:bootstrap`.
-2. Создай invite через UI или CLI.
-3. Открой `http://localhost:8815/invite/<code>` и зарегистрируйся.
-4. Перейди в `/chat`.
+## Telegram news
 
-## Формат сообщений
+```bash
+cp scripts/telegram-news/config.example.json scripts/telegram-news/config.json
+yarn run telegram:login
+yarn run telegram:fetch
+yarn run telegram:hot
+yarn run telegram:rewrite -- --messageId <id>
+yarn run telegram:digest
+```
 
-- В БД хранятся `rawText` и `renderedHtml`.
-- Форматирование компилируется на сервере при create/edit.
-- Клиент рендерит готовый `renderedHtml`.
-- `rawText` используется для редактирования.
+## Deploy
 
-## Конфигурация
+Актуальный деплой: [docs/DEPLOY.md](docs/DEPLOY.md) + [Caddyfile](Caddyfile).
 
-Примеры — `frontend/config.example.json` и `backend/config.example.json`.
-Рабочие файлы — `frontend/config.json` и `backend/config.json`.
-Подробности в `docs/CONFIG.md`.
+## Документация
+
+- [AGENTS.md](AGENTS.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/API.md](docs/API.md)
+- [docs/CONFIG.md](docs/CONFIG.md)
+- [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md)
+- [docs/KING_DISDOC.md](docs/KING_DISDOC.md)

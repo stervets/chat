@@ -79,18 +79,18 @@ self.addEventListener('push', (event) => {
     const title = String(payload.title || 'MARX');
     const body = String(payload.body || '').trim() || 'Новое сообщение';
     const url = String(payload.url || '/chat').trim() || '/chat';
-    const dialogId = Number(payload.dialogId || 0) || null;
+    const roomId = Number(payload.roomId || payload.dialogId || 0) || null;
     const messageId = Number(payload.messageId || 0) || null;
 
     await self.registration.showNotification(title, {
       body,
       icon: String(payload.icon || '/favicon-alert.png'),
       badge: String(payload.badge || '/pwa-192.png'),
-      tag: String(payload.tag || `marx-push-${dialogId || 'chat'}`),
+      tag: String(payload.tag || `marx-push-${roomId || 'chat'}`),
       renotify: false,
       data: {
         url,
-        dialogId,
+        roomId,
         messageId,
       },
     });

@@ -9,7 +9,7 @@ import {randomBytes} from 'node:crypto';
 import type {IncomingMessage} from 'node:http';
 import {WebSocket, WebSocketServer as WsServer} from 'ws';
 import {config} from '../config.js';
-import {getDialogById, userCanAccessDialog, type DialogRow} from '../common/dialogs.js';
+import {getRoomById, userCanAccessRoom, type RoomRow} from '../common/rooms.js';
 import {WebPushService} from '../common/web-push.js';
 import {ChatService} from './chat.service.js';
 import {
@@ -54,7 +54,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       userAgent: typeof userAgent === 'string' ? userAgent : null,
       token: null,
       user: null,
-      dialogId: null,
+      roomId: null,
     };
 
     client.on('message', (raw) => {
@@ -111,41 +111,41 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     ]);
   }
 
-  private subscribe(client: ClientSocket, dialogId: number) {
+  private subscribe(client: ClientSocket, roomId: number) {
     this.unsubscribe(client);
 
-    let set = this.subscriptions.get(dialogId);
+    let set = this.subscriptions.get(roomId);
     if (!set) {
       set = new Set();
-      this.subscriptions.set(dialogId, set);
+      this.subscriptions.set(roomId, set);
     }
     set.add(client);
   }
 
   private unsubscribe(client: ClientSocket) {
-    const dialogId = client.state?.dialogId;
-    if (!dialogId) return;
-    const set = this.subscriptions.get(dialogId);
+    const roomId = client.state?.roomId;
+    if (!roomId) return;
+    const set = this.subscriptions.get(roomId);
     if (!set) return;
     set.delete(client);
     if (set.size === 0) {
-      this.subscriptions.delete(dialogId);
+      this.subscriptions.delete(roomId);
     }
   }
 
-  private broadcast(dialogId: number, com: string, ...args: any[]) {
-    const set = this.subscriptions.get(dialogId);
+  private broadcast(roomId: number, com: string, ...args: any[]) {
+    const set = this.subscriptions.get(roomId);
     if (!set) return;
     for (const client of set) {
       this.sendEvent(client, com, ...args);
     }
   }
 
-  private broadcastToDialogMembers(dialog: DialogRow, com: string, ...args: any[]) {
+  private broadcastToRoomMembers(room: RoomRow, com: string, ...args: any[]) {
     for (const rawClient of this.server.clients) {
       const client = rawClient as ClientSocket;
       if (!client.state?.user) continue;
-      if (!userCanAccessDialog(client.state.user.id, dialog)) continue;
+      if (!userCanAccessRoom(client.state.user.id, room)) continue;
       this.sendEvent(client, com, ...args);
     }
   }
@@ -178,21 +178,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return Array.from(ids);
   }
 
-  private closeDialogSubscriptions(dialogId: number) {
-    const set = this.subscriptions.get(dialogId);
+  private closeRoomSubscriptions(roomId: number) {
+    const set = this.subscriptions.get(roomId);
     if (set) {
       for (const client of set) {
-        if (client.state?.dialogId === dialogId) {
-          client.state.dialogId = null;
+        if (client.state?.roomId === roomId) {
+          client.state.roomId = null;
         }
       }
-      this.subscriptions.delete(dialogId);
+      this.subscriptions.delete(roomId);
     }
 
     for (const rawClient of this.server.clients) {
       const client = rawClient as ClientSocket;
-      if (client.state?.dialogId === dialogId) {
-        client.state.dialogId = null;
+      if (client.state?.roomId === roomId) {
+        client.state.roomId = null;
       }
     }
   }
@@ -225,21 +225,95 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
+    if (com === 'games:solo:create') {
+      const result = await this.chatService.gamesSoloCreate(client.state, args[0]);
+      if ((result as any)?.ok) {
+        const roomId = Number((result as any).roomId || 0);
+        if (Number.isFinite(roomId) && roomId > 0) {
+          this.subscribe(client, roomId);
+          const room = await getRoomById(roomId);
+          if (room) {
+            const messages = Array.isArray((result as any).messages) ? (result as any).messages : [];
+            for (const message of messages) {
+              this.broadcast(roomId, 'chat:message', message);
+            }
+            this.broadcast(roomId, 'games:session', (result as any).session);
+            const events = Array.isArray((result as any).events) ? (result as any).events : [];
+            for (const event of events) {
+              this.broadcast(roomId, 'games:event', {
+                sessionId: (result as any).sessionId,
+                event,
+              });
+            }
+          }
+        }
+      }
+      return result;
+    }
+
+    if (com === 'games:session:get') {
+      const result = await this.chatService.gamesSessionGet(client.state, args[0]);
+      if ((result as any)?.ok) {
+        const roomId = Number((result as any).roomId || 0);
+        if (Number.isFinite(roomId) && roomId > 0) {
+          this.subscribe(client, roomId);
+        }
+      }
+      return result;
+    }
+
+    if (com === 'games:action') {
+      const result = await this.chatService.gamesAction(client.state, args[0]);
+      if ((result as any)?.ok) {
+        const roomId = Number((result as any).roomId || 0);
+        const room = Number.isFinite(roomId) && roomId > 0
+          ? await getRoomById(roomId)
+          : null;
+
+        if (room) {
+          const messages = Array.isArray((result as any).messages) ? (result as any).messages : [];
+          for (const message of messages) {
+            this.broadcast(roomId, 'chat:message', message);
+          }
+
+          const events = Array.isArray((result as any).events) ? (result as any).events : [];
+          for (const event of events) {
+            this.broadcast(roomId, 'games:event', {
+              sessionId: (result as any).sessionId,
+              event,
+            });
+          }
+
+          this.broadcast(roomId, 'games:state', {
+            sessionId: (result as any).sessionId,
+            state: (result as any)?.session?.state,
+            actions: (result as any)?.session?.actions || [],
+            status: (result as any)?.session?.status || null,
+          });
+        }
+      }
+      return result;
+    }
+
     if (com === 'dialogs:general') return this.chatService.dialogsGeneral(client.state);
     if (com === 'dialogs:private') return this.chatService.dialogsPrivate(client.state, args[0]);
     if (com === 'dialogs:directs') return this.chatService.dialogsDirects(client.state);
     if (com === 'dialogs:messages') return this.chatService.dialogsMessages(client.state, args[0], args[1], args[2]);
     if (com === 'dialogs:delete') {
-      const dialogBeforeDelete = await getDialogById(Number.parseInt(String(args[0] ?? ''), 10));
+      const roomId = Number.parseInt(String(args[0] ?? ''), 10);
+      const roomBeforeDelete = Number.isFinite(roomId) && roomId > 0
+        ? await getRoomById(roomId)
+        : null;
       const result = await this.chatService.dialogsDelete(client.state, args[0]);
       if ((result as any)?.ok && (result as any)?.changed) {
-        if (dialogBeforeDelete) {
-          this.broadcastToDialogMembers(dialogBeforeDelete, 'dialogs:deleted', {
-            dialogId: (result as any).dialogId,
+        if (roomBeforeDelete) {
+          this.broadcastToRoomMembers(roomBeforeDelete, 'dialogs:deleted', {
+            roomId: (result as any).roomId,
+            dialogId: (result as any).roomId,
             kind: (result as any).kind,
           });
         }
-        this.closeDialogSubscriptions((result as any).dialogId);
+        this.closeRoomSubscriptions((result as any).roomId);
       }
       return result;
     }
@@ -247,7 +321,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'chat:join') {
       const result = await this.chatService.chatJoin(client.state, args[0]);
       if ((result as any)?.ok) {
-        this.subscribe(client, (result as any).dialogId);
+        this.subscribe(client, (result as any).roomId);
       }
       return result;
     }
@@ -255,21 +329,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'chat:send') {
       const result = await this.chatService.chatSend(client.state, args[0], args[1]);
       if ((result as any)?.ok && (result as any)?.message) {
-        const dialog = await getDialogById((result as any).message.dialogId);
+        const room = await getRoomById((result as any).message.roomId);
         const silentRequested = Boolean((args[2] as any)?.silent);
         const skipPush = silentRequested && client.state?.user?.nickname === SYSTEM_NICKNAME;
-        if (dialog) {
-          this.broadcastToDialogMembers(dialog, 'chat:message', (result as any).message);
+        if (room) {
+          this.broadcastToRoomMembers(room, 'chat:message', (result as any).message);
           if (!skipPush) {
             void this.webPushService.sendChatMessagePush({
-              dialog,
+              room,
               message: (result as any).message,
               senderId: Number((result as any).message.authorId || 0),
               excludeUserIds: this.getOnlineUserIds(),
             });
           }
         } else {
-          this.broadcast((result as any).message.dialogId, 'chat:message', (result as any).message);
+          this.broadcast((result as any).message.roomId, 'chat:message', (result as any).message);
         }
       }
       return result;
@@ -278,11 +352,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'chat:edit') {
       const result = await this.chatService.chatEdit(client.state, args[0], args[1]);
       if ((result as any)?.ok && (result as any)?.changed && (result as any)?.message) {
-        const dialog = await getDialogById((result as any).message.dialogId);
-        if (dialog) {
-          this.broadcastToDialogMembers(dialog, 'chat:message-updated', (result as any).message);
+        const room = await getRoomById((result as any).message.roomId);
+        if (room) {
+          this.broadcastToRoomMembers(room, 'chat:message-updated', (result as any).message);
         } else {
-          this.broadcast((result as any).message.dialogId, 'chat:message-updated', (result as any).message);
+          this.broadcast((result as any).message.roomId, 'chat:message-updated', (result as any).message);
         }
       }
       return result;
@@ -291,16 +365,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'chat:delete') {
       const result = await this.chatService.chatDelete(client.state, args[0]);
       if ((result as any)?.ok && (result as any)?.changed) {
-        const dialog = await getDialogById((result as any).dialogId);
+        const room = await getRoomById((result as any).roomId);
         const payload = {
-          dialogId: (result as any).dialogId,
+          roomId: (result as any).roomId,
+          dialogId: (result as any).roomId,
           messageId: (result as any).messageId,
         };
 
-        if (dialog) {
-          this.broadcastToDialogMembers(dialog, 'chat:message-deleted', payload);
+        if (room) {
+          this.broadcastToRoomMembers(room, 'chat:message-deleted', payload);
         } else {
-          this.broadcast((result as any).dialogId, 'chat:message-deleted', payload);
+          this.broadcast((result as any).roomId, 'chat:message-deleted', payload);
         }
       }
       return result;
@@ -309,17 +384,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'chat:react') {
       const result = await this.chatService.chatReact(client.state, args[0], args[1]);
       if ((result as any)?.ok && (result as any)?.changed) {
-        const dialog = await getDialogById((result as any).dialogId);
+        const room = await getRoomById((result as any).roomId);
         const payload = {
-          dialogId: (result as any).dialogId,
+          roomId: (result as any).roomId,
+          dialogId: (result as any).roomId,
           messageId: (result as any).messageId,
           reactions: (result as any).reactions,
         };
 
-        if (dialog) {
-          this.broadcastToDialogMembers(dialog, 'chat:reactions', payload);
+        if (room) {
+          this.broadcastToRoomMembers(room, 'chat:reactions', payload);
         } else {
-          this.broadcast((result as any).dialogId, 'chat:reactions', payload);
+          this.broadcast((result as any).roomId, 'chat:reactions', payload);
         }
 
         if ((result as any).notify) {

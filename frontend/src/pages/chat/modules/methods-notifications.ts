@@ -7,7 +7,7 @@ import type {
 } from './shared';
 export const chatMethodsNotifications = {
     getNotificationDialogTitle(this: any, notification: NotificationItem) {
-      if (notification.dialogKind === 'general') return 'Общий чат';
+      if (notification.roomKind === 'group') return 'Общий чат';
       if (notification.targetUser) return `Директ: ${notification.targetUser.name}`;
       return 'Чат';
     },
@@ -122,16 +122,16 @@ export const chatMethodsNotifications = {
       this.removeToast(toast.id);
     },
 
-    resolveDialogKind(this: any, dialogId: number): 'general' | 'private' | 'unknown' {
+    resolveRoomKind(this: any, roomId: number): 'group' | 'direct' | 'unknown' {
       const generalId = this.generalDialog?.id || null;
-      if (generalId && dialogId === generalId) return 'general';
-      return dialogId > 0 ? 'private' : 'unknown';
+      if (generalId && roomId === generalId) return 'group';
+      return roomId > 0 ? 'direct' : 'unknown';
     },
 
     isMessageAddressedToMe(this: any, message: Message) {
       if (!message || message.authorId === this.me?.id) return false;
-      const dialogKind = this.resolveDialogKind(Number(message.dialogId || 0));
-      if (dialogKind === 'private') return true;
+      const roomKind = this.resolveRoomKind(Number(message.roomId || 0));
+      if (roomKind === 'direct') return true;
       return this.isMentionedForMe(message);
     },
 
@@ -183,7 +183,7 @@ export const chatMethodsNotifications = {
 
       const notificationId = this.notificationsSeq;
       this.notificationsSeq += 1;
-      const dialogKind = this.resolveDialogKind(Number(message.dialogId || 0));
+      const roomKind = this.resolveRoomKind(Number(message.roomId || 0));
       const showToast = !!optionsRaw?.showToast;
 
       const targetUser = this.me?.id === message.authorId
@@ -198,8 +198,8 @@ export const chatMethodsNotifications = {
 
       const notification: NotificationItem = {
         id: notificationId,
-        dialogId: message.dialogId,
-        dialogKind,
+        roomId: message.roomId,
+        roomKind,
         notificationType: 'message',
         authorId: message.authorId,
         authorName: message.authorName,
@@ -220,13 +220,13 @@ export const chatMethodsNotifications = {
       const actor = payload?.actor;
       if (!actor?.id) return;
 
-      const dialogId = Number(payload?.dialogId);
-      if (!Number.isFinite(dialogId)) return;
+      const roomId = Number(payload?.roomId);
+      if (!Number.isFinite(roomId)) return;
 
       const notificationId = this.notificationsSeq;
       this.notificationsSeq += 1;
 
-      const dialogKind = this.resolveDialogKind(dialogId);
+      const roomKind = this.resolveRoomKind(roomId);
 
       const targetUser = this.me?.id === actor.id
         ? null
@@ -247,8 +247,8 @@ export const chatMethodsNotifications = {
 
       const notification: NotificationItem = {
         id: notificationId,
-        dialogId,
-        dialogKind,
+        roomId,
+        roomKind,
         notificationType: 'reaction',
         authorId: actor.id,
         authorName: actor.name,
@@ -293,7 +293,7 @@ export const chatMethodsNotifications = {
       const before = this.notifications.length;
       this.notifications = this.notifications.filter((notification: NotificationItem) => {
         if (notification.notificationType !== 'message') return true;
-        if (notification.dialogId !== this.activeDialog.id) return true;
+        if (notification.roomId !== this.activeDialog.id) return true;
 
         const targetMessageId = Number(notification.targetMessageId || 0);
         if (!Number.isFinite(targetMessageId) || targetMessageId <= 0) return true;
@@ -407,7 +407,7 @@ export const chatMethodsNotifications = {
         this.markNotificationRead(notification.id);
       }
 
-      if (notification.dialogKind === 'general' && this.generalDialog) {
+      if (notification.roomKind === 'group' && this.generalDialog) {
         if (this.activeDialog?.id !== this.generalDialog.id) {
           await this.selectDialog(this.generalDialog);
         }
@@ -426,12 +426,12 @@ export const chatMethodsNotifications = {
         return;
       }
 
-      const direct = this.directDialogs.find((dialog: DirectDialog) => dialog.dialogId === notification.dialogId);
+      const direct = this.directDialogs.find((dialog: DirectDialog) => dialog.roomId === notification.roomId);
       if (direct) {
-        if (this.activeDialog?.id !== direct.dialogId) {
+        if (this.activeDialog?.id !== direct.roomId) {
           await this.selectDialog({
-            id: direct.dialogId,
-            kind: 'private',
+            id: direct.roomId,
+            kind: 'direct',
             targetUser: direct.targetUser,
             title: direct.targetUser.name,
           });
@@ -451,7 +451,7 @@ export const chatMethodsNotifications = {
         return;
       }
 
-      if (notification.targetUser && notification.dialogKind !== 'general') {
+      if (notification.targetUser && notification.roomKind !== 'group') {
         await this.selectPrivate(notification.targetUser);
         if (targetMessageId) {
           const loaded = await this.ensureMessageLoadedById(targetMessageId);

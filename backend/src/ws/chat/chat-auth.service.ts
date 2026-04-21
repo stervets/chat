@@ -110,7 +110,7 @@ export class ChatAuthService {
     }
     state.token = null;
     state.user = null;
-    state.dialogId = null;
+    state.roomId = null;
     return {ok: true};
   }
 

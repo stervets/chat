@@ -17,7 +17,7 @@ export type Invite = {
   isUsed: boolean;
 };
 
-export type DialogKind = 'general' | 'private';
+export type DialogKind = 'group' | 'direct';
 
 export type Dialog = {
   id: Id;
@@ -28,7 +28,7 @@ export type Dialog = {
 
 export type Message = {
   id: Id;
-  dialogId: Id;
+  roomId: Id;
   authorId: Id;
   authorNickname: string;
   authorName: string;

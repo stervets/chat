@@ -8,4 +8,3 @@ export function isValidNickname(valueRaw: unknown) {
   const nickname = String(valueRaw ?? '');
   return NICKNAME_RE.test(nickname);
 }
-

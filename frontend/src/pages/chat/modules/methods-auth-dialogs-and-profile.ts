@@ -63,7 +63,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         };
       });
 
-      if (this.activeDialog?.kind === 'private' && this.activeDialog?.targetUser?.id === user.id) {
+      if (this.activeDialog?.kind === 'direct' && this.activeDialog?.targetUser?.id === user.id) {
         this.activeDialog = {
           ...this.activeDialog,
           targetUser: {
@@ -157,8 +157,8 @@ export const chatMethodsAuthDialogsAndProfile = {
       const result = await ws.request('dialogs:general');
       if ((result as any)?.error || (result as any)?.ok === false) return null;
       return {
-        id: (result as any).dialogId,
-        kind: 'general',
+        id: (result as any).roomId,
+        kind: 'group',
         title: (result as any).title,
       } as Dialog;
     },
@@ -170,14 +170,14 @@ export const chatMethodsAuthDialogsAndProfile = {
         return null;
       }
       return {
-        id: (result as any).dialogId,
-        kind: 'private',
+        id: (result as any).roomId,
+        kind: 'direct',
         targetUser: (result as any).targetUser,
         title: (result as any).targetUser.name,
       } as Dialog;
     },
 
-    async loadHistory(this: any, dialogId: number, seq: number, beforeMessageId: number | null = null) {
+    async loadHistory(this: any, roomId: number, seq: number, beforeMessageId: number | null = null) {
       const isInitialLoad = !beforeMessageId;
       if (seq === this.historyLoadSeq) {
         if (isInitialLoad) {
@@ -191,7 +191,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       const prevScrollHeight = this.messagesEl?.scrollHeight || 0;
 
       try {
-        const result = await ws.request('dialogs:messages', dialogId, HISTORY_BATCH_SIZE, beforeMessageId);
+        const result = await ws.request('dialogs:messages', roomId, HISTORY_BATCH_SIZE, beforeMessageId);
         if (seq !== this.historyLoadSeq) return;
         if (!Array.isArray(result)) {
           this.error = 'Не удалось загрузить историю.';
@@ -249,8 +249,8 @@ export const chatMethodsAuthDialogsAndProfile = {
       await this.loadHistory(this.activeDialog.id, this.historyLoadSeq, oldestMessage.id);
     },
 
-    async joinDialog(this: any, dialogId: number) {
-      const result = await ws.request('chat:join', dialogId);
+    async joinDialog(this: any, roomId: number) {
+      const result = await ws.request('chat:join', roomId);
       if (!(result as any)?.ok) {
         this.error = 'Не удалось подключиться к диалогу.';
       }
@@ -278,7 +278,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       await this.joinDialog(dialog.id);
       if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
-      await this.catchUpDialogMessages(dialog.id);
+      await this.catchUpRoomMessages(dialog.id);
       if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
       await this.syncRouteForDialog(dialog, optionsRaw?.routeMode || 'push');
@@ -329,8 +329,8 @@ export const chatMethodsAuthDialogsAndProfile = {
     async selectDirectDialog(this: any, dialog: DirectDialog) {
       this.hapticTap();
       await this.selectDialog({
-        id: dialog.dialogId,
-        kind: 'private',
+        id: dialog.roomId,
+        kind: 'direct',
         targetUser: dialog.targetUser,
         title: dialog.targetUser.name,
       }, {routeMode: 'push'});
@@ -338,20 +338,20 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async onDeleteActiveDirect(this: any) {
-      if (this.activeDialog?.kind !== 'private') return;
+      if (this.activeDialog?.kind !== 'direct') return;
       if (this.directDeletePending) return;
       this.hapticTap();
       if (!window.confirm('Удалить директ полностью? Это удалит всю переписку у обоих участников.')) return;
 
       this.directDeletePending = true;
       try {
-        const dialogId = this.activeDialog.id;
-        const result = await ws.request('dialogs:delete', dialogId);
+        const roomId = this.activeDialog.id;
+        const result = await ws.request('dialogs:delete', roomId);
         if (!(result as any)?.ok) {
           this.error = 'Не удалось удалить директ.';
           return;
         }
-        await this.onDialogDeleted({dialogId});
+        await this.onDialogDeleted({roomId});
       } finally {
         this.directDeletePending = false;
       }

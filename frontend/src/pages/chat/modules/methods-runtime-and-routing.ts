@@ -700,7 +700,7 @@ export const chatMethodsRuntimeAndRouting = {
       const mode = modeRaw || 'push';
       if (mode === 'none') return;
 
-      const targetPath = dialog.kind === 'private'
+      const targetPath = dialog.kind === 'direct'
         ? this.buildDirectRoutePath(dialog.targetUser?.nickname)
         : '/chat';
       const currentPath = String(this.route?.path || '');
@@ -754,7 +754,7 @@ export const chatMethodsRuntimeAndRouting = {
 
       const path = String(this.route?.path || '');
       if (path === '/chat') {
-        if (this.activeDialog?.kind === 'general') return;
+        if (this.activeDialog?.kind === 'group') return;
         await this.selectGeneral({routeMode: 'none', closeMenu: false});
         return;
       }
@@ -763,7 +763,7 @@ export const chatMethodsRuntimeAndRouting = {
       if (!directNickname) return;
 
       if (
-        this.activeDialog?.kind === 'private'
+        this.activeDialog?.kind === 'direct'
         && this.normalizeRouteNickname(this.activeDialog?.targetUser?.nickname) === directNickname
       ) {
         return;

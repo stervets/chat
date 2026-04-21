@@ -1,5 +1,5 @@
 import {db} from '../../db.js';
-import {getDialogById, userCanAccessDialog} from '../../common/dialogs.js';
+import {getRoomById, userCanAccessRoom} from '../../common/rooms.js';
 import {
   ChatContext,
   MAX_MESSAGE_LENGTH,
@@ -12,19 +12,19 @@ import type {SocketState} from '../protocol.js';
 export class ChatMessagesService {
   constructor(private readonly ctx: ChatContext) {}
 
-  async chatSend(state: SocketState, dialogIdRaw: unknown, bodyRaw: unknown): Promise<ApiError | ApiOk<{
+  async chatSend(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown): Promise<ApiError | ApiOk<{
     message: ChatContextMessagePayload;
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    const dialogId = this.ctx.parseDialogId(dialogIdRaw);
-    if (!dialogId) {
-      return {ok: false, error: 'invalid_dialog'};
+    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
     }
 
-    const dialog = await getDialogById(dialogId);
-    if (!dialog || !userCanAccessDialog(state.user!.id, dialog)) {
+    const room = await getRoomById(roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
@@ -36,11 +36,11 @@ export class ChatMessagesService {
     const rawText = trimmed.length > MAX_MESSAGE_LENGTH
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
-    const compiled = await this.ctx.compileMessageForDialog(dialogId, rawText);
+    const compiled = await this.ctx.compileMessageForRoom(roomId, rawText);
 
     const created = await db.message.create({
       data: {
-        dialogId,
+        roomId,
         senderId: state.user!.id,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
@@ -50,13 +50,14 @@ export class ChatMessagesService {
         createdAt: true,
       },
     });
-    await this.ctx.pruneDialogOverflow(dialogId);
+    await this.ctx.pruneRoomOverflow(roomId);
 
     return {
       ok: true,
       message: {
         id: created.id,
-        dialogId,
+        roomId,
+        dialogId: roomId,
         authorId: state.user!.id,
         authorNickname: state.user!.nickname,
         authorName: state.user!.name,
@@ -86,7 +87,7 @@ export class ChatMessagesService {
       where: {id: messageId},
       select: {
         id: true,
-        dialogId: true,
+        roomId: true,
         senderId: true,
         rawText: true,
         renderedHtml: true,
@@ -102,8 +103,8 @@ export class ChatMessagesService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const dialog = await getDialogById(existing.dialogId);
-    if (!dialog || !userCanAccessDialog(state.user!.id, dialog)) {
+    const room = await getRoomById(existing.roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
@@ -115,7 +116,7 @@ export class ChatMessagesService {
     const rawText = trimmed.length > MAX_MESSAGE_LENGTH
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
-    const compiled = await this.ctx.compileMessageForDialog(existing.dialogId, rawText, existing.id);
+    const compiled = await this.ctx.compileMessageForRoom(existing.roomId, rawText, existing.id);
 
     const changed = compiled.rawText !== (existing.rawText || '') || compiled.renderedHtml !== (existing.renderedHtml || '');
     if (changed) {
@@ -133,7 +134,8 @@ export class ChatMessagesService {
       changed,
       message: {
         id: existing.id,
-        dialogId: existing.dialogId,
+        roomId: existing.roomId,
+        dialogId: existing.roomId,
         authorId: state.user!.id,
         authorNickname: state.user!.nickname,
         authorName: state.user!.name,
@@ -150,6 +152,7 @@ export class ChatMessagesService {
 
   async chatDelete(state: SocketState, messageIdRaw: unknown): Promise<ApiError | ApiOk<{
     changed: boolean;
+    roomId: number;
     dialogId: number;
     messageId: number;
   }>> {
@@ -164,7 +167,7 @@ export class ChatMessagesService {
       where: {id: messageId},
       select: {
         id: true,
-        dialogId: true,
+        roomId: true,
         senderId: true,
         rawText: true,
       },
@@ -178,8 +181,8 @@ export class ChatMessagesService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const dialog = await getDialogById(existing.dialogId);
-    if (!dialog || !userCanAccessDialog(state.user!.id, dialog)) {
+    const room = await getRoomById(existing.roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
@@ -193,7 +196,8 @@ export class ChatMessagesService {
     return {
       ok: true,
       changed: result.count > 0,
-      dialogId: existing.dialogId,
+      roomId: existing.roomId,
+      dialogId: existing.roomId,
       messageId,
     };
   }

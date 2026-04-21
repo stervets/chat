@@ -5,9 +5,12 @@ async function run() {
     truncate table
       message_reactions,
       messages,
+      game_session_players,
+      game_sessions,
+      rooms_users,
+      rooms,
       sessions,
       invites,
-      dialogs,
       users
     restart identity cascade
   `);

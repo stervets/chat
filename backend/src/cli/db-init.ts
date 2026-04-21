@@ -85,28 +85,44 @@ function runPrismaPush(connectionString: string) {
   }
 }
 
-function normalizePair(a: number, b: number) {
-  return a < b ? {memberAId: a, memberBId: b} : {memberAId: b, memberBId: a};
-}
-
-async function ensurePrivateDialog(prisma: PrismaClient, firstUserId: number, secondUserId: number) {
-  const pair = normalizePair(firstUserId, secondUserId);
-  const existing = await prisma.dialog.findFirst({
+async function ensureDirectRoom(prisma: PrismaClient, firstUserId: number, secondUserId: number) {
+  const existing = await prisma.room.findFirst({
     where: {
-      kind: 'private',
-      memberAId: pair.memberAId,
-      memberBId: pair.memberBId,
+      kind: 'direct',
+      roomUsers: {
+        some: {userId: firstUserId},
+      },
+      AND: [
+        {
+          roomUsers: {
+            some: {userId: secondUserId},
+          },
+        },
+        {
+          roomUsers: {
+            every: {
+              userId: {
+                in: [firstUserId, secondUserId],
+              },
+            },
+          },
+        },
+      ],
     },
     select: {id: true},
   });
 
   if (existing) return existing.id;
 
-  const created = await prisma.dialog.create({
+  const created = await prisma.room.create({
     data: {
-      kind: 'private',
-      memberAId: pair.memberAId,
-      memberBId: pair.memberBId,
+      kind: 'direct',
+      roomUsers: {
+        create: [
+          {userId: firstUserId},
+          {userId: secondUserId},
+        ],
+      },
     },
     select: {id: true},
   });
@@ -124,8 +140,9 @@ async function seedInitialData(connectionString: string) {
   });
 
   try {
-    await prisma.dialog.create({
-      data: {kind: 'general'},
+    const groupRoom = await prisma.room.create({
+      data: {kind: 'group', title: 'Общий чат'},
+      select: {id: true},
     });
 
     const [systemHash, ownerHash] = await Promise.all([
@@ -153,7 +170,15 @@ async function seedInitialData(connectionString: string) {
       select: {id: true},
     });
 
-    await ensurePrivateDialog(prisma, systemUser.id, ownerUser.id);
+    await prisma.roomUser.createMany({
+      data: [
+        {roomId: groupRoom.id, userId: systemUser.id},
+        {roomId: groupRoom.id, userId: ownerUser.id},
+      ],
+      skipDuplicates: true,
+    });
+
+    await ensureDirectRoom(prisma, systemUser.id, ownerUser.id);
   } finally {
     await prisma.$disconnect();
   }
@@ -168,7 +193,7 @@ async function run() {
   process.stdout.write('Applying Prisma schema...\n');
   runPrismaPush(config.db.url);
 
-  process.stdout.write('Seeding system users and default dialogs...\n');
+  process.stdout.write('Seeding system users and default rooms...\n');
   await seedInitialData(config.db.url);
 
   process.stdout.write('DB initialization completed.\n');

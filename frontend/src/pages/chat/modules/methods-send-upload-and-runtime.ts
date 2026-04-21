@@ -80,17 +80,17 @@ export const chatMethodsSendUploadAndRuntime = {
       };
     },
 
-    async catchUpDialogMessages(this: any, dialogIdRaw: unknown) {
-      const dialogId = Number(dialogIdRaw || 0);
-      if (!Number.isFinite(dialogId) || dialogId <= 0) return false;
+    async catchUpRoomMessages(this: any, roomIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return false;
       if (this.wsConnectionState !== 'connected') return false;
 
-      const result = await ws.request('dialogs:messages', dialogId, HISTORY_BATCH_SIZE);
+      const result = await ws.request('dialogs:messages', roomId, HISTORY_BATCH_SIZE);
       if (!Array.isArray(result)) return false;
 
       const incoming = result
         .map((row: any) => this.normalizeMessage(row))
-        .filter((message: Message) => Number(message.dialogId || 0) === dialogId);
+        .filter((message: Message) => Number(message.roomId || 0) === roomId);
       if (!incoming.length) return true;
 
       const currentMessages = Array.isArray(this.messages) ? this.messages : [];
@@ -302,7 +302,7 @@ export const chatMethodsSendUploadAndRuntime = {
       this.hapticConfirm();
       this.forceOwnScrollDown = true;
       this.scrollToBottomPinned();
-      if (this.activeDialog.kind === 'private') {
+      if (this.activeDialog.kind === 'direct') {
         await this.fetchDirectDialogs();
       }
       return true;
@@ -409,7 +409,7 @@ export const chatMethodsSendUploadAndRuntime = {
       }
 
       const ownMessage = normalized.authorId === this.me?.id;
-      const isCurrentDialogMessage = this.activeDialog?.id === normalized.dialogId;
+      const isCurrentDialogMessage = this.activeDialog?.id === normalized.roomId;
       const addressedToMe = this.isMessageAddressedToMe(normalized);
 
       if (!isCurrentDialogMessage) {
@@ -447,42 +447,42 @@ export const chatMethodsSendUploadAndRuntime = {
       if (ownMessage) {
         this.forceOwnScrollDown = false;
       }
-      if (this.activeDialog.kind === 'private') {
+      if (this.activeDialog.kind === 'direct') {
         await this.fetchDirectDialogs();
       }
     },
 
     onChatMessageUpdated(this: any, messageRaw: any) {
       const message = this.normalizeMessage(messageRaw);
-      if (this.activeDialog?.id !== message.dialogId) return;
+      if (this.activeDialog?.id !== message.roomId) return;
       this.applyMessageUpdate(message);
     },
 
     async onChatMessageDeleted(this: any, payload: any) {
-      const dialogId = Number(payload?.dialogId);
+      const roomId = Number(payload?.roomId);
       const messageId = Number(payload?.messageId);
-      if (!Number.isFinite(dialogId) || !Number.isFinite(messageId)) return;
+      if (!Number.isFinite(roomId) || !Number.isFinite(messageId)) return;
 
       const nextFreshIds = {...(this.freshMessageIds || {})};
       delete nextFreshIds[messageId];
       this.freshMessageIds = nextFreshIds;
 
-      if (this.activeDialog?.id === dialogId) {
-        this.applyMessageDelete(dialogId, messageId);
+      if (this.activeDialog?.id === roomId) {
+        this.applyMessageDelete(roomId, messageId);
       }
       await this.fetchDirectDialogs();
     },
 
     async onDialogDeleted(this: any, payload: any) {
-      const dialogId = Number(payload?.dialogId);
-      if (!Number.isFinite(dialogId)) return;
+      const roomId = Number(payload?.roomId);
+      if (!Number.isFinite(roomId)) return;
 
-      this.directDialogs = this.directDialogs.filter((dialog: DirectDialog) => dialog.dialogId !== dialogId);
-      this.notifications = this.notifications.filter((notification: NotificationItem) => notification.dialogId !== dialogId);
+      this.directDialogs = this.directDialogs.filter((dialog: DirectDialog) => dialog.roomId !== roomId);
+      this.notifications = this.notifications.filter((notification: NotificationItem) => notification.roomId !== roomId);
       this.notificationsMenuOpen = false;
       this.updateFaviconBlinkByUnread();
 
-      if (this.activeDialog?.id !== dialogId) {
+      if (this.activeDialog?.id !== roomId) {
         await this.fetchDirectDialogs();
         return;
       }
@@ -515,10 +515,10 @@ export const chatMethodsSendUploadAndRuntime = {
 
       const activeDialogId = Number(this.activeDialog?.id || 0);
       if (Number.isFinite(activeDialogId) && activeDialogId > 0) {
-        await this.catchUpDialogMessages(activeDialogId);
+        await this.catchUpRoomMessages(activeDialogId);
       }
 
-      if (this.activeDialog?.kind === 'private') {
+      if (this.activeDialog?.kind === 'direct') {
         await this.fetchDirectDialogs();
       }
       this.markVisibleMessageNotificationsRead();

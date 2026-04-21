@@ -18,7 +18,7 @@
 
           <button
             class="menu-item menu-item-general"
-            :class="{active: activeDialog?.kind === 'general'}"
+            :class="{active: activeDialog?.kind === 'group'}"
             @click="selectGeneral({haptic: true})"
           >
             Общий чат
@@ -31,11 +31,11 @@
               <div class="menu-list">
                 <button
                   v-for="dialog in sortedDirectDialogs"
-                  :key="dialog.dialogId"
+                  :key="dialog.roomId"
                   class="menu-item"
                   :class="{
-                    active: activeDialog?.kind === 'private' && activeDialog?.targetUser?.id === dialog.targetUser.id,
-                    'menu-item-unread': isDirectDialogUnread(dialog.dialogId),
+                    active: activeDialog?.kind === 'direct' && activeDialog?.targetUser?.id === dialog.targetUser.id,
+                    'menu-item-unread': isDirectDialogUnread(dialog.roomId),
                   }"
                   @click="selectDirectDialog(dialog)"
                 >
@@ -48,7 +48,7 @@
                     {{ dialog.targetUser.name }}
                   </span>
                   <span class="nickname">{{ formatUsername(dialog.targetUser.nickname) }}</span>
-                  <span v-if="isDirectDialogUnread(dialog.dialogId)" class="direct-unread-dot"/>
+                  <span v-if="isDirectDialogUnread(dialog.roomId)" class="direct-unread-dot"/>
                 </button>
               </div>
             </div>
@@ -68,7 +68,7 @@
                 v-for="user in filteredUsers"
                 :key="`search-${user.id}`"
                 class="menu-item user-item"
-                :class="{active: activeDialog?.kind === 'private' && activeDialog?.targetUser?.id === user.id}"
+                :class="{active: activeDialog?.kind === 'direct' && activeDialog?.targetUser?.id === user.id}"
                 @click="selectUser(user)"
               >
                 <span class="name" :style="getUserNameStyle(user)">
@@ -80,6 +80,7 @@
             </div>
 
             <NuxtLink class="menu-link" to="/invites">Инвайты</NuxtLink>
+            <NuxtLink class="menu-link" to="/games">Игры</NuxtLink>
             <button class="menu-logout" @click="onLogout">Выйти из аккаунта</button>
           </div>
         </div>
@@ -91,14 +92,14 @@
       <main
         class="chat-main"
         :class="{
-          'chat-main-general': activeDialog?.kind !== 'private',
-          'chat-main-private': activeDialog?.kind === 'private',
+          'chat-main-general': activeDialog?.kind !== 'direct',
+          'chat-main-private': activeDialog?.kind === 'direct',
         }"
       >
         <header class="chat-header">
           <button class="icon-btn" @click="toggleLeftMenu">☰</button>
           <!--button
-            v-if="activeDialog?.kind === 'private'"
+            v-if="activeDialog?.kind === 'direct'"
             class="header-center-btn"
             @click="onGoToGeneralChat"
           >
@@ -106,10 +107,10 @@
           </button-->
           <div class="header-text">
             <div class="title">
-              {{ activeDialog?.kind === 'general' ? 'Общий чат' : (activeDialog?.title || 'Чат') }}
+              {{ activeDialog?.kind === 'group' ? 'Общий чат' : (activeDialog?.title || 'Чат') }}
             </div>
             <div class="subtitle-row">
-              <div class="subtitle" v-if="activeDialog?.kind === 'private'">
+              <div class="subtitle" v-if="activeDialog?.kind === 'direct'">
                 директ
               </div>
               <div
@@ -122,7 +123,7 @@
             </div>
           </div>
           <button
-            v-if="activeDialog?.kind === 'private'"
+            v-if="activeDialog?.kind === 'direct'"
             class="icon-btn delete-direct-btn"
             :disabled="directDeletePending"
             title="Удалить директ"

@@ -24,5 +24,5 @@ export type SocketState = {
   userAgent: string | null;
   token: string | null;
   user: SocketUser | null;
-  dialogId: number | null;
+  roomId: number | null;
 };

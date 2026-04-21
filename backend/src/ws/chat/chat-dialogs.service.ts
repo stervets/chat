@@ -1,10 +1,11 @@
 import {db} from '../../db.js';
 import {
-  getDialogById,
-  getOrCreateGeneralDialog,
-  getOrCreatePrivateDialog,
-  userCanAccessDialog,
-} from '../../common/dialogs.js';
+  ensureUserInRoom,
+  getRoomById,
+  getOrCreateDirectRoom,
+  getOrCreateGroupRoom,
+  userCanAccessRoom,
+} from '../../common/rooms.js';
 import {DEFAULT_NICKNAME_COLOR} from '../../common/const.js';
 import {
   ChatContext,
@@ -19,24 +20,28 @@ export class ChatDialogsService {
   constructor(private readonly ctx: ChatContext) {}
 
   async dialogsGeneral(state: SocketState): Promise<ApiError | {
+    roomId: number;
     dialogId: number;
-    type: 'general';
+    type: 'group';
     title: string;
   }> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    const dialog = await getOrCreateGeneralDialog();
+    const room = await getOrCreateGroupRoom();
+    await ensureUserInRoom(room.id, state.user!.id);
     return {
-      dialogId: dialog.id,
-      type: 'general',
-      title: 'Общий чат',
+      roomId: room.id,
+      dialogId: room.id,
+      type: 'group',
+      title: room.title || 'Общий чат',
     };
   }
 
   async dialogsPrivate(state: SocketState, userIdRaw: unknown): Promise<ApiError | {
+    roomId: number;
     dialogId: number;
-    type: 'private';
+    type: 'direct';
     targetUser: PublicUser;
   }> {
     const authError = this.ctx.requireAuth(state);
@@ -66,15 +71,17 @@ export class ChatDialogsService {
       return {ok: false, error: 'user_not_found'};
     }
 
-    const dialog = await getOrCreatePrivateDialog(state.user!.id, userId);
+    const room = await getOrCreateDirectRoom(state.user!.id, userId);
     return {
-      dialogId: dialog.id,
-      type: 'private',
+      roomId: room.id,
+      dialogId: room.id,
+      type: 'direct',
       targetUser: this.ctx.toPublicUser(targetUser),
     };
   }
 
   async dialogsDirects(state: SocketState): Promise<ApiError | Array<{
+    roomId: number;
     dialogId: number;
     targetUser: PublicUser;
     lastMessageAt: string;
@@ -84,31 +91,25 @@ export class ChatDialogsService {
 
     const userId = state.user!.id;
 
-    const rows = await db.dialog.findMany({
+    const rows = await db.room.findMany({
       where: {
-        kind: 'private',
-        OR: [
-          {memberAId: userId},
-          {memberBId: userId},
-        ],
+        kind: 'direct',
+        roomUsers: {
+          some: {userId},
+        },
       },
       include: {
-        memberA: {
-          select: {
-            id: true,
-            nickname: true,
-            name: true,
-            nicknameColor: true,
-            donationBadgeUntil: true,
-          },
-        },
-        memberB: {
-          select: {
-            id: true,
-            nickname: true,
-            name: true,
-            nicknameColor: true,
-            donationBadgeUntil: true,
+        roomUsers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                nickname: true,
+                name: true,
+                nicknameColor: true,
+                donationBadgeUntil: true,
+              },
+            },
           },
         },
         messages: {
@@ -126,17 +127,20 @@ export class ChatDialogsService {
 
     const mapped = rows
       .map((row) => {
-        const targetUser = row.memberAId === userId ? row.memberB : row.memberA;
+        const targetMember = row.roomUsers.find((member) => member.userId !== userId);
+        const targetUser = targetMember?.user;
         const lastMessage = row.messages[0];
         if (!targetUser || !lastMessage) return null;
 
         return {
+          roomId: row.id,
           dialogId: row.id,
           lastMessageAt: lastMessage.createdAt.toISOString(),
           targetUser: this.ctx.toPublicUser(targetUser),
         };
       })
       .filter(Boolean) as Array<{
+      roomId: number;
       dialogId: number;
       targetUser: PublicUser;
       lastMessageAt: string;
@@ -156,11 +160,12 @@ export class ChatDialogsService {
     });
 
     if (systemUser && systemUser.id !== userId) {
-      const systemDialog = await getOrCreatePrivateDialog(userId, systemUser.id);
-      const alreadyPresent = mapped.some((item) => item.dialogId === systemDialog.id);
+      const systemRoom = await getOrCreateDirectRoom(userId, systemUser.id);
+      const alreadyPresent = mapped.some((item) => item.roomId === systemRoom.id);
       if (!alreadyPresent) {
         mapped.push({
-          dialogId: systemDialog.id,
+          roomId: systemRoom.id,
+          dialogId: systemRoom.id,
           targetUser: this.ctx.toPublicUser(systemUser),
           lastMessageAt: new Date(0).toISOString(),
         });
@@ -173,33 +178,33 @@ export class ChatDialogsService {
 
   async dialogsMessages(
     state: SocketState,
-    dialogIdRaw: unknown,
+    roomIdRaw: unknown,
     limitRaw?: unknown,
     beforeMessageIdRaw?: unknown,
   ): Promise<ApiError | any[]> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
-    const dialogId = this.ctx.parseDialogId(dialogIdRaw);
-    if (!dialogId) {
-      return {ok: false, error: 'invalid_dialog'};
+    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
     }
 
-    const dialog = await getDialogById(dialogId);
-    if (!dialog) {
-      return {ok: false, error: 'dialog_not_found'};
+    const room = await getRoomById(roomId);
+    if (!room) {
+      return {ok: false, error: 'room_not_found'};
     }
 
-    if (!userCanAccessDialog(state.user!.id, dialog)) {
+    if (!userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
-    await this.ctx.pruneDialogOverflow(dialogId);
+    await this.ctx.pruneRoomOverflow(roomId);
     const limit = this.ctx.parseLimit(limitRaw);
     const beforeMessageId = this.ctx.parseBeforeMessageId(beforeMessageIdRaw);
 
     const result = await db.message.findMany({
       where: {
-        dialogId,
+        roomId,
         ...(beforeMessageId ? {id: {lt: beforeMessageId}} : {}),
       },
       orderBy: [
@@ -220,8 +225,8 @@ export class ChatDialogsService {
       },
     });
 
-    const renderContext = await this.ctx.buildDialogMessageRenderContext(
-      dialogId,
+    const renderContext = await this.ctx.buildRoomMessageRenderContext(
+      roomId,
       result.map((row) => String(row.rawText || '')),
     );
 
@@ -234,7 +239,8 @@ export class ChatDialogsService {
 
       return {
         id: row.id,
-        dialogId: row.dialogId,
+        roomId: row.roomId,
+        dialogId: row.roomId,
         authorId: row.sender?.id || row.senderId || 0,
         authorNickname: row.sender?.nickname || 'deleted',
         authorName: row.sender?.name || row.sender?.nickname || 'deleted',
@@ -250,82 +256,84 @@ export class ChatDialogsService {
     return this.ctx.attachMessageReactions(ordered);
   }
 
-  async chatJoin(state: SocketState, dialogIdRaw: unknown): Promise<ApiError | ApiOk<{dialogId: number}>> {
+  async chatJoin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{roomId: number; dialogId: number}>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    const dialogId = this.ctx.parseDialogId(dialogIdRaw);
-    if (!dialogId) {
-      return {ok: false, error: 'invalid_dialog'};
+    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
     }
 
-    const dialog = await getDialogById(dialogId);
-    if (!dialog) {
-      return {ok: false, error: 'dialog_not_found'};
+    const room = await getRoomById(roomId);
+    if (!room) {
+      return {ok: false, error: 'room_not_found'};
     }
 
-    if (!userCanAccessDialog(state.user!.id, dialog)) {
+    if (!userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
-    state.dialogId = dialogId;
-    return {ok: true, dialogId};
+    state.roomId = roomId;
+    return {ok: true, roomId, dialogId: roomId};
   }
 
-  async dialogsDelete(state: SocketState, dialogIdRaw: unknown): Promise<ApiError | ApiOk<{
+  async dialogsDelete(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
     changed: boolean;
+    roomId: number;
     dialogId: number;
-    kind: 'private';
+    kind: 'direct';
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    const dialogId = this.ctx.parseDialogId(dialogIdRaw);
-    if (!dialogId) {
-      return {ok: false, error: 'invalid_dialog'};
+    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
     }
 
-    const dialog = await getDialogById(dialogId);
-    if (!dialog) {
-      return {ok: false, error: 'dialog_not_found'};
+    const room = await getRoomById(roomId);
+    if (!room) {
+      return {ok: false, error: 'room_not_found'};
     }
 
-    if (dialog.kind !== 'private') {
-      return {ok: false, error: 'invalid_dialog'};
+    if (room.kind !== 'direct') {
+      return {ok: false, error: 'invalid_room'};
     }
 
-    if (!userCanAccessDialog(state.user!.id, dialog)) {
+    if (!userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
     const systemUserId = await this.ctx.findSystemUserId();
-    if (systemUserId && (dialog.member_a === systemUserId || dialog.member_b === systemUserId)) {
+    if (systemUserId && room.member_user_ids.includes(systemUserId)) {
       return {ok: false, error: 'system_dialog_locked'};
     }
 
     const uploadRows = await db.message.findMany({
-      where: {dialogId},
+      where: {roomId},
       select: {
         rawText: true,
       },
     });
     const uploadNames = uploadRows.flatMap((row) => this.ctx.extractUploadNamesFromRawText(row.rawText || ''));
 
-    const result = await db.dialog.deleteMany({
-      where: {id: dialogId},
+    const result = await db.room.deleteMany({
+      where: {id: roomId},
     });
     if (result.count > 0) {
       await this.ctx.cleanupUnusedUploads(uploadNames);
     }
-    if (state.dialogId === dialogId) {
-      state.dialogId = null;
+    if (state.roomId === roomId) {
+      state.roomId = null;
     }
 
     return {
       ok: true,
       changed: result.count > 0,
-      dialogId,
-      kind: 'private',
+      roomId,
+      dialogId: roomId,
+      kind: 'direct',
     };
   }
 }

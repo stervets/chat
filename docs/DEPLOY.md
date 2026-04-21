@@ -1,49 +1,125 @@
-# Deploy (podman compose)
+# Deploy (Caddy + static frontend + backend)
 
-Минимальный каркас развёртывания находится в `deploy/`. Caddy используется **только на проде**.
+Текущая рабочая схема: Caddy + backend + PostgreSQL.
 
-## Быстрый старт
+## Топология
+
+- `caddy` — HTTPS reverse proxy + раздача статики фронта.
+- `backend` — NestJS (HTTP + WS) на `127.0.0.1:8816`.
+- `postgresql` — основная БД.
+
+`Caddyfile` проксирует на backend:
+- `/ws` и `/ws/*`
+- `/push` и `/push/*`
+- `/upload/image`
+- `/uploads` и `/uploads/*`
+
+Остальное раздаётся из `frontend/.output/public`.
+
+## Требования
+
+- Node.js 22+
+- Yarn
+- PostgreSQL 16+
+- Caddy 2
+
+## 1) Подготовка
 
 ```bash
-cd deploy
-podman compose up -d
+git clone <repo_url> /opt/chat
+cd /opt/chat
+
+yarn install
+cd backend && yarn install
+cd ../frontend && yarn install
 ```
 
-## Сервисы
+Создать конфиги:
+```bash
+cp backend/config.example.json backend/config.json
+cp frontend/config.example.json frontend/config.json
+```
 
-- `caddy` — внешний reverse proxy и TLS
-- `frontend` — Nuxt SPA на `8815`
-- `backend` — WS API на `8816`
+Минимум в `backend/config.json`:
+- `db.url`
+- `corsOrigins`
+- при необходимости `push.*` и `wgAdminSocketPath`.
 
-Caddy завершает HTTPS и проксирует:
+## 2) БД
 
-- `/ws*` → backend
-- `/push*` → backend
-- `/uploads*` → backend
-- остальное → frontend
+### Обновление существующей БД
 
-## Конфиг
+```bash
+cd /opt/chat/backend
+./update-db.sh
+```
 
-Скопируй `frontend/config.example.json` → `frontend/config.json` и
-`backend/config.example.json` → `backend/config.json`, затем отредактируй под прод.
+`update-db.sh` берёт `db.url` из `backend/config.json` и делает `prisma db push`.
 
-В `backend/config.json` обязательно укажи `db.url` до PostgreSQL.
+### Ручные SQL миграции
 
-## Что backend делает на старте
+Если в релизе есть SQL в `backend/prisma/manual/*.sql`:
+1. backup;
+2. остановить backend;
+3. применить SQL;
+4. собрать backend и поднять обратно.
 
-- проверяет подключение к PostgreSQL;
-- создаёт runtime partial unique indexes (если их нет):
-  - `dialogs_general_unique`
-  - `dialogs_private_unique`
-- запускает cleanup сообщений/uploads сразу при старте.
+Для King stage 1 актуален файл:
+- `backend/prisma/manual/20260421_king_stage1.sql`
 
-Важно: runtime indexes создаются кодом (`backend/src/db.ts`) как safety-step.
-Это не Prisma migration.
+После King stage 1 нужно засидить ботов:
+```bash
+cd /opt/chat/backend
+yarn bots:seed
+```
 
-## Cleanup scheduler
+### Новый стенд
 
-- после старта cleanup запускается раз в час;
-- привязки к timezone нет;
-- удаляются сообщения старше `messagesTtlDays`;
-- дополнительно держится лимит `5000` сообщений на диалог;
-- prune uploads старше TTL.
+```bash
+cd /opt/chat
+yarn run db:init
+```
+
+`db:init` пересоздаёт БД и сидит dev-данные (`marx/lisov`). Не запускать на живой базе.
+
+## 3) Сборка frontend
+
+```bash
+cd /opt/chat/frontend
+yarn run generate
+```
+
+## 4) Сборка/запуск backend
+
+```bash
+cd /opt/chat/backend
+yarn run build
+yarn run start
+```
+
+Обычно backend лучше держать как systemd service.
+
+## 5) Caddy
+
+Ориентир: `Caddyfile` в корне репы.
+
+Ключевая идея:
+- backend-роуты -> `127.0.0.1:8816`
+- SPA -> `frontend/.output/public` c fallback `/200.html`
+
+## 6) Чеклист релиза
+
+1. `git pull`
+2. backup БД
+3. применить ручные SQL миграции (если есть)
+4. `backend/update-db.sh` (если нужен `db push`)
+5. пересобрать frontend (`generate`)
+6. пересобрать/перезапустить backend
+7. при King stage 1: `yarn bots:seed`
+8. reload Caddy, если менялся `Caddyfile`
+
+## Нюансы
+
+- backend на старте делает `checkDb()` и падает, если БД недоступна;
+- runtime индексы `rooms_kind_idx` и `rooms_users_user_idx` создаются кодом на старте;
+- cleanup (messages/uploads) выполняется на старте и каждый час.

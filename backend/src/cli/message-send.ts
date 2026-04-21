@@ -36,7 +36,7 @@ function getBoolArg(name: string) {
 }
 
 function usage() {
-  process.stderr.write('Usage: yarn run message:send -- --from <nickname> --chat general --text "..." [--silent] [--ws-url ws://127.0.0.1:8816/ws]\n');
+  process.stderr.write('Usage: yarn run message:send -- --from <nickname> --chat group --text "..." [--silent] [--ws-url ws://127.0.0.1:8816/ws]\n');
 }
 
 function formatError(error: unknown) {
@@ -156,8 +156,8 @@ async function run() {
     process.exit(1);
   }
 
-  if (chat !== 'general') {
-    process.stderr.write(`Unsupported chat: ${chat}. Only --chat general is supported.\n`);
+  if (chat !== 'general' && chat !== 'group') {
+    process.stderr.write(`Unsupported chat: ${chat}. Only --chat group is supported.\n`);
     process.exit(1);
   }
 
@@ -174,20 +174,20 @@ async function run() {
     process.exit(1);
   }
 
-  const dialog = await db.dialog.findFirst({
-    where: {kind: 'general'},
+  const room = await db.room.findFirst({
+    where: {kind: 'group'},
     select: {
       id: true,
     },
   });
 
-  if (!dialog) {
-    process.stderr.write('General chat not found.\n');
+  if (!room) {
+    process.stderr.write('Group chat not found.\n');
     process.exit(1);
   }
 
   process.stdout.write(`user found: ${user.nickname} (id=${user.id})\n`);
-  process.stdout.write(`chat found: general (id=${dialog.id})\n`);
+  process.stdout.write(`chat found: group (id=${room.id})\n`);
   process.stdout.write(`ws target: ${wsUrl}\n`);
 
   let token = '';
@@ -210,8 +210,8 @@ async function run() {
     }
 
     const sendArgs = silent
-      ? [dialog.id, text, {silent: true}]
-      : [dialog.id, text];
+      ? [room.id, text, {silent: true}]
+      : [room.id, text];
 
     const sendResult = await wsCall(ws, 'chat:send', sendArgs);
     if (!sendResult?.ok) {

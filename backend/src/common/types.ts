@@ -8,18 +8,17 @@ export type User = {
   donationBadgeUntil: string | null;
 };
 
-export type DialogKind = 'general' | 'private';
+export type RoomKind = 'group' | 'direct' | 'game';
 
-export type Dialog = {
+export type Room = {
   id: Id;
-  kind: DialogKind;
-  memberA?: Id | null;
-  memberB?: Id | null;
+  kind: RoomKind;
+  title?: string | null;
 };
 
 export type Message = {
   id: Id;
-  dialogId: Id;
+  roomId: Id;
   senderId: Id;
   rawText: string;
   renderedHtml: string;

@@ -4,6 +4,7 @@ import {ChatAuthService} from './chat-auth.service.js';
 import {ChatContext} from './chat-context.js';
 import {ChatDialogsService} from './chat-dialogs.service.js';
 import {ChatInvitesService} from './chat-invites.service.js';
+import {ChatGamesService} from './chat-games.service.js';
 import {ChatMessagesService} from './chat-messages.service.js';
 import {ChatReactionsService} from './chat-reactions.service.js';
 import {ChatUsersService} from './chat-users.service.js';
@@ -14,6 +15,7 @@ export class ChatService {
   private readonly authService = new ChatAuthService(this.ctx);
   private readonly usersService = new ChatUsersService(this.ctx);
   private readonly invitesService = new ChatInvitesService(this.ctx);
+  private readonly gamesService = new ChatGamesService(this.ctx);
   private readonly dialogsService = new ChatDialogsService(this.ctx);
   private readonly messagesService = new ChatMessagesService(this.ctx);
   private readonly reactionsService = new ChatReactionsService(this.ctx);
@@ -74,6 +76,18 @@ export class ChatService {
     return this.invitesService.publicVpnDonation(state, payload);
   }
 
+  gamesSoloCreate(state: SocketState, payload: any) {
+    return this.gamesService.gamesSoloCreate(state, payload);
+  }
+
+  gamesSessionGet(state: SocketState, sessionIdRaw: unknown) {
+    return this.gamesService.gamesSessionGet(state, sessionIdRaw);
+  }
+
+  gamesAction(state: SocketState, payload: any) {
+    return this.gamesService.gamesAction(state, payload);
+  }
+
   dialogsGeneral(state: SocketState) {
     return this.dialogsService.dialogsGeneral(state);
   }
@@ -86,20 +100,20 @@ export class ChatService {
     return this.dialogsService.dialogsDirects(state);
   }
 
-  dialogsMessages(state: SocketState, dialogIdRaw: unknown, limitRaw?: unknown, beforeMessageIdRaw?: unknown) {
-    return this.dialogsService.dialogsMessages(state, dialogIdRaw, limitRaw, beforeMessageIdRaw);
+  dialogsMessages(state: SocketState, roomIdRaw: unknown, limitRaw?: unknown, beforeMessageIdRaw?: unknown) {
+    return this.dialogsService.dialogsMessages(state, roomIdRaw, limitRaw, beforeMessageIdRaw);
   }
 
-  chatJoin(state: SocketState, dialogIdRaw: unknown) {
-    return this.dialogsService.chatJoin(state, dialogIdRaw);
+  chatJoin(state: SocketState, roomIdRaw: unknown) {
+    return this.dialogsService.chatJoin(state, roomIdRaw);
   }
 
-  dialogsDelete(state: SocketState, dialogIdRaw: unknown) {
-    return this.dialogsService.dialogsDelete(state, dialogIdRaw);
+  dialogsDelete(state: SocketState, roomIdRaw: unknown) {
+    return this.dialogsService.dialogsDelete(state, roomIdRaw);
   }
 
-  chatSend(state: SocketState, dialogIdRaw: unknown, bodyRaw: unknown) {
-    return this.messagesService.chatSend(state, dialogIdRaw, bodyRaw);
+  chatSend(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown) {
+    return this.messagesService.chatSend(state, roomIdRaw, bodyRaw);
   }
 
   chatEdit(state: SocketState, messageIdRaw: unknown, bodyRaw: unknown) {

@@ -1,110 +1,64 @@
 # Smoke Test
 
-Тесты работают с PostgreSQL.
+Тесты рассчитаны на PostgreSQL и свободные порты `8815/8816`.
 
-## Быстрый smoke (headless)
+## Быстрый headless smoke
 
-Требуется установленный Playwright:
-
+Подготовка:
 ```bash
-cd /var/home/lisov/projects/chat
+cd /path/to/chat
 yarn install
 npx playwright install chromium
 ```
 
 Запуск:
-
 ```bash
 yarn run smoke
 ```
 
-Сценарий делает:
-1. Сброс БД.
-2. Создание первого пользователя через `user:bootstrap`.
-3. Запуск backend и frontend.
-4. Логин, создание инвайта, регистрация второго пользователя.
-5. Проверка обмена сообщениями в общем чате.
-6. Проверка приватного диалога между пользователями.
+Скрипт `scripts/smoke-e2e.js` делает автоматически:
+1. `cd backend && yarn run db:reset`.
+2. `user:bootstrap` (`lisov/123`).
+3. Поднимает `backend:dev` и `frontend:dev`.
+4. Логинит первого пользователя.
+5. Создаёт invite через `/invites`.
+6. Регистрирует второго пользователя.
+7. Проверяет обмен сообщениями в общем чате.
+8. Проверяет подсветку сообщения с `@all`.
+9. Проверяет приватный диалог между пользователями.
+10. Глушит процессы backend/frontend.
 
-## 1. Запуск backend
+## Отдельный login smoke
 
+Если нужно проверить только логин:
 ```bash
-cd /var/home/lisov/projects/chat/backend
-yarn install
-yarn run dev
+yarn run test:login
 ```
 
-Или из корня:
+Тест читает `scripts/config.json -> e2eLogin`.
+
+## Ручная проверка (минимум)
+
+1. Запуск сервисов:
 ```bash
-cd /var/home/lisov/projects/chat
 yarn run backend:dev
-```
-
-## 2. Запуск frontend
-
-```bash
-cd /var/home/lisov/projects/chat/frontend
-yarn install
-yarn run dev
-```
-
-Или из корня:
-```bash
-cd /var/home/lisov/projects/chat
 yarn run frontend:dev
 ```
 
-## 3. Создание invite через CLI
-
+2. Создать инвайт:
 ```bash
-cd /var/home/lisov/projects/chat/backend
 yarn run invite:create
 ```
 
-Несколько инвайтов:
-```bash
-yarn run invite:create -- --count 5
-```
+3. Зарегистрировать 2 пользователей (`/invite/<code>`), открыть `/chat` в двух окнах.
 
-Или из корня:
-```bash
-cd /var/home/lisov/projects/chat
-yarn run invite:create
-```
+4. Проверить:
+- доставка сообщений в `group`;
+- direct-диалог между пользователями;
+- edit/delete/reactions;
+- logout -> редирект на `/login`.
 
-## 4. Регистрация двух пользователей
-
-- Открой `http://localhost:8815/invite/<code>` в обычном браузере, зарегистрируй пользователя.
-- Открой второе окно (инкогнито) и зарегистрируй второго пользователя по другому инвайту.
-
-## 5. Проверка /invites
-
-- В первом окне открой `/invites`.
-- Нажми `Создать инвайт`.
-- Новый код должен появиться в списке.
-
-## 6. Проверка общего чата
-
-- В обоих окнах открой `/chat`.
-- Отправь сообщение в «Общий чат» из первого окна.
-- Убедись, что оно появилось во втором окне (WS доставка).
-
-## 7. Проверка приватки
-
-- В первом окне выбери пользователя из списка.
-- Отправь сообщение.
-- Во втором окне открой диалог с первым пользователем и проверь доставку.
-
-## 8. Проверка logout
-
-- Нажми `Выйти` в заголовке чата.
-- Должен произойти редирект на `/login`.
-- Повторно открыв `/chat`, должен быть редирект на `/login`.
-
-## 9. Проверка доступа к чужому dialogId
-
-- Возьми `dialogId` приватного диалога пользователя A и B.
-- Зайди под третьим пользователем и отправь WS запрос:
-  - `["dialogs:messages",[<dialogId>,100],"frontend","backend","req-1"]`
-- Ожидается ответ:
-  - `["[res]",[{"ok":false,"error":"forbidden"}],"backend","frontend","req-1"]`
+5. Проверка доступа к чужой комнате:
+- под третьим пользователем отправить
+  `['dialogs:messages', [<roomId>, 100], 'frontend', 'backend', 'req-1']`
+- ожидаемый ответ: `{ok:false, error:'forbidden'}`.

@@ -1,0 +1,347 @@
+.page-king-match {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 22% 12%, rgba(180, 128, 74, 0.2), transparent 40%),
+    radial-gradient(circle at 80% 24%, rgba(95, 133, 182, 0.23), transparent 45%),
+    linear-gradient(180deg, #0c1621 0%, #121f2f 60%, #0f1b28 100%);
+  color: #edf3ff;
+  padding: 10px 10px 18px;
+}
+
+.match-shell {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.match-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.match-title {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.match-round {
+  margin-top: 4px;
+  color: #b8c8de;
+  font-size: 13px;
+}
+
+.back-btn {
+  border: 1px solid rgba(229, 236, 246, 0.28);
+  border-radius: 10px;
+  background: rgba(16, 24, 35, 0.5);
+  color: #e7eefb;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+.score-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.score-item {
+  background: rgba(9, 16, 26, 0.55);
+  border: 1px solid rgba(178, 207, 247, 0.2);
+  border-radius: 10px;
+  padding: 6px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.score-item.current {
+  border-color: rgba(235, 201, 104, 0.76);
+  box-shadow: 0 0 0 1px rgba(235, 201, 104, 0.45) inset;
+}
+
+.score-name {
+  font-size: 11px;
+  color: #99adca;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.score-total {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.opponents-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.opponent-pill {
+  border-radius: 11px;
+  border: 1px solid rgba(172, 200, 234, 0.2);
+  background: rgba(14, 23, 35, 0.62);
+  padding: 8px 6px;
+}
+
+.opponent-pill.turn {
+  border-color: rgba(237, 207, 128, 0.86);
+}
+
+.opponent-name {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.opponent-cards {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #a0b4d1;
+}
+
+.trick-area {
+  border: 1px solid rgba(179, 206, 237, 0.22);
+  background: rgba(10, 19, 31, 0.58);
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.trick-meta {
+  display: flex;
+  justify-content: space-between;
+  color: #bad0ec;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.trick-grid {
+  position: relative;
+  min-height: 210px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.trick-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.trick-slot .slot-name {
+  font-size: 11px;
+  color: #a8bfd9;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trick-slot.top {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.trick-slot.left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.trick-slot.right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.trick-slot.bottom {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.card {
+  width: 62px;
+  height: 95px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(240, 246, 255, 0.16);
+  background: rgba(6, 11, 17, 0.6);
+}
+
+.action-area {
+  border-radius: 12px;
+  border: 1px solid rgba(165, 193, 224, 0.25);
+  background: rgba(14, 23, 35, 0.5);
+  padding: 9px 10px;
+}
+
+.action-area.active {
+  border-color: rgba(238, 204, 110, 0.74);
+  box-shadow: 0 0 0 1px rgba(238, 204, 110, 0.34) inset;
+}
+
+.action-main {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.action-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #a8bbd5;
+}
+
+.hand-area {
+  border-radius: 14px;
+  border: 1px solid rgba(188, 213, 242, 0.25);
+  background: rgba(9, 16, 27, 0.6);
+  padding: 8px 8px 10px;
+}
+
+.hand-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.hand-card {
+  flex: 0 0 auto;
+  border: 1px solid rgba(214, 228, 247, 0.24);
+  border-radius: 8px;
+  padding: 0;
+  background: rgba(13, 21, 32, 0.72);
+  transition: transform 0.12s ease;
+}
+
+.hand-card.selected {
+  transform: translateY(-6px);
+  border-color: rgba(239, 207, 113, 0.9);
+}
+
+.hand-card img {
+  width: 74px;
+  height: 112px;
+  display: block;
+  border-radius: 7px;
+}
+
+.play-btn {
+  margin-top: 8px;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #f6d988, #ddb34e);
+  color: #12253a;
+  font-size: 16px;
+  font-weight: 800;
+  padding: 12px;
+}
+
+.play-btn:disabled {
+  opacity: 0.55;
+}
+
+.chat-sheet {
+  border-radius: 12px;
+  border: 1px solid rgba(170, 196, 223, 0.23);
+  background: rgba(10, 17, 28, 0.58);
+}
+
+.chat-toggle {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #d9e4f5;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px;
+  text-align: left;
+}
+
+.chat-content {
+  border-top: 1px solid rgba(164, 189, 216, 0.2);
+  padding: 8px;
+}
+
+.chat-list {
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.chat-message {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.chat-message .author {
+  font-weight: 700;
+}
+
+.chat-send {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.chat-send input {
+  border: 1px solid rgba(167, 193, 221, 0.26);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(7, 13, 22, 0.58);
+  color: #e5efff;
+  font-size: 13px;
+}
+
+.chat-send button {
+  border: 1px solid rgba(190, 214, 239, 0.34);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(20, 33, 48, 0.7);
+  color: #e4ecf9;
+}
+
+.state-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+}
+
+.error {
+  color: #ffd0d0;
+}
+
+@media (min-width: 768px) {
+  .match-shell {
+    max-width: 760px;
+  }
+
+  .card {
+    width: 72px;
+    height: 108px;
+  }
+
+  .hand-card img {
+    width: 84px;
+    height: 128px;
+  }
+}

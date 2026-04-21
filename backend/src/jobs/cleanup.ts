@@ -2,7 +2,7 @@ import {Prisma} from '@prisma/client';
 import {db} from '../db.js';
 import {pruneExpiredUploads} from '../common/uploads.js';
 
-const MAX_MESSAGES_PER_DIALOG = 5000;
+const MAX_MESSAGES_PER_ROOM = 5000;
 const UPLOADS_TTL_DAYS = 30;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -20,10 +20,10 @@ export async function runMessagesCleanup(logger: CleanupLogger = console as Clea
           select id from (
             select
               id,
-              row_number() over (partition by dialog_id order by created_at desc, id desc) as rn
+              row_number() over (partition by room_id order by created_at desc, id desc) as rn
             from messages
           ) ranked
-          where rn > ${MAX_MESSAGES_PER_DIALOG}
+          where rn > ${MAX_MESSAGES_PER_ROOM}
         )
       `
     );
@@ -35,7 +35,7 @@ export async function runMessagesCleanup(logger: CleanupLogger = console as Clea
       deleted: deletedByLimit,
       uploadsDeleted,
       uploadsTtlDays: UPLOADS_TTL_DAYS,
-      maxMessagesPerDialog: MAX_MESSAGES_PER_DIALOG,
+      maxMessagesPerRoom: MAX_MESSAGES_PER_ROOM,
     }, 'Messages cleanup completed');
   } catch (err) {
     logger.error({err}, 'Messages cleanup failed');

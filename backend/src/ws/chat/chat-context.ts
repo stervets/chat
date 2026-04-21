@@ -8,6 +8,7 @@ import {
   type CompileMessageFormatOptions,
   type MessageLinkPreview,
 } from '../../common/message-format.js';
+import {ensureUserInGroupRooms, getOrCreateDirectRoom} from '../../common/rooms.js';
 import {deleteUploadFile, sanitizeUploadName} from '../../common/uploads.js';
 import type {SocketState} from '../protocol.js';
 
@@ -18,7 +19,7 @@ export const MIN_PASSWORD_LENGTH = 3;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const DONATION_BADGE_TTL_DAYS = 30;
 export const MAX_MESSAGES_PAGE_LIMIT = 100;
-export const MAX_MESSAGES_PER_DIALOG = 5000;
+export const MAX_MESSAGES_PER_ROOM = 5000;
 export const SYSTEM_NICKNAME = 'marx';
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
@@ -74,7 +75,7 @@ type TimeRefCandidate = {
   tooltip: string;
 };
 
-type DialogMessageRenderContext = {
+type RoomMessageRenderContext = {
   mentionsByNickname: Map<string, {
     nickname: string;
     name: string;
@@ -99,9 +100,10 @@ export class ChatContext {
     return null;
   }
 
-  parseDialogId(value: unknown) {
-    const dialogId = Number.parseInt(String(value ?? ''), 10);
-    return Number.isFinite(dialogId) ? dialogId : null;
+  parseRoomId(value: unknown) {
+    const roomId = Number.parseInt(String(value ?? ''), 10);
+    if (!Number.isFinite(roomId) || roomId <= 0) return null;
+    return roomId;
   }
 
   parseLimit(value: unknown) {
@@ -116,7 +118,7 @@ export class ChatContext {
     return parsed;
   }
 
-  async pruneDialogOverflow(dialogId: number) {
+  async pruneRoomOverflow(roomId: number) {
     await db.$executeRaw(
       Prisma.sql`
         delete from messages
@@ -126,9 +128,9 @@ export class ChatContext {
               id,
               row_number() over (order by created_at desc, id desc) as rn
             from messages
-            where dialog_id = ${dialogId}
+            where room_id = ${roomId}
           ) ranked
-          where rn > ${MAX_MESSAGES_PER_DIALOG}
+          where rn > ${MAX_MESSAGES_PER_ROOM}
         )
       `,
     );
@@ -243,7 +245,7 @@ export class ChatContext {
     return `${this.formatUsername(authorNicknameRaw)}: ${preview || '(пусто)'}`;
   }
 
-  async buildDialogMessageRenderContext(dialogId: number, rawTexts: string[]) {
+  async buildRoomMessageRenderContext(roomId: number, rawTexts: string[]) {
     const mentionNicknames = new Set<string>();
     const timeLabels = new Set<string>();
 
@@ -289,7 +291,7 @@ export class ChatContext {
     if (timeLabels.size > 0) {
       const timelineRows = await db.message.findMany({
         where: {
-          dialogId,
+          roomId,
         },
         orderBy: [
           {createdAt: 'asc'},
@@ -326,7 +328,7 @@ export class ChatContext {
       });
     }
 
-    const context: DialogMessageRenderContext = {
+    const context: RoomMessageRenderContext = {
       mentionsByNickname,
       timeCandidatesByLabel,
       messageIndexById,
@@ -336,7 +338,7 @@ export class ChatContext {
     return context;
   }
 
-  buildCompileMessageOptions(context: DialogMessageRenderContext, sourceMessageId: number | null) {
+  buildCompileMessageOptions(context: RoomMessageRenderContext, sourceMessageId: number | null) {
     const sourceIndex = sourceMessageId && context.messageIndexById.has(sourceMessageId)
       ? Number(context.messageIndexById.get(sourceMessageId))
       : Number(context.timelineSize || 0);
@@ -375,15 +377,15 @@ export class ChatContext {
     return options;
   }
 
-  compileMessageWithContext(rawText: string, context: DialogMessageRenderContext, sourceMessageId: number | null) {
+  compileMessageWithContext(rawText: string, context: RoomMessageRenderContext, sourceMessageId: number | null) {
     return compileMessageFormat(
       rawText,
       this.buildCompileMessageOptions(context, sourceMessageId),
     );
   }
 
-  async compileMessageForDialog(dialogId: number, rawText: string, sourceMessageId: number | null = null) {
-    const context = await this.buildDialogMessageRenderContext(dialogId, [rawText]);
+  async compileMessageForRoom(roomId: number, rawText: string, sourceMessageId: number | null = null) {
+    const context = await this.buildRoomMessageRenderContext(roomId, [rawText]);
     return this.compileMessageWithContext(rawText, context, sourceMessageId);
   }
 
@@ -397,12 +399,6 @@ export class ChatContext {
     return {ok: true, value};
   }
 
-  normalizePairIds(firstUserId: number, secondUserId: number) {
-    return firstUserId < secondUserId
-      ? {memberAId: firstUserId, memberBId: secondUserId}
-      : {memberAId: secondUserId, memberBId: firstUserId};
-  }
-
   async findSystemUserId() {
     const systemUser = await db.user.findUnique({
       where: {
@@ -414,31 +410,12 @@ export class ChatContext {
   }
 
   async ensureSystemDirectForUser(userId: number) {
+    await ensureUserInGroupRooms(userId);
+
     const systemUserId = await this.findSystemUserId();
     if (!systemUserId || systemUserId === userId) return;
 
-    const pair = this.normalizePairIds(systemUserId, userId);
-    const existing = await db.dialog.findFirst({
-      where: {
-        kind: 'private',
-        memberAId: pair.memberAId,
-        memberBId: pair.memberBId,
-      },
-      select: {id: true},
-    });
-    if (existing) return;
-
-    try {
-      await db.dialog.create({
-        data: {
-          kind: 'private',
-          memberAId: pair.memberAId,
-          memberBId: pair.memberBId,
-        },
-      });
-    } catch {
-      // race-safe: ignore unique conflicts
-    }
+    await getOrCreateDirectRoom(systemUserId, userId);
   }
 
   async loadMessageReactions(messageId: number): Promise<MessageReaction[]> {
@@ -536,7 +513,8 @@ export class ChatContext {
 
 export type ChatContextMessagePayload = {
   id: number;
-  dialogId: number;
+  roomId: number;
+  dialogId?: number;
   authorId: number;
   authorNickname: string;
   authorName: string;

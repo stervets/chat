@@ -1,5 +1,5 @@
 import {db} from '../../db.js';
-import {getDialogById, userCanAccessDialog} from '../../common/dialogs.js';
+import {getRoomById, userCanAccessRoom} from '../../common/rooms.js';
 import {ChatContext, type ApiError, type ApiOk, type MessageReaction, type PublicUser} from './chat-context.js';
 import type {SocketState} from '../protocol.js';
 
@@ -7,12 +7,14 @@ export class ChatReactionsService {
   constructor(private readonly ctx: ChatContext) {}
 
   async chatReact(state: SocketState, messageIdRaw: unknown, reactionRaw: unknown): Promise<ApiError | ApiOk<{
+    roomId: number;
     dialogId: number;
     messageId: number;
     reactions: MessageReaction[];
     changed: boolean;
     notify: null | {
       userId: number;
+      roomId: number;
       dialogId: number;
       messageId: number;
       emoji: string;
@@ -38,7 +40,7 @@ export class ChatReactionsService {
       where: {id: messageId},
       select: {
         id: true,
-        dialogId: true,
+        roomId: true,
         senderId: true,
         rawText: true,
       },
@@ -48,8 +50,8 @@ export class ChatReactionsService {
       return {ok: false, error: 'message_not_found'};
     }
 
-    const dialog = await getDialogById(message.dialogId);
-    if (!dialog || !userCanAccessDialog(state.user!.id, dialog)) {
+    const room = await getRoomById(message.roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
@@ -121,14 +123,16 @@ export class ChatReactionsService {
 
     return {
       ok: true,
-      dialogId: message.dialogId,
+      roomId: message.roomId,
+      dialogId: message.roomId,
       messageId,
       reactions,
       changed,
       notify: shouldNotify
         ? {
           userId: Number(message.senderId),
-          dialogId: message.dialogId,
+          roomId: message.roomId,
+          dialogId: message.roomId,
           messageId,
           emoji: finalEmoji!,
           actor: {

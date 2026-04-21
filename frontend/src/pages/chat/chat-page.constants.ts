@@ -1,7 +1,7 @@
 import type {User} from '@/composables/types';
 
 export type DirectDialog = {
-  dialogId: number;
+  roomId: number;
   targetUser: User;
   lastMessageAt: string;
 };
@@ -15,8 +15,8 @@ export type LinkPreview = {
 
 export type NotificationItem = {
   id: number;
-  dialogId: number;
-  dialogKind: 'general' | 'private' | 'unknown';
+  roomId: number;
+  roomKind: 'group' | 'direct' | 'unknown';
   notificationType: 'message' | 'reaction';
   authorId: number;
   authorName: string;

@@ -16,10 +16,10 @@ import type {
   NotificationItem,
 } from './shared';
 export const chatMethodsComposerAndVirtual = {
-    isDirectDialogUnread(this: any, dialogIdRaw: unknown) {
-      const dialogId = Number(dialogIdRaw || 0);
-      if (!Number.isFinite(dialogId) || dialogId <= 0) return false;
-      return !!this.unreadDirectDialogIds?.[dialogId];
+    isDirectDialogUnread(this: any, roomIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return false;
+      return !!this.unreadDirectDialogIds?.[roomId];
     },
 
     estimateMessageHeight(this: any, message: Message) {
@@ -507,7 +507,7 @@ export const chatMethodsComposerAndVirtual = {
 
     canOpenDirectFromMessage(this: any, message: Message) {
       if (!this.me) return false;
-      if (this.activeDialog?.kind === 'private') return false;
+      if (this.activeDialog?.kind === 'direct') return false;
       return this.me.id !== message.authorId;
     },
 
@@ -555,14 +555,14 @@ export const chatMethodsComposerAndVirtual = {
     applyMessageUpdate(this: any, messageRaw: any) {
       const message = this.normalizeMessage(messageRaw);
       this.messages = this.messages.map((item: Message) => {
-        if (item.id !== message.id || item.dialogId !== message.dialogId) return item;
+        if (item.id !== message.id || item.roomId !== message.roomId) return item;
         return message;
       });
       this.resetMessagePreviewCache();
       this.notifyMessagesChanged();
     },
 
-    applyMessageDelete(this: any, dialogId: number, messageId: number) {
+    applyMessageDelete(this: any, roomId: number, messageId: number) {
       if (this.editingMessageId === messageId) {
         this.cancelMessageEdit();
       }
@@ -570,7 +570,7 @@ export const chatMethodsComposerAndVirtual = {
         this.reactionPickerMessageId = null;
       }
       this.messages = this.messages.filter((message: Message) => {
-        return !(message.dialogId === dialogId && message.id === messageId);
+        return !(message.roomId === roomId && message.id === messageId);
       });
       this.resetMessagePreviewCache();
       this.notifyMessagesChanged();
@@ -614,7 +614,7 @@ export const chatMethodsComposerAndVirtual = {
           return;
         }
 
-        this.applyMessageDelete((result as any).dialogId, (result as any).messageId);
+        this.applyMessageDelete((result as any).roomId, (result as any).messageId);
         await this.fetchDirectDialogs();
       } finally {
         this.messageActionPendingId = null;

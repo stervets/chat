@@ -294,29 +294,67 @@ export class ChatInvitesService {
           select: {id: true},
         });
 
+        const groupRooms = await tx.room.findMany({
+          where: {kind: 'group'},
+          select: {id: true},
+        });
+        if (groupRooms.length > 0) {
+          await tx.roomUser.createMany({
+            data: groupRooms.map((room) => ({
+              roomId: room.id,
+              userId: user.id,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
         if (systemUser && systemUser.id !== user.id) {
-          const pair = this.ctx.normalizePairIds(systemUser.id, user.id);
-          const existingSystemDialog = await tx.dialog.findFirst({
+          const existingSystemRoom = await tx.room.findFirst({
             where: {
-              kind: 'private',
-              memberAId: pair.memberAId,
-              memberBId: pair.memberBId,
+              kind: 'direct',
+              roomUsers: {
+                some: {userId: systemUser.id},
+              },
+              AND: [
+                {
+                  roomUsers: {
+                    some: {userId: user.id},
+                  },
+                },
+                {
+                  roomUsers: {
+                    every: {
+                      userId: {
+                        in: [systemUser.id, user.id],
+                      },
+                    },
+                  },
+                },
+              ],
             },
             select: {id: true},
           });
 
-          if (!existingSystemDialog) {
-            try {
-              await tx.dialog.create({
-                data: {
-                  kind: 'private',
-                  memberAId: pair.memberAId,
-                  memberBId: pair.memberBId,
+          if (!existingSystemRoom) {
+            const createdRoom = await tx.room.create({
+              data: {
+                kind: 'direct',
+              },
+              select: {id: true},
+            });
+            await tx.roomUser.createMany({
+              data: [
+                {
+                  roomId: createdRoom.id,
+                  userId: systemUser.id,
                 },
-              });
-            } catch {
-              // ignore concurrent create race
-            }
+                {
+                  roomId: createdRoom.id,
+                  userId: user.id,
+                },
+              ],
+              skipDuplicates: true,
+            });
           }
         }
 

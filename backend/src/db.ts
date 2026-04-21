@@ -26,7 +26,7 @@ async function ensureNicknameModel() {
   await db.$executeRawUnsafe(
     `update users
      set nickname = 'user_' || id::text
-     where nickname !~ '^[a-z0-9_-]{3,32}$'`
+     where nickname !~ '^!?[a-z0-9_-]{3,32}$'`
   );
 
   await db.$executeRawUnsafe(
@@ -75,7 +75,7 @@ async function ensureNicknameModel() {
   await db.$executeRawUnsafe(
     `alter table users
      add constraint users_nickname_format_check
-     check (nickname ~ '^[a-z0-9_-]{3,32}$')`
+     check (nickname ~ '^!?[a-z0-9_-]{3,32}$')`
   );
 
   await db.$executeRawUnsafe(
@@ -90,15 +90,21 @@ async function ensureRuntimeIndexes() {
   if (runtimeIndexesReady) return;
 
   await db.$executeRawUnsafe(
-    `create unique index if not exists dialogs_general_unique
-     on dialogs(kind)
-     where kind = 'general'`
+    `drop index if exists dialogs_general_unique`
   );
 
   await db.$executeRawUnsafe(
-    `create unique index if not exists dialogs_private_unique
-     on dialogs(kind, member_a, member_b)
-     where kind = 'private' and member_a is not null and member_b is not null`
+    `drop index if exists dialogs_private_unique`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists rooms_kind_idx
+     on rooms(kind)`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists rooms_users_user_idx
+     on rooms_users(user_id)`
   );
 
   runtimeIndexesReady = true;

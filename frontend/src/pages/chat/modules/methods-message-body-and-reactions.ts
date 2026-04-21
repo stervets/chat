@@ -171,7 +171,7 @@ export const chatMethodsMessageBodyAndReactions = {
         return false;
       }
 
-      this.applyMessageReactions((result as any).dialogId, (result as any).messageId, (result as any).reactions);
+      this.applyMessageReactions((result as any).roomId, (result as any).messageId, (result as any).reactions);
       return true;
     },
 
@@ -191,10 +191,10 @@ export const chatMethodsMessageBodyAndReactions = {
       await this.sendReaction(message, nextEmoji);
     },
 
-    applyMessageReactions(this: any, dialogId: number, messageId: number, reactionsRaw: unknown) {
+    applyMessageReactions(this: any, roomId: number, messageId: number, reactionsRaw: unknown) {
       const reactions = Array.isArray(reactionsRaw) ? reactionsRaw : [];
       this.messages = this.messages.map((message: Message) => {
-        if (message.id !== messageId || message.dialogId !== dialogId) return message;
+        if (message.id !== messageId || message.roomId !== roomId) return message;
         return {
           ...message,
           reactions,
@@ -204,10 +204,10 @@ export const chatMethodsMessageBodyAndReactions = {
     },
 
     onChatReactions(this: any, payload: any) {
-      const dialogId = Number(payload?.dialogId);
+      const roomId = Number(payload?.roomId);
       const messageId = Number(payload?.messageId);
-      if (!Number.isFinite(dialogId) || !Number.isFinite(messageId)) return;
-      this.applyMessageReactions(dialogId, messageId, payload?.reactions);
+      if (!Number.isFinite(roomId) || !Number.isFinite(messageId)) return;
+      this.applyMessageReactions(roomId, messageId, payload?.reactions);
     },
 
     onChatReactionNotify(this: any, payload: any) {

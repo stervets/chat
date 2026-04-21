@@ -1,66 +1,93 @@
 # Architecture
 
-Проект разделён на два независимых приложения:
+Проект состоит из двух приложений:
+- `frontend/` — Nuxt 3 SPA (mobile-first).
+- `backend/` — NestJS HTTP + WebSocket API.
 
-- `frontend/` — Nuxt 3 SPA, мобильный first, Element Plus + Tailwind + Less
-- `backend/` — NestJS WebSocket API + HTTP upload endpoints, PostgreSQL (Prisma)
-
-Конфигурация хранится в JSON (`frontend/config.json`, `backend/config.json`),
-примеры — `frontend/config.example.json`, `backend/config.example.json`.
+Конфиг хранится в JSON:
+- `frontend/config.json`
+- `backend/config.json`
+- `scripts/config.json`
 
 ## Backend
 
-- `src/main.ts` — запуск HTTP + WS
-- `src/config.ts` — конфигурация и env
-- `src/db.ts` — Prisma client + runtime DB checks + runtime indexes
-- `src/ws/chat.gateway.ts` — WebSocket транспорт и dispatch команд
-- `src/ws/chat.service.ts` — бизнес-логика чата
-- `src/http/uploads.controller.ts` — загрузка/выдача файлов
-- `src/jobs/cleanup.ts` — TTL cleanup сообщений и uploads (run on startup + hourly)
-- при старте backend проверяет PostgreSQL и завершает процесс, если БД недоступна
+Ключевые файлы:
+- `src/main.ts` — старт приложения, CORS, WS adapter, DB check, cleanup.
+- `src/config.ts` — загрузка `backend/config.json`.
+- `src/db.ts` — Prisma client + runtime DB checks/indexes.
+- `src/ws/chat.gateway.ts` — WS транспорт и маршрутизация команд.
+- `src/ws/chat/chat.service.ts` — фасад над auth/users/invites/dialogs/messages/reactions/games.
+- `src/http/uploads.controller.ts` — `POST /upload/image`, `GET /uploads/:name`.
+- `src/http/push.controller.ts` — `/push/public-key|subscribe|unsubscribe|test`.
+- `src/jobs/cleanup.ts` — cleanup при старте и раз в час.
 
-### Доменные ограничения
+### Модель данных
 
-- регистрация только по invite-кодам
-- логин по `nickname + password`
-- auth на session token-ах (не JWT и не cookie session)
-- общий чат и приватные диалоги
-- сообщения хранятся как `raw_text` + серверно скомпилированный `rendered_html`
-- `raw_text` нужен для редактирования; `rendered_html` клиент рендерит как готовый HTML
-- хранение сообщений максимум N дней (`messagesTtlDays` в конфиге; cleanup job раз в час + запуск при старте)
-- upload авторизуется через `Authorization: Bearer <session_token>`
+Чатовая модель уже на `rooms`:
+- `rooms.kind = group | direct | game`
+- участники: `rooms_users`
+- сообщения: `messages.room_id`
 
-## Dialogs & Messages
+Игровая модель:
+- `game_sessions`
+- `game_session_players`
 
-- общий чат хранится как `dialogs.kind = 'general'`
-- приватные диалоги как `dialogs.kind = 'private'` с парой `member_a/member_b`
-- история/отправка/редактирование/удаление сообщений идут через WebSocket
-- HTTP используется только для upload/download файлов (`/upload/image`, `/uploads/:name`)
+### Runtime гарантии
 
-## Runtime Indexes
+В `src/db.ts` на старте:
+- проверяется подключение к PostgreSQL;
+- нормализуется `users.nickname` + constraints;
+- добавляется `users.donation_badge_until`, если нет;
+- создаются runtime индексы `rooms_kind_idx`, `rooms_users_user_idx`.
 
-В `src/db.ts` на старте backend выполняет runtime safety-шаг:
+### Cleanup
 
-- `create unique index if not exists dialogs_general_unique ... where kind='general'`
-- `create unique index if not exists dialogs_private_unique ... where kind='private' and member_a/member_b is not null`
+`src/jobs/cleanup.ts`:
+- хранит максимум `5000` сообщений на комнату;
+- удаляет старые upload-файлы старше `30` дней.
 
-Это не Prisma migration, а стартовая проверка-страховка, чтобы в БД сохранялись ограничения на единственный `general` и уникальные private-пары.
+`messagesTtlDays` в рабочем backend больше не используется.
 
-## Auth Flow
+## Frontend
 
-- login/register (`auth:login`, `invites:redeem`) возвращают `token` + `expiresAt`.
-- фронт хранит token в `localStorage` (`marx_session_token`).
-- восстановление сессии выполняется через WS `auth:session` с token.
-- `auth:logout` удаляет server-side session по token.
+Ключевые файлы:
+- `nuxt.config.ts` — runtime config, dev proxy для WS, `ssr: false`.
+- `src/composables/classes/ws.ts` — WS клиент с request/response по пакетам.
+- `src/composables/ws-rpc.ts` — reconnect + session restore + RPC-helpers.
+- `src/pages/chat/*` — чат UI.
+- `src/pages/direct/[username]/index.vue` — direct маршрут.
+- `src/pages/games/*` — King lobby/session UI.
+- `src/pages/vpn/*` — VPN UI.
+- `src/composables/use-web-push.ts` + `src/public/sw.js` — web-push/PWA.
 
-## Database
+## Протокол
 
-- `users`
-- `invites`
-- `dialogs` (global/direct)
-- `messages` (TTL 7 дней)
-- `message_reactions`
-- `sessions`
+WS пакет:
+```ts
+[com, args, senderId, recipientId, requestId?]
+```
 
-Схема хранится в `backend/prisma/schema.prisma`.
-Источник данных задаётся в `backend/config.json` (`db.url`).
+Ответ:
+```ts
+['[res]', [result], 'backend', 'frontend', requestId]
+```
+
+Важно: команды чата исторически остались с префиксом `dialogs:*`,
+но payload уже room-based (`roomId`, иногда с alias `dialogId`).
+
+## Доменные фичи
+
+- invite-only регистрация;
+- session-token auth (не JWT, не cookie);
+- group/direct чат, реакции, upload, push;
+- King solo mode (1 человек + 3 бота) в `room(kind='game')`;
+- VPN provisioning через `wg-admin` unix socket;
+- Telegram news pipeline в `scripts/telegram-news`.
+
+## Источник истины
+
+Если docs расходятся с кодом, верить:
+1. `backend/prisma/schema.prisma`
+2. `backend/src/ws/**/*`
+3. `frontend/src/composables/types.ts`
+4. `frontend/src/pages/**/*`

@@ -5,6 +5,7 @@ chat.zip
 .codex
 .postgres-data/
 tmp/
+backups/
 
 # --- Node.js ---
 node_modules/

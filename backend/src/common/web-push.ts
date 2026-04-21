@@ -2,7 +2,7 @@ import {Injectable, Logger} from '@nestjs/common';
 import webPush from 'web-push';
 import {db} from '../db.js';
 import {config} from '../config.js';
-import type {DialogRow} from './dialogs.js';
+import type {RoomRow} from './rooms.js';
 import type {ChatContextMessagePayload} from '../ws/chat/chat-context.js';
 import {extractMessageFormatTokens} from './message-format.js';
 
@@ -15,7 +15,7 @@ type PushSubscriptionPayload = {
 };
 
 type SendChatPushParams = {
-  dialog: DialogRow;
+  room: RoomRow;
   message: ChatContextMessagePayload;
   senderId: number;
   excludeUserIds?: number[];
@@ -126,25 +126,25 @@ export class WebPushService {
     if (!this.enabled) return;
 
     try {
-      const recipientUserIds = await this.resolveRecipientUserIds(params.dialog, params.senderId, params.message.rawText);
+      const recipientUserIds = await this.resolveRecipientUserIds(params.room, params.senderId, params.message.rawText);
       const excluded = new Set(
         Array.isArray(params.excludeUserIds)
           ? params.excludeUserIds.filter((value) => Number.isFinite(value) && value > 0)
           : [],
       );
       const filteredRecipientUserIds = recipientUserIds.filter((userId) => !excluded.has(userId));
-      this.logger.log(`Web Push chat recipients=${recipientUserIds.length} dialogId=${params.dialog.id}`);
-      this.logger.log(`Web Push chat recipients_after_exclude=${filteredRecipientUserIds.length} dialogId=${params.dialog.id}`);
+      this.logger.log(`Web Push chat recipients=${recipientUserIds.length} roomId=${params.room.id}`);
+      this.logger.log(`Web Push chat recipients_after_exclude=${filteredRecipientUserIds.length} roomId=${params.room.id}`);
       if (!filteredRecipientUserIds.length) return;
 
       const subscriptions = await this.findSubscriptionsByUserIds(filteredRecipientUserIds);
-      this.logger.log(`Web Push chat subscriptions=${subscriptions.length} dialogId=${params.dialog.id}`);
+      this.logger.log(`Web Push chat subscriptions=${subscriptions.length} roomId=${params.room.id}`);
 
       if (!subscriptions.length) return;
 
       for (const subscription of subscriptions) {
-        const url = this.buildUrlForRecipient(params.dialog, params.message, subscription.userId);
-        const payload = this.buildNotificationPayload(params.message, params.dialog, url);
+        const url = this.buildUrlForRecipient(params.room, params.message, subscription.userId);
+        const payload = this.buildNotificationPayload(params.message, params.room, url);
 
         const sendResult = await this.sendToSubscription({
           endpoint: subscription.endpoint,
@@ -278,15 +278,15 @@ export class WebPushService {
     return true;
   }
 
-  private async resolveRecipientUserIds(dialog: DialogRow, senderId: number, messageRawText: unknown) {
-    if (dialog.kind === 'private') {
-      const ids = [dialog.member_a, dialog.member_b]
+  private async resolveRecipientUserIds(room: RoomRow, senderId: number, messageRawText: unknown) {
+    if (room.kind === 'direct') {
+      const ids = room.member_user_ids
         .map((value) => Number(value || 0))
         .filter((value) => Number.isFinite(value) && value > 0 && value !== senderId);
       return Array.from(new Set(ids));
     }
 
-    if (dialog.kind === 'general') {
+    if (room.kind === 'group') {
       const tokens = extractMessageFormatTokens(messageRawText);
       const mentionNicknames = Array.from(new Set(
         (tokens.mentionNicknames || [])
@@ -297,49 +297,42 @@ export class WebPushService {
       const directMentionNicknames = mentionNicknames.filter((nickname) => nickname !== 'all');
 
       if (!hasMentionAll && !directMentionNicknames.length) {
-        this.logger.log(`Web Push chat general mentions=0 mentionAll=false dialogId=${dialog.id}`);
+        this.logger.log(`Web Push chat group mentions=0 mentionAll=false roomId=${room.id}`);
         return [];
       }
 
       if (hasMentionAll) {
-        const users = await db.user.findMany({
-          where: {
-            id: {
-              not: senderId,
-            },
-          },
-          select: {
-            id: true,
-          },
-        });
-        this.logger.log(`Web Push chat general mentionAll=true recipients=${users.length} dialogId=${dialog.id}`);
-        return users.map((item) => item.id);
+        const userIds = room.member_user_ids
+          .filter((userId) => Number.isFinite(userId) && userId > 0 && userId !== senderId);
+        this.logger.log(`Web Push chat group mentionAll=true recipients=${userIds.length} roomId=${room.id}`);
+        return Array.from(new Set(userIds));
       }
 
-      const users = await db.user.findMany({
+      const members = await db.roomUser.findMany({
         where: {
-          nickname: {
-            in: directMentionNicknames,
-          },
-          NOT: {
-            id: senderId,
+          roomId: room.id,
+          userId: {not: senderId},
+          user: {
+            nickname: {
+              in: directMentionNicknames,
+            },
           },
         },
         select: {
-          id: true,
+          userId: true,
         },
       });
       this.logger.log(
-        `Web Push chat general mentionAll=false mentionNicknames=${directMentionNicknames.length} recipients=${users.length} dialogId=${dialog.id}`
+        `Web Push chat group mentionAll=false mentionNicknames=${directMentionNicknames.length} recipients=${members.length} roomId=${room.id}`
       );
-      return users.map((item) => item.id);
+      return members.map((item) => item.userId);
     }
 
     return [];
   }
 
-  private buildUrlForRecipient(dialog: DialogRow, message: ChatContextMessagePayload, recipientUserId: number) {
-    if (dialog.kind === 'private') {
+  private buildUrlForRecipient(room: RoomRow, message: ChatContextMessagePayload, recipientUserId: number) {
+    if (room.kind === 'direct') {
       if (recipientUserId === message.authorId) {
         return '/chat';
       }
@@ -350,23 +343,34 @@ export class WebPushService {
       }
     }
 
+    if (room.kind === 'game') {
+      return '/games';
+    }
+
     return '/chat';
   }
 
-  private buildNotificationPayload(message: ChatContextMessagePayload, dialog: DialogRow, url: string) {
+  private buildNotificationPayload(message: ChatContextMessagePayload, room: RoomRow, url: string) {
     const preview = this.buildBodyPreview(message.rawText);
     const authorName = String(message.authorName || message.authorNickname || 'Кто-то').trim() || 'Кто-то';
 
+    const title = room.kind === 'group'
+      ? 'MARX · Общий чат'
+      : room.kind === 'direct'
+        ? 'MARX · Директ'
+        : 'MARX · Игра';
+
     return {
-      title: dialog.kind === 'general' ? 'MARX · Общий чат' : 'MARX · Директ',
+      title,
       body: `${authorName}: ${preview}`,
       url,
-      dialogId: message.dialogId,
+      roomId: message.roomId,
+      dialogId: message.roomId,
       messageId: message.id,
       authorId: message.authorId,
       icon: '/favicon-alert.png',
       badge: '/pwa-192.png',
-      tag: `marx-message-${message.dialogId}`,
+      tag: `marx-message-${message.roomId}`,
     };
   }
 

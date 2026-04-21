@@ -17,7 +17,7 @@ let reconnectHooksReady = false;
 let reconnectAttempt = 0;
 let reconnectTimer: number | null = null;
 let reconnectInFlight = false;
-let reconnectDialogResolver: (() => number | null) | null = null;
+let reconnectRoomResolver: (() => number | null) | null = null;
 
 function setWsState(nextState: WsConnectionState) {
   wsConnectionState.value = nextState;
@@ -44,19 +44,19 @@ function getReconnectDelayMs(attempt: number) {
   return Math.min(RECONNECT_BASE_DELAY_MS * (2 ** attempt), RECONNECT_MAX_DELAY_MS);
 }
 
-function parseReconnectDialogId() {
-  const dialogId = Number(reconnectDialogResolver?.() || 0);
-  if (!Number.isFinite(dialogId) || dialogId <= 0) return null;
-  return dialogId;
+function parseReconnectRoomId() {
+  const roomId = Number(reconnectRoomResolver?.() || 0);
+  if (!Number.isFinite(roomId) || roomId <= 0) return null;
+  return roomId;
 }
 
-async function joinActiveDialogAfterReconnect() {
-  const dialogId = parseReconnectDialogId();
-  if (!dialogId) return null;
+async function joinActiveRoomAfterReconnect() {
+  const roomId = parseReconnectRoomId();
+  if (!roomId) return null;
 
-  const result = await ws.request('chat:join', dialogId);
+  const result = await ws.request('chat:join', roomId);
   if (!(result as any)?.ok) return null;
-  return dialogId;
+  return roomId;
 }
 
 async function connectToAnyWsUrl() {
@@ -140,11 +140,11 @@ async function runReconnect() {
     return;
   }
 
-  const dialogId = await joinActiveDialogAfterReconnect();
+  const roomId = await joinActiveRoomAfterReconnect();
   reconnectInFlight = false;
   resetReconnectAttempts();
   setWsState('connected');
-  emit('ws:reconnected', {dialogId});
+  emit('ws:reconnected', {roomId});
 }
 
 function onWsConnected() {
@@ -173,7 +173,7 @@ function initReconnectRuntime() {
 }
 
 export function setWsReconnectDialogResolver(resolver: (() => number | null) | null) {
-  reconnectDialogResolver = resolver;
+  reconnectRoomResolver = resolver;
 }
 
 export function getSessionToken() {
@@ -285,4 +285,22 @@ export async function wsProvisionVpn() {
   const session = await restoreSession();
   if (!(session as any)?.ok) return session;
   return ws.request('public:vpnProvision');
+}
+
+export async function wsGamesSoloCreate(moduleKey = 'king') {
+  const session = await restoreSession();
+  if (!(session as any)?.ok) return session;
+  return ws.request('games:solo:create', {moduleKey});
+}
+
+export async function wsGamesSessionGet(sessionId: number) {
+  const session = await restoreSession();
+  if (!(session as any)?.ok) return session;
+  return ws.request('games:session:get', sessionId);
+}
+
+export async function wsGamesAction(sessionId: number, action: {type: string; payload?: any}) {
+  const session = await restoreSession();
+  if (!(session as any)?.ok) return session;
+  return ws.request('games:action', {sessionId, action});
 }
