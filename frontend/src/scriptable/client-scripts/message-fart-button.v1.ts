@@ -24,8 +24,10 @@ export const messageFartButtonV1: ScriptWorkerFactory = {
         });
       },
 
-      onUserAction(action) {
-        if (String(action.actionType || '') !== 'click') return;
+      onEvent(event) {
+        if (String(event?.source || '') !== 'ui') return;
+        if (String(event?.type || '') !== 'ui:action') return;
+        if (String(event?.payload?.actionType || '') !== 'click') return;
         const local = api.getLocalState();
         const clicks = Math.max(0, Number(local?.clicks || 0)) + 1;
         const soundTick = Math.max(0, Number(local?.soundTick || 0)) + 1;

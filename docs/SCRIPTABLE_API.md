@@ -1,47 +1,47 @@
-# Scriptable API (MVP)
+# Scriptable API (MVP Contract)
 
-## 1. Модель данных
+## 1. Что такое scriptable entity
+
+Поддерживаются два типа сущностей:
+
+- `message`
+- `room`
+
+Обе работают через общий runtime manager + worker.
+
+## 2. Модель данных
 
 ### Message
 
-- `kind: MessageKind` (`text | system | scriptable`)
-- `script_id: varchar(128) | null`
-- `script_revision: int`
-- `script_mode: ScriptExecutionMode | null`
-- `script_config_json: jsonb`
-- `script_state_json: jsonb`
+- `kind: text | system | scriptable`
+- `script_id`
+- `script_revision`
+- `script_mode`
+- `script_config_json`
+- `script_state_json`
 
 ### Room
 
-- `script_id: varchar(128) | null`
-- `script_revision: int`
-- `script_mode: ScriptExecutionMode | null`
-- `script_config_json: jsonb`
-- `script_state_json: jsonb`
+- `script_id`
+- `script_revision`
+- `script_mode`
+- `script_config_json`
+- `script_state_json`
 
-### Enums
+`script_mode`: `client | client_server | client_runner`.
 
-- `MessageKind`
-- `ScriptExecutionMode` (`client | client_server | client_runner`)
-
-## 2. WS команды
+## 3. WS команды
 
 ### `scripts:create-message`
 
-Формат:
+Создаёт scriptable message в комнате.
 
 ```json
-["scripts:create-message", [roomId, payload], "frontend", "backend", "rid"]
-```
-
-`payload`:
-
-```json
-{
-  "scriptId": "demo:fart_button",
+["scripts:create-message", [roomId, {
+  "scriptId": "demo:guess_word",
   "scriptRevision": 1,
   "config": {}
-}
+}], "frontend", "backend", "rid"]
 ```
 
 Ответ:
@@ -52,7 +52,7 @@
 
 ### `scripts:action`
 
-Формат:
+Отправляет shared-action для `client_server/client_runner`.
 
 ```json
 ["scripts:action", [{
@@ -71,19 +71,13 @@
 
 ### `scripts:room:get`
 
-Формат:
+Возвращает scriptable entity комнаты.
 
 ```json
 ["scripts:room:get", [roomId], "frontend", "backend", "rid"]
 ```
 
-Ответ:
-
-```json
-{"ok": true, "roomId": 1, "roomScript": {...} | null}
-```
-
-## 3. WS события
+## 4. WS событие состояния
 
 ### `scripts:state`
 
@@ -99,11 +93,11 @@
 }
 ```
 
-Событие отправляется всем участникам комнаты.
+Это источник persistent/shared state update для клиента.
 
-## 4. Client worker API (для script-кода)
+## 5. Worker API для скрипта
 
-Скрипт в worker получает API:
+`create(api)` получает:
 
 - `getSnapshot()`
 - `getConfig()`
@@ -113,54 +107,57 @@
 - `setViewModel(next)`
 - `requestSharedAction(actionType, payload?)`
 
-Lifecycle hooks скрипта:
+## 6. Hooks (контракт)
+
+Поддерживаемые hooks:
 
 - `onInit()`
-- `onUserAction({actionType, payload})`
-- `onSharedState(state)`
-- `onHostEvent({eventType, payload})`
+- `onEvent({source, type, payload})`
 - `onDispose()`
 
-## 5. Backend shared-state API
+Legacy hooks (`onUserAction/onSharedState/onHostEvent`) удалены и не поддерживаются.
 
-Backend-редьюсер (для `client_server`) принимает:
+## 7. Unified Runtime Event Contract
 
-- `entityType/entityId/roomId`
-- `actionType/payload`
-- `actor`
-- текущие `config/state`
+```ts
+type ScriptRuntimeEvent = {
+  source: 'ui' | 'room' | 'server' | 'system';
+  type: string;
+  payload?: any;
+}
+```
 
-И возвращает:
+Примеры событий:
 
-- `nextState`
-- optional `sideEffects` (в MVP: `system_message`).
+- `ui:action` (`source='ui'`)
+- `chat_message` / `chat_message_updated` / `chat_message_deleted` (`source='room'`)
+- `state:update` / `shared_action_error` (`source='server'`)
+- `runtime:init`, `runtime:dispose`, `lifecycle:mount`, `lifecycle:unmount`, `system:ws_disconnected`, `system:ws_reconnected`, `system:session_expired` (`source='system'`)
 
-## 6. Runner API
+## 8. Lifecycle contract
 
-Transport: внутренний WS backend <-> runner.
+- `init`: создание runtime instance (`onInit`, `runtime:init`)
+- `mount`: первый UI view этой сущности (`lifecycle:mount`)
+- `update`: shared state change (`state:update`)
+- `unmount`: последний UI view исчез (`lifecycle:unmount`)
 
-Request:
+## 9. State / Effects правила
 
-- `type: room_event | entity_action`
-- payload содержит:
-  - entity metadata (`entityType/entityId/roomId/scriptId/revision/mode`)
-  - `scriptConfigJson`
-  - `scriptStateJson`
-  - event/action data.
+- Shared state (`script_state_json`) — только данные.
+- Local state — только клиентские данные runtime.
+- Effects (звук/вибрация/одноразовые действия) не должны храниться в shared state.
 
-Response:
+Если у сущности два view (timeline + pinned), второй view может работать в `passiveEffects` и не запускать локальные side-effects.
 
-- `ok`
-- `state`
-- optional `sideEffects`.
+## 10. Runtime identity и pinned
 
-## 7. Message payload (frontend)
+- Runtime identity фиксирован по entity id (`message:<id>`, `room:<id>`).
+- Для pinned message второй runtime не создаётся.
+- Повторные mount/unmount views не должны ломать local/shared state runtime.
 
-`Message` дополнен полями:
+## 11. Ограничения
 
-- `kind`
-- `scriptId`
-- `scriptRevision`
-- `scriptMode`
-- `scriptConfigJson`
-- `scriptStateJson`
+- Не плодить runtime instance для одной сущности.
+- Не смешивать effects со shared state.
+- Не тащить бизнес-логику UI в backend reducer без необходимости.
+- Обратная совместимость с legacy-hooks не поддерживается.

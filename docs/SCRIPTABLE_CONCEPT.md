@@ -1,77 +1,128 @@
 # Scriptable Chat Concept (MVP)
 
-## Что внедрено
+## Цель слоя
 
-В проект добавлена модель `scriptable chat`, где:
+Scriptable runtime нужен как минимальная платформа для интерактивных `message` и `room` сценариев без отдельного frontend-приложения на каждый кейс.
 
-- `message` может быть `text | system | scriptable`;
-- `room` может иметь привязанный script/runtime;
-- scriptable-сущности имеют `scriptId + scriptRevision + mode + config + shared state`.
-
-Это встроено в текущий чат/rooms/WS flow без переписывания базовой архитектуры.
-
-## Scriptable Message
-
-`scriptable message` — это отдельный mini-app внутри bubble.
-
-Поддерживается:
-
-- локальный client-only интерактив (без backend-логики);
-- shared-state message (`client_server`);
-- реактивная перерисовка по state update;
-- hot-restart runtime при смене `scriptRevision`.
-
-## Scriptable Room
-
-`scriptable room` — runtime на уровне комнаты.
-
-Поддерживается:
-
-- room-level shared state;
-- room-level view model (в MVP — banner в чате);
-- реакция на события комнаты (новые сообщения);
-- отдельный mode `client_runner` с внешним runner-процессом.
-
-## Execution Modes
+Поддерживаются режимы:
 
 - `client`
-  - логика только в frontend worker;
-  - backend хранит метаданные scriptable entity.
-
 - `client_server`
-  - UI/интерактив в worker;
-  - action -> backend (`scripts:action`) -> shared state update -> broadcast.
-
 - `client_runner`
-  - UI/интерактив в worker;
-  - сложная серверная логика в отдельном runner-процессе;
-  - backend и runner общаются по внутреннему WS transport.
 
-## Shared State
+## Runtime Identity
 
-Для `client_server/client_runner` state хранится в БД:
+Базовое правило: **один runtime instance на одну сущность**.
+
+- message runtime identity: `message:<messageId>`
+- room runtime identity: `room:<roomId>`
+
+Pinned-рендер не создаёт второй runtime для message. Он использует тот же runtime по `messageId`.
+
+## Lifecycle (формализовано)
+
+Lifecycle для scriptable message/room:
+
+1. `init`
+- происходит при создании worker runtime (`onInit`)
+- триггерится один раз на instance
+
+2. `mount`
+- происходит, когда в UI появляется хотя бы один view этой сущности
+- в runtime приходит system event `lifecycle:mount`
+- если views несколько (например timeline + pinned), mount всё равно один на переход `0 -> 1`
+
+3. `update`
+- происходит при изменении persistent/shared state
+- в runtime приходит unified event `state:update`
+
+4. `unmount`
+- происходит, когда последний view исчезает из UI
+- в runtime приходит system event `lifecycle:unmount` на переход `1 -> 0`
+
+Важно: unmount view не равен dispose runtime. Runtime может жить без активного view до следующего sync/drop.
+
+## Event Pipeline
+
+Все события в runtime приводятся к единому формату:
+
+```ts
+type ScriptRuntimeEvent = {
+  source: 'ui' | 'room' | 'server' | 'system';
+  type: string;
+  payload?: any;
+}
+```
+
+Источники:
+
+- `ui`: действия пользователя (`ui:action`)
+- `room`: события комнаты (`chat_message`, `chat_message_updated`, `chat_message_deleted`)
+- `server`: shared-state update (`state:update`) и server-side ошибки действия (`shared_action_error`)
+- `system`: lifecycle/runtime/ws события (`runtime:init`, `runtime:dispose`, `lifecycle:*`, `system:*`)
+
+Единственный event hook runtime: `onEvent`. Legacy hooks не поддерживаются.
+
+## State vs Effects
+
+### Persistent state (shared)
+
+Хранится на сервере/в БД, синхронизируется через `scripts:state`:
 
 - `messages.script_state_json`
 - `rooms.script_state_json`
 
-Обновления рассылаются WS-событием:
+Используется через `getSharedState()` и server event `state:update`.
 
-- `scripts:state`
+### Local state
 
-## Runner
+Хранится только в runtime worker на клиенте:
 
-Runner вынесен в отдельный процесс:
+- `getLocalState()`
+- `setLocalState(next)`
 
-- `backend/src/script-runner/main.ts`
-- dev запуск: `yarn run backend:runner:dev`
+Не синхронизируется между пользователями.
 
-Backend подключается к runner по `config.scriptRunner.url`.
+### Effects
 
-Падение runner не валит backend: backend возвращает `runner_not_connected/runner_timeout` для runner-сценариев.
+Effect = побочное действие, которое не должно считаться состоянием:
 
-## Revision / Hot Reload
+- звук
+- вибрация
+- одноразовые UI side-effects
 
-- Message/Room runtime в frontend привязан к ключу:
-  - `entityType + entityId + scriptId + scriptRevision + mode`.
-- При изменении `scriptRevision` runtime перезапускается автоматически.
-- Перед рестартом сохраняется local state (если скрипт его использует).
+Эффекты не хранятся в persistent state. Persistent/shared state должен оставаться чисто данными.
+
+## Pinned + Passive Effects
+
+При двойном рендере одного message (timeline + pinned):
+
+- runtime остаётся один
+- pinned может быть вторым view
+- второй view может работать в `passiveEffects` режиме
+
+`passiveEffects=true` выключает локальные эффекты в этом view (например, повторное проигрывание звука), чтобы не было дублей side-effects.
+
+## Cleanup / Устойчивость
+
+`ScriptRuntimeManager`:
+
+- корректно dispose'ит runtime при drop/disposeAll
+- снимает worker handlers при terminate
+- не постит события в уже остановленный runtime
+- сохраняет local state при hot-restart (смена descriptor/revision)
+
+## Границы MVP
+
+Что НЕ делаем в текущем слое:
+
+- отдельную новую архитектуру/graph-layer
+- универсальный DSL событий
+- server-driven mount/unmount orchestration
+
+Что уже стабильно:
+
+- единый runtime identity
+- единый event envelope
+- разделение state/effects
+- корректная работа pinned scriptable без второго runtime

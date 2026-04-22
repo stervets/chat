@@ -98,7 +98,10 @@
         v-else
         :message="message"
         :view-model="scriptViewModel"
+        view-source="timeline"
         @action="onScriptAction"
+        @runtime-view-mounted="onScriptViewMounted"
+        @runtime-view-unmounted="onScriptViewUnmounted"
       />
     </div>
 

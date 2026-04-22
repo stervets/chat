@@ -115,6 +115,25 @@ WS пакет:
 - VPN provisioning через `wg-admin` unix socket;
 - Telegram news pipeline в `scripts/telegram-news`.
 
+## Scriptable Runtime Layer
+
+- identity:
+  - `message` runtime key = `message:<id>`
+  - `room` runtime key = `room:<id>`
+- lifecycle:
+  - `init` (создание worker/runtime)
+  - `mount` (первый UI view для entity)
+  - `update` (shared-state update)
+  - `unmount` (последний UI view ушёл)
+- unified event envelope:
+  - `{source: 'ui'|'room'|'server'|'system', type, payload}`
+- state:
+  - shared/persistent state (`script_state_json`) синхронизируется через `scripts:state`
+  - local state живёт в worker и не шарится между клиентами
+- effects:
+  - эффекты (звук/вибрация/одноразовые side-effects) не являются state
+  - для второго рендера того же message (pinned) используется `passiveEffects`, чтобы не дублировать эффекты
+
 ## Источник истины
 
 Если docs расходятся с кодом, верить:

@@ -301,7 +301,10 @@
                 :message="activePinnedMessage"
                 :view-model="getMessageScriptViewModel(activePinnedMessage)"
                 :passive-effects="isPinnedScriptPassive(activePinnedMessage)"
+                view-source="pinned"
                 @action="onMessageScriptAction"
+                @runtime-view-mounted="onScriptViewMounted"
+                @runtime-view-unmounted="onScriptViewUnmounted"
               />
             </div>
           </div>
@@ -366,6 +369,8 @@
                 @reaction-mousemove="onReactionMouseMove"
                 @reaction-mouseleave="onReactionMouseLeave"
                 @script-action="onMessageScriptAction"
+                @script-view-mounted="onScriptViewMounted"
+                @script-view-unmounted="onScriptViewUnmounted"
                 @height-change="onVirtualItemHeight"
               />
               <div

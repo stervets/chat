@@ -24,7 +24,12 @@ export const roomMeterV1: ScriptWorkerFactory = {
         api.setViewModel(toRoomView(api.getConfig(), api.getSharedState()));
       },
 
-      onSharedState(state) {
+      onEvent(event) {
+        if (String(event?.source || '') !== 'server') return;
+        if (String(event?.type || '') !== 'state:update') return;
+        const state = event?.payload?.state && typeof event.payload.state === 'object'
+          ? event.payload.state
+          : api.getSharedState();
         api.setViewModel(toRoomView(api.getConfig(), state));
       },
     };

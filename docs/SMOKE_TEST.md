@@ -64,6 +64,7 @@ yarn run invite:create
   - в `direct`: pin/unpin недоступны;
   - pinned может быть `scriptable`: UI в плашке интерактивный (кнопки/действия работают);
   - если один и тот же scriptable message одновременно виден в ленте и в pinned, runtime один (нет второго worker и дубля side-effects);
+  - после временного offline/online (reconnect) scriptable runtime продолжает работать без повторного старта второго runtime;
   - pinned panel: collapse/expand, drag splitter, max-height 50%;
   - после перезагрузки страницы сохраняются: состояние collapse/expand и высота pinned panel;
 - анонимная отправка:

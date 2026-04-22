@@ -415,13 +415,13 @@ export const chatMethodsSendUploadAndRuntime = {
 
     async onChatMessage(this: any, message: Message) {
       const normalized = this.normalizeMessage(message);
-      this.scriptRuntimeManager?.emitRoomHostEvent(normalized.roomId, 'chat_message', {
+      this.emitScriptHostRoomEvent('chat_message', {
         id: normalized.id,
         roomId: normalized.roomId,
         kind: normalized.kind,
         authorId: normalized.authorId,
         authorNickname: normalized.authorNickname,
-      });
+      }, 'room', normalized.roomId);
 
       if (this.messages.some((item: Message) => Number(item.id) === Number(normalized.id))) {
         this.applyMessageUpdate(normalized);
@@ -476,10 +476,10 @@ export const chatMethodsSendUploadAndRuntime = {
 
     onChatMessageUpdated(this: any, messageRaw: any) {
       const message = this.normalizeMessage(messageRaw);
-      this.scriptRuntimeManager?.emitRoomHostEvent(message.roomId, 'chat_message_updated', {
+      this.emitScriptHostRoomEvent('chat_message_updated', {
         id: message.id,
         roomId: message.roomId,
-      });
+      }, 'room', message.roomId);
       if (Number(this.activePinnedMessage?.id || 0) === Number(message.id || 0)) {
         this.activePinnedMessage = message;
       }
@@ -499,10 +499,10 @@ export const chatMethodsSendUploadAndRuntime = {
       if (this.activeDialog?.id === roomId) {
         this.applyMessageDelete(roomId, messageId);
       }
-      this.scriptRuntimeManager?.emitRoomHostEvent(roomId, 'chat_message_deleted', {
+      this.emitScriptHostRoomEvent('chat_message_deleted', {
         roomId,
         messageId,
-      });
+      }, 'room', roomId);
       await this.fetchDirectDialogs();
     },
 
@@ -568,6 +568,7 @@ export const chatMethodsSendUploadAndRuntime = {
       if (!this.error || isTransientConnectionError(this.error)) {
         this.error = 'Соединение потеряно. Переподключаюсь...';
       }
+      this.emitScriptHostRoomEvent('system:ws_disconnected', {}, 'system');
     },
 
     async onWsReconnected(this: any) {
@@ -585,10 +586,12 @@ export const chatMethodsSendUploadAndRuntime = {
         await this.fetchDirectDialogs();
       }
       this.markVisibleMessageNotificationsRead();
+      this.emitScriptHostRoomEvent('system:ws_reconnected', {}, 'system');
     },
 
     async onWsSessionExpired(this: any) {
       this.error = 'Сессия истекла. Войди заново.';
+      this.emitScriptHostRoomEvent('system:session_expired', {}, 'system');
       await this.router.push('/login');
     },
 

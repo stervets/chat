@@ -162,6 +162,18 @@ export const chatMethodsScriptableRuntime = {
       this.scriptRuntimeManager?.sendUserAction('message', Number(message.id || 0), actionType, payload);
     },
 
+    onScriptViewMounted(this: any, messageIdRaw: unknown, viewSourceRaw: unknown, viewInstanceIdRaw?: unknown) {
+      const messageId = Number(messageIdRaw || 0);
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+      this.scriptRuntimeManager?.attachRuntimeView('message', messageId, viewSourceRaw, viewInstanceIdRaw);
+    },
+
+    onScriptViewUnmounted(this: any, messageIdRaw: unknown, viewSourceRaw: unknown, viewInstanceIdRaw?: unknown) {
+      const messageId = Number(messageIdRaw || 0);
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+      this.scriptRuntimeManager?.detachRuntimeView('message', messageId, viewSourceRaw, viewInstanceIdRaw);
+    },
+
     isPinnedScriptPassive(this: any, messageRaw: Message | null) {
       const messageId = Number(messageRaw?.id || 0);
       if (!Number.isFinite(messageId) || messageId <= 0) return false;
@@ -176,12 +188,12 @@ export const chatMethodsScriptableRuntime = {
       return viewModel;
     },
 
-    emitScriptHostRoomEvent(this: any, eventTypeRaw: unknown, payload?: any) {
-      const roomId = Number(this.activeDialog?.id || 0);
+    emitScriptHostRoomEvent(this: any, eventTypeRaw: unknown, payload?: any, sourceRaw: unknown = 'room', roomIdRaw?: unknown) {
+      const roomId = Number(roomIdRaw || this.activeDialog?.id || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return;
       const eventType = String(eventTypeRaw || '').trim();
       if (!eventType) return;
-      this.scriptRuntimeManager?.emitRoomHostEvent(roomId, eventType, payload);
+      this.scriptRuntimeManager?.emitRoomHostEvent(roomId, eventType, payload, sourceRaw);
     },
 
     async createScriptableDemoMessage(this: any, payloadRaw: any) {

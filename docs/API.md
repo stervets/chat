@@ -83,6 +83,9 @@ HTTP используется для upload и web-push.
 - `scripts:create-message([roomId, payload])` -> `{ok:true, message}`
 - `scripts:action([{entityType, entityId, actionType, payload?}])` -> `{ok:true, roomId, entityType, entityId, state}`
 - `scripts:room:get([roomId])` -> `{ok:true, roomId, roomScript|null}`
+- runtime identity фиксирован по entity id (`message:<id>`, `room:<id>`): для pinned message второй runtime не создаётся.
+- lifecycle в клиентском runtime: `init -> mount -> update -> unmount` (детально: `docs/SCRIPTABLE_CONCEPT.md`).
+- unified runtime event envelope: `{source:'ui'|'room'|'server'|'system', type, payload}` (детально: `docs/SCRIPTABLE_API.md`).
 
 ### Games
 - `games:solo:create([{moduleKey:'king'}])` -> `{ok:true, roomId, sessionId, session, messages, events}`

@@ -33,37 +33,46 @@ export const messageGuessWordV1: ScriptWorkerFactory = {
         api.setViewModel(buildView(api.getConfig(), api.getSharedState(), localState));
       },
 
-      onUserAction(action) {
-        if (String(action.actionType || '') !== 'submit_guess') return;
-        const guess = String(action.payload?.guess || '').trim();
-        if (!guess) return;
+      onEvent(event) {
+        const source = String(event?.source || '');
+        const eventType = String(event?.type || '');
 
-        const localState = {
-          ...api.getLocalState(),
-          pending: true,
-        };
-        api.setLocalState(localState);
-        api.setViewModel(buildView(api.getConfig(), api.getSharedState(), localState));
-        api.requestSharedAction('submit_guess', {guess});
-      },
+        if (source === 'ui' && eventType === 'ui:action') {
+          if (String(event?.payload?.actionType || '') !== 'submit_guess') return;
+          const guess = String(event?.payload?.payload?.guess || '').trim();
+          if (!guess) return;
 
-      onSharedState(state) {
-        const localState = {
-          ...api.getLocalState(),
-          pending: false,
-        };
-        api.setLocalState(localState);
-        api.setViewModel(buildView(api.getConfig(), state, localState));
-      },
+          const localState = {
+            ...api.getLocalState(),
+            pending: true,
+          };
+          api.setLocalState(localState);
+          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), localState));
+          api.requestSharedAction('submit_guess', {guess});
+          return;
+        }
 
-      onHostEvent(event) {
-        if (String(event.eventType || '') !== 'shared_action_error') return;
-        const localState = {
-          ...api.getLocalState(),
-          pending: false,
-        };
-        api.setLocalState(localState);
-        api.setViewModel(buildView(api.getConfig(), api.getSharedState(), localState));
+        if (source === 'server' && eventType === 'state:update') {
+          const state = event?.payload?.state && typeof event.payload.state === 'object'
+            ? event.payload.state
+            : api.getSharedState();
+          const localState = {
+            ...api.getLocalState(),
+            pending: false,
+          };
+          api.setLocalState(localState);
+          api.setViewModel(buildView(api.getConfig(), state, localState));
+          return;
+        }
+
+        if (source === 'server' && eventType === 'shared_action_error') {
+          const localState = {
+            ...api.getLocalState(),
+            pending: false,
+          };
+          api.setLocalState(localState);
+          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), localState));
+        }
       },
     };
   },

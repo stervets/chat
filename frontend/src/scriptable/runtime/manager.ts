@@ -1,4 +1,5 @@
 import type {ScriptEntitySnapshot, ScriptExecutionMode} from '@/composables/types';
+import type {ScriptRuntimeEventSource} from './types';
 
 type SharedActionRequest = {
   actionType: string;
@@ -10,6 +11,8 @@ type RuntimeRecord = {
   descriptorKey: string;
   localState: Record<string, any>;
   viewModel: Record<string, any>;
+  mountedViewKeys: Set<string>;
+  alive: boolean;
   worker: Worker;
 };
 
@@ -52,24 +55,92 @@ function buildDescriptorKey(snapshot: ScriptEntitySnapshot) {
   ].join(':');
 }
 
+function normalizeEventSource(raw: unknown, fallback: ScriptRuntimeEventSource = 'system'): ScriptRuntimeEventSource {
+  const value = String(raw || '').trim().toLowerCase();
+  if (value === 'ui' || value === 'room' || value === 'server' || value === 'system') {
+    return value;
+  }
+  return fallback;
+}
+
+function normalizeViewSource(raw: unknown) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (value === 'timeline' || value === 'pinned') return value;
+  return 'unknown';
+}
+
+function buildViewKey(viewSourceRaw: unknown, viewInstanceIdRaw: unknown) {
+  const viewSource = normalizeViewSource(viewSourceRaw);
+  const viewInstanceId = String(viewInstanceIdRaw || '').trim();
+  return `${viewSource}:${viewInstanceId || 'default'}`;
+}
+
 export class ScriptRuntimeManager {
   private readonly runtimes = new Map<string, RuntimeRecord>();
+  private readonly pendingMountedViews = new Map<string, Set<string>>();
 
   constructor(private readonly options: RuntimeManagerOptions) {}
 
-  disposeAll() {
-    for (const record of this.runtimes.values()) {
-      try {
-        record.worker.postMessage({type: 'dispose'});
-      } catch {
-        // no-op
-      }
-      record.worker.terminate();
+  private postToWorker(record: RuntimeRecord, message: any) {
+    if (!record.alive) return false;
+    try {
+      record.worker.postMessage(message);
+      return true;
+    } catch {
+      return false;
     }
-    this.runtimes.clear();
   }
 
-  private createWorkerRecord(snapshot: ScriptEntitySnapshot, localState?: Record<string, any>) {
+  private emitRuntimeEvent(
+    record: RuntimeRecord,
+    sourceRaw: unknown,
+    eventTypeRaw: unknown,
+    payload?: any,
+  ) {
+    const eventType = String(eventTypeRaw || '').trim();
+    if (!eventType) return;
+
+    this.postToWorker(record, {
+      type: 'host_event',
+      payload: {
+        source: normalizeEventSource(sourceRaw),
+        type: eventType,
+        payload: cloneJson(payload),
+      },
+    });
+  }
+
+  private disposeRecord(record: RuntimeRecord) {
+    if (!record.alive) return;
+
+    if (record.mountedViewKeys.size > 0) {
+      this.emitRuntimeEvent(record, 'system', 'lifecycle:unmount', {
+        reason: 'runtime_dispose',
+        viewCount: 0,
+      });
+    }
+
+    this.postToWorker(record, {type: 'dispose'});
+    record.alive = false;
+    record.mountedViewKeys.clear();
+    record.worker.onmessage = null;
+    record.worker.onerror = null;
+    record.worker.terminate();
+  }
+
+  disposeAll() {
+    for (const record of this.runtimes.values()) {
+      this.disposeRecord(record);
+    }
+    this.runtimes.clear();
+    this.pendingMountedViews.clear();
+  }
+
+  private createWorkerRecord(
+    snapshot: ScriptEntitySnapshot,
+    localState?: Record<string, any>,
+    mountedViewKeysRaw?: Iterable<string>,
+  ) {
     const worker = new Worker(new URL('./worker.ts', import.meta.url), {
       type: 'module',
     });
@@ -79,14 +150,17 @@ export class ScriptRuntimeManager {
       descriptorKey: buildDescriptorKey(snapshot),
       localState: cloneJson(localState || {}),
       viewModel: {},
+      mountedViewKeys: new Set(Array.from(mountedViewKeysRaw || [])),
+      alive: true,
       worker,
     };
 
     worker.onmessage = (event: MessageEvent<any>) => {
+      if (!record.alive) return;
       const message = event.data || {};
       if (message.type === 'view_model') {
         record.viewModel = cloneJson(message.payload?.viewModel || {});
-        this.options.onViewModel(snapshot.entityType, snapshot.entityId, record.viewModel);
+        this.options.onViewModel(record.snapshot.entityType, record.snapshot.entityId, record.viewModel);
         return;
       }
 
@@ -97,7 +171,7 @@ export class ScriptRuntimeManager {
 
       if (message.type === 'runtime_error') {
         const errorMessage = String(message.payload?.message || 'script_runtime_error');
-        this.options.onError?.(snapshot.entityType, snapshot.entityId, errorMessage);
+        this.options.onError?.(record.snapshot.entityType, record.snapshot.entityId, errorMessage);
         return;
       }
 
@@ -109,18 +183,14 @@ export class ScriptRuntimeManager {
           actionType,
           payload: cloneJson(message.payload?.payload),
         }).then((response) => {
+          if (!record.alive) return;
           if (!response?.ok) {
-            record.worker.postMessage({
-              type: 'host_event',
-              payload: {
-                eventType: 'shared_action_error',
-              },
-            });
+            this.emitRuntimeEvent(record, 'server', 'shared_action_error');
             return;
           }
           if (response.state && typeof response.state === 'object') {
             record.snapshot.scriptStateJson = cloneJson(response.state);
-            record.worker.postMessage({
+            this.postToWorker(record, {
               type: 'shared_state',
               payload: {
                 state: cloneJson(response.state),
@@ -128,23 +198,25 @@ export class ScriptRuntimeManager {
             });
           }
         }).catch(() => {
-          record.worker.postMessage({
-            type: 'host_event',
-            payload: {
-              eventType: 'shared_action_error',
-            },
-          });
+          this.emitRuntimeEvent(record, 'server', 'shared_action_error');
         });
       }
     };
 
-    worker.postMessage({
+    this.postToWorker(record, {
       type: 'init',
       payload: {
         snapshot: cloneJson(snapshot),
         localState: cloneJson(record.localState),
       },
     });
+
+    if (record.mountedViewKeys.size > 0) {
+      this.emitRuntimeEvent(record, 'system', 'lifecycle:mount', {
+        reason: 'runtime_init_with_active_view',
+        viewCount: record.mountedViewKeys.size,
+      });
+    }
 
     return record;
   }
@@ -154,24 +226,27 @@ export class ScriptRuntimeManager {
     const descriptorKey = buildDescriptorKey(snapshot);
     const existing = this.runtimes.get(entityKey);
     if (!existing) {
-      this.runtimes.set(entityKey, this.createWorkerRecord(snapshot));
+      this.runtimes.set(entityKey, this.createWorkerRecord(
+        snapshot,
+        undefined,
+        this.pendingMountedViews.get(entityKey),
+      ));
       return;
     }
 
     if (existing.descriptorKey !== descriptorKey) {
       const previousLocalState = cloneJson(existing.localState || {});
-      try {
-        existing.worker.postMessage({type: 'dispose'});
-      } catch {
-        // no-op
-      }
-      existing.worker.terminate();
-      this.runtimes.set(entityKey, this.createWorkerRecord(snapshot, previousLocalState));
+      const mountedViewKeys = new Set([
+        ...Array.from(existing.mountedViewKeys),
+        ...Array.from(this.pendingMountedViews.get(entityKey) || []),
+      ]);
+      this.disposeRecord(existing);
+      this.runtimes.set(entityKey, this.createWorkerRecord(snapshot, previousLocalState, mountedViewKeys));
       return;
     }
 
     existing.snapshot = cloneJson(snapshot);
-    existing.worker.postMessage({
+    this.postToWorker(existing, {
       type: 'shared_state',
       payload: {
         state: cloneJson(snapshot.scriptStateJson || {}),
@@ -183,12 +258,7 @@ export class ScriptRuntimeManager {
     const entityKey = buildEntityKey(entityType, entityId);
     const record = this.runtimes.get(entityKey);
     if (!record) return;
-    try {
-      record.worker.postMessage({type: 'dispose'});
-    } catch {
-      // no-op
-    }
-    record.worker.terminate();
+    this.disposeRecord(record);
     this.runtimes.delete(entityKey);
   }
 
@@ -281,12 +351,69 @@ export class ScriptRuntimeManager {
     const runtime = this.runtimes.get(key);
     if (!runtime) return;
 
-    runtime.worker.postMessage({
+    this.postToWorker(runtime, {
       type: 'user_action',
       payload: {
         actionType,
         payload: cloneJson(payload),
       },
+    });
+  }
+
+  attachRuntimeView(
+    entityType: 'message' | 'room',
+    entityIdRaw: unknown,
+    viewSourceRaw: unknown,
+    viewInstanceIdRaw?: unknown,
+  ) {
+    const entityId = Number(entityIdRaw || 0);
+    if (!Number.isFinite(entityId) || entityId <= 0) return;
+
+    const viewKey = buildViewKey(viewSourceRaw, viewInstanceIdRaw);
+    const runtime = this.runtimes.get(buildEntityKey(entityType, entityId));
+    const entityKey = buildEntityKey(entityType, entityId);
+    const pendingSet = this.pendingMountedViews.get(entityKey) || new Set<string>();
+    pendingSet.add(viewKey);
+    this.pendingMountedViews.set(entityKey, pendingSet);
+    if (!runtime) return;
+
+    const before = runtime.mountedViewKeys.size;
+    runtime.mountedViewKeys.add(viewKey);
+    if (before > 0 || runtime.mountedViewKeys.size <= 0) return;
+
+    this.emitRuntimeEvent(runtime, 'system', 'lifecycle:mount', {
+      viewSource: normalizeViewSource(viewSourceRaw),
+      viewCount: runtime.mountedViewKeys.size,
+    });
+  }
+
+  detachRuntimeView(
+    entityType: 'message' | 'room',
+    entityIdRaw: unknown,
+    viewSourceRaw: unknown,
+    viewInstanceIdRaw?: unknown,
+  ) {
+    const entityId = Number(entityIdRaw || 0);
+    if (!Number.isFinite(entityId) || entityId <= 0) return;
+
+    const runtime = this.runtimes.get(buildEntityKey(entityType, entityId));
+    const entityKey = buildEntityKey(entityType, entityId);
+    const viewKey = buildViewKey(viewSourceRaw, viewInstanceIdRaw);
+    const pendingSet = this.pendingMountedViews.get(entityKey);
+    if (pendingSet) {
+      pendingSet.delete(viewKey);
+      if (pendingSet.size <= 0) {
+        this.pendingMountedViews.delete(entityKey);
+      }
+    }
+    if (!runtime) return;
+
+    if (!runtime.mountedViewKeys.delete(viewKey)) return;
+    if (runtime.mountedViewKeys.size > 0) return;
+
+    this.emitRuntimeEvent(runtime, 'system', 'lifecycle:unmount', {
+      viewSource: normalizeViewSource(viewSourceRaw),
+      viewCount: 0,
     });
   }
 
@@ -312,15 +439,17 @@ export class ScriptRuntimeManager {
     const nextDescriptor = buildDescriptorKey(runtime.snapshot);
     if (nextDescriptor !== runtime.descriptorKey) {
       const localState = cloneJson(runtime.localState || {});
-      this.dropRuntime(runtime.snapshot.entityType, runtime.snapshot.entityId);
+      const mountedViewKeys = new Set(runtime.mountedViewKeys);
+      this.disposeRecord(runtime);
+      this.runtimes.delete(buildEntityKey(runtime.snapshot.entityType, runtime.snapshot.entityId));
       this.runtimes.set(
         buildEntityKey(runtime.snapshot.entityType, runtime.snapshot.entityId),
-        this.createWorkerRecord(runtime.snapshot, localState),
+        this.createWorkerRecord(runtime.snapshot, localState, mountedViewKeys),
       );
       return;
     }
 
-    runtime.worker.postMessage({
+    this.postToWorker(runtime, {
       type: 'shared_state',
       payload: {
         state: cloneJson(runtime.snapshot.scriptStateJson || {}),
@@ -328,22 +457,17 @@ export class ScriptRuntimeManager {
     });
   }
 
-  emitRoomHostEvent(roomIdRaw: unknown, eventTypeRaw: unknown, payload?: any) {
+  emitRoomHostEvent(roomIdRaw: unknown, eventTypeRaw: unknown, payload?: any, sourceRaw: unknown = 'room') {
     const roomId = Number(roomIdRaw || 0);
     if (!Number.isFinite(roomId) || roomId <= 0) return;
 
     const eventType = String(eventTypeRaw || '').trim();
     if (!eventType) return;
+    const source = normalizeEventSource(sourceRaw, 'room');
 
     for (const runtime of this.runtimes.values()) {
       if (runtime.snapshot.roomId !== roomId) continue;
-      runtime.worker.postMessage({
-        type: 'host_event',
-        payload: {
-          eventType,
-          payload: cloneJson(payload),
-        },
-      });
+      this.emitRuntimeEvent(runtime, source, eventType, payload);
     }
   }
 }

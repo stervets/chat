@@ -15,10 +15,16 @@ export default {
       type: Boolean,
       default: false,
     },
+    viewSource: {
+      type: String,
+      default: 'timeline',
+    },
   },
 
   emits: [
     'action',
+    'runtime-view-mounted',
+    'runtime-view-unmounted',
   ],
 
   setup() {
@@ -26,20 +32,29 @@ export default {
       guessInput: ref(''),
       lastSoundTick: ref(0),
       audioEl: ref<HTMLAudioElement | null>(null),
+      runtimeViewInstanceId: `view-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     };
   },
 
   watch: {
-    viewModel: {
-      handler(this: any) {
-        if (this.passiveEffects) return;
-        this.tryPlaySoundByTick();
-      },
-      deep: true,
+    'viewModel.soundTick'(this: any) {
+      this.tryPlaySoundByTick();
     },
     passiveEffects(this: any, value: boolean) {
-      if (value) return;
+      if (value) {
+        this.stopAudioPlayback();
+        return;
+      }
       this.tryPlaySoundByTick();
+    },
+    'message.id'(this: any, nextIdRaw: unknown, prevIdRaw: unknown) {
+      const nextId = Number(nextIdRaw || 0);
+      const prevId = Number(prevIdRaw || 0);
+      if (nextId === prevId) return;
+      if (Number.isFinite(prevId) && prevId > 0) {
+        this.emitRuntimeViewUnmounted(prevId);
+      }
+      this.emitRuntimeViewMounted(nextId);
     },
   },
 
@@ -66,6 +81,24 @@ export default {
       if (!guess) return;
       this.onAction('submit_guess', {guess});
       this.guessInput = '';
+    },
+
+    stopAudioPlayback(this: any) {
+      if (!this.audioEl) return;
+      this.audioEl.pause();
+      this.audioEl.currentTime = 0;
+    },
+
+    emitRuntimeViewMounted(this: any, messageIdRaw?: unknown) {
+      const messageId = Number(messageIdRaw || this.message?.id || 0);
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+      this.$emit('runtime-view-mounted', messageId, this.viewSource, this.runtimeViewInstanceId);
+    },
+
+    emitRuntimeViewUnmounted(this: any, messageIdRaw?: unknown) {
+      const messageId = Number(messageIdRaw || this.message?.id || 0);
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+      this.$emit('runtime-view-unmounted', messageId, this.viewSource, this.runtimeViewInstanceId);
     },
 
     ensureAudio(this: any, soundUrlRaw: unknown) {
@@ -102,10 +135,13 @@ export default {
     },
   },
 
+  mounted(this: any) {
+    this.emitRuntimeViewMounted();
+  },
+
   beforeUnmount(this: any) {
-    if (!this.audioEl) return;
-    this.audioEl.pause();
-    this.audioEl.currentTime = 0;
+    this.emitRuntimeViewUnmounted();
+    this.stopAudioPlayback();
     this.audioEl = null;
   },
 };

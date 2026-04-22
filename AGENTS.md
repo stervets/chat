@@ -24,6 +24,9 @@
   - `messages.script_*`, `rooms.script_*`;
   - `messages.kind = text | system | scriptable`.
   - для scriptable pinned действует правило `один runtime на message` (pinned может быть вторым view без второго worker).
+  - runtime-контракт: identity по entity id (`message:<id>`, `room:<id>`), lifecycle `init -> mount/update -> unmount`.
+  - эффекты (звук/вибрация/одноразовые side-effects) не хранить в shared state и не дублировать в passive view.
+  - сервис в разработке: обратная совместимость scriptable runtime не поддерживается (legacy hooks удаляем, используем только актуальный контракт).
 
 ## Важное про WS
 Пакет:

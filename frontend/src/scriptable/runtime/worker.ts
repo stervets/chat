@@ -1,12 +1,12 @@
 import {getClientScriptFactory} from '../registry';
 import type {ScriptEntitySnapshot} from '../../composables/types';
-import type {ScriptWorkerApi, ScriptWorkerInstance} from './types';
+import type {ScriptRuntimeEvent, ScriptRuntimeEventSource, ScriptWorkerApi, ScriptWorkerInstance} from './types';
 
 type WorkerIncoming =
   | {type: 'init'; payload: {snapshot: ScriptEntitySnapshot; localState?: Record<string, any>}}
   | {type: 'user_action'; payload: {actionType: string; payload?: any}}
   | {type: 'shared_state'; payload: {state: Record<string, any>}}
-  | {type: 'host_event'; payload: {eventType: string; payload?: any}}
+  | {type: 'host_event'; payload: {eventType?: string; type?: string; source?: ScriptRuntimeEventSource; payload?: any}}
   | {type: 'dispose'};
 
 let snapshot: ScriptEntitySnapshot | null = null;
@@ -60,8 +60,27 @@ function safeRun(fn: () => void) {
   }
 }
 
+function normalizeRuntimeEventSource(raw: unknown): ScriptRuntimeEventSource {
+  const source = String(raw || '').trim().toLowerCase();
+  if (source === 'ui' || source === 'room' || source === 'server' || source === 'system') {
+    return source;
+  }
+  return 'system';
+}
+
+function emitRuntimeEvent(event: ScriptRuntimeEvent) {
+  if (!runtime) return;
+  safeRun(() => {
+    runtime?.onEvent?.(cloneJson(event));
+  });
+}
+
 function disposeRuntime() {
   if (!runtime) return;
+  emitRuntimeEvent({
+    source: 'system',
+    type: 'runtime:dispose',
+  });
   safeRun(() => {
     runtime?.onDispose?.();
   });
@@ -91,6 +110,18 @@ function initRuntime(payload: {snapshot: ScriptEntitySnapshot; localState?: Reco
   safeRun(() => {
     runtime?.onInit?.();
   });
+  emitRuntimeEvent({
+    source: 'system',
+    type: 'runtime:init',
+    payload: {
+      entityType: snapshot.entityType,
+      entityId: snapshot.entityId,
+      roomId: snapshot.roomId,
+      scriptId: snapshot.scriptId,
+      scriptRevision: snapshot.scriptRevision,
+      scriptMode: snapshot.scriptMode,
+    },
+  });
 }
 
 self.onmessage = (event: MessageEvent<WorkerIncoming>) => {
@@ -105,29 +136,40 @@ self.onmessage = (event: MessageEvent<WorkerIncoming>) => {
   if (!runtime) return;
 
   if (data.type === 'user_action') {
-    safeRun(() => {
-      runtime?.onUserAction?.({
-        actionType: String(data.payload?.actionType || ''),
-        payload: cloneJson(data.payload?.payload),
-      });
+    const actionType = String(data.payload?.actionType || '');
+    const actionPayload = cloneJson(data.payload?.payload);
+    emitRuntimeEvent({
+      source: 'ui',
+      type: 'ui:action',
+      payload: {
+        actionType,
+        payload: actionPayload,
+      },
     });
     return;
   }
 
   if (data.type === 'shared_state') {
     sharedState = cloneJson(data.payload?.state || {});
-    safeRun(() => {
-      runtime?.onSharedState?.(cloneJson(sharedState));
+    emitRuntimeEvent({
+      source: 'server',
+      type: 'state:update',
+      payload: {
+        state: cloneJson(sharedState),
+      },
     });
     return;
   }
 
   if (data.type === 'host_event') {
-    safeRun(() => {
-      runtime?.onHostEvent?.({
-        eventType: String(data.payload?.eventType || ''),
-        payload: cloneJson(data.payload?.payload),
-      });
+    const eventType = String(data.payload?.type || data.payload?.eventType || '').trim();
+    if (!eventType) return;
+    const payload = cloneJson(data.payload?.payload);
+    const source = normalizeRuntimeEventSource(data.payload?.source);
+    emitRuntimeEvent({
+      source,
+      type: eventType,
+      payload,
     });
     return;
   }

@@ -1,12 +1,10 @@
 import type {ScriptEntitySnapshot} from '@/composables/types';
 
-export type WorkerHostEvent = {
-  eventType: string;
-  payload?: any;
-};
+export type ScriptRuntimeEventSource = 'ui' | 'room' | 'server' | 'system';
 
-export type WorkerUserAction = {
-  actionType: string;
+export type ScriptRuntimeEvent = {
+  source: ScriptRuntimeEventSource;
+  type: string;
   payload?: any;
 };
 
@@ -22,9 +20,7 @@ export type ScriptWorkerApi = {
 
 export type ScriptWorkerInstance = {
   onInit?: () => void;
-  onUserAction?: (action: WorkerUserAction) => void;
-  onSharedState?: (state: Record<string, any>) => void;
-  onHostEvent?: (event: WorkerHostEvent) => void;
+  onEvent?: (event: ScriptRuntimeEvent) => void;
   onDispose?: () => void;
 };
 
