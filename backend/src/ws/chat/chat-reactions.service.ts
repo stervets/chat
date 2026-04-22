@@ -40,9 +40,13 @@ export class ChatReactionsService {
       where: {id: messageId},
       select: {
         id: true,
-        roomId: true,
         senderId: true,
         rawText: true,
+        node: {
+          select: {
+            parentId: true,
+          },
+        },
       },
     });
 
@@ -50,7 +54,12 @@ export class ChatReactionsService {
       return {ok: false, error: 'message_not_found'};
     }
 
-    const room = await getRoomById(message.roomId);
+    const roomId = Number(message.node?.parentId || 0);
+    if (!Number.isFinite(roomId) || roomId <= 0) {
+      return {ok: false, error: 'room_not_found'};
+    }
+
+    const room = await getRoomById(roomId);
     if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
@@ -123,16 +132,16 @@ export class ChatReactionsService {
 
     return {
       ok: true,
-      roomId: message.roomId,
-      dialogId: message.roomId,
+      roomId,
+      dialogId: roomId,
       messageId,
       reactions,
       changed,
       notify: shouldNotify
         ? {
           userId: Number(message.senderId),
-          roomId: message.roomId,
-          dialogId: message.roomId,
+          roomId,
+          dialogId: roomId,
           messageId,
           emoji: finalEmoji!,
           actor: {

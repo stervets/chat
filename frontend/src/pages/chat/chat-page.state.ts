@@ -1,5 +1,5 @@
 import {ref} from 'vue';
-import type {Dialog, GraphNode, User} from '@/composables/types';
+import type {Dialog, User} from '@/composables/types';
 import {wsConnectionState} from '@/composables/ws-rpc';
 import type {DirectDialog, NotificationItem, ToastItem} from './chat-page.constants';
 import type {ScriptRuntimeManager} from '@/scriptable/runtime/manager';
@@ -83,12 +83,6 @@ export function createChatPageState() {
     rightMenuOpen: ref(false),
     isCompactLayout: ref(false),
     searchQuery: ref(''),
-    spacesNavLoading: ref(false),
-    spacesNavError: ref(''),
-    spacesNavSpaces: ref<GraphNode[]>([]),
-    spacesNavChildren: ref<GraphNode[]>([]),
-    spacesNavPath: ref<GraphNode[]>([]),
-    spacesNavActiveSpaceId: ref<number | null>(null),
     notificationsMenuOpen: ref(false),
     notifications: ref<NotificationItem[]>([]),
     notificationsSeq: ref(1),

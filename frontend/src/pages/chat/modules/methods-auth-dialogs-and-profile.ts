@@ -72,7 +72,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       const sourceMessageIdRaw = Number(raw?.sourceMessageId || 0);
       const sourceRoomIdRaw = Number(raw?.sourceRoomId || 0);
       const sourceRoomKindRaw = String(raw?.sourceRoomKind || '').trim().toLowerCase();
-      const sourceRoomKind = sourceRoomKindRaw === 'group' || sourceRoomKindRaw === 'direct' || sourceRoomKindRaw === 'game'
+      const sourceRoomKind = sourceRoomKindRaw === 'group' || sourceRoomKindRaw === 'direct' || sourceRoomKindRaw === 'game' || sourceRoomKindRaw === 'comment'
         ? sourceRoomKindRaw
         : null;
       const sourceMessageId = Number.isFinite(sourceMessageIdRaw) && sourceMessageIdRaw > 0

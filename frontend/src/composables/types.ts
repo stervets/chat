@@ -18,11 +18,9 @@ export type Invite = {
   isUsed: boolean;
 };
 
-export type DialogKind = 'group' | 'direct' | 'game';
+export type DialogKind = 'group' | 'direct' | 'game' | 'comment';
 export type ScriptExecutionMode = 'client' | 'client_server' | 'client_runner';
 export type RoomAppType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
-export type GraphNodeKind = 'space' | 'folder' | 'room_ref';
-export type GraphTargetType = 'none' | 'room';
 
 export type RoomApp = {
   enabled: boolean;
@@ -117,27 +115,4 @@ export type WsEnvelope<T = unknown> = {
   type: string;
   payload?: T;
   requestId?: string;
-};
-
-export type GraphRoomTarget = {
-  id: Id;
-  kind: DialogKind;
-  title: string | null;
-  createdById: Id | null;
-  appEnabled: boolean;
-  appType: RoomAppType | null;
-  pinnedMessageId: Id | null;
-};
-
-export type GraphNode = {
-  id: Id;
-  kind: GraphNodeKind;
-  title: string;
-  pathSegment: string | null;
-  targetType: GraphTargetType;
-  targetId: Id | null;
-  config: Record<string, any>;
-  parentNodeId: Id | null;
-  sortOrder: number;
-  room: GraphRoomTarget | null;
 };

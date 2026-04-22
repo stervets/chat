@@ -71,8 +71,8 @@ type ScriptRuntimeEvent = {
 
 Хранится на сервере/в БД, синхронизируется через `scripts:state`:
 
-- `messages.script_state_json`
-- `rooms.script_state_json`
+- `nodes.data.scriptState` у message-node
+- `nodes.data.scriptState` у room-node
 
 Используется через `getSharedState()` и server event `state:update`.
 

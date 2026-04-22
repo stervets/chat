@@ -7,47 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum RoomKind {
-  group
-  direct
-  game
-}
-
-enum RoomAppType {
-  llm
-  poll
-  dashboard
-  bot_control
-  custom
-}
-
-enum MessageKind {
-  text
-  system
-  scriptable
-}
-
-enum ScriptExecutionMode {
-  client
-  client_server
-  client_runner
-}
-
-enum GraphNodeKind {
-  space
-  folder
-  room_ref
-}
-
-enum GraphTargetType {
-  none
-  room
-}
-
-enum GraphEdgeType {
-  child
-}
-
 enum GameSessionStatus {
   lobby
   active
@@ -67,27 +26,27 @@ enum GameSessionPlayerKind {
 }
 
 model User {
-  id                 Int               @id @default(autoincrement())
-  nickname           String            @unique @db.VarChar(32)
-  name               String            @db.VarChar(80)
-  isBot              Boolean           @default(false) @map("is_bot")
-  info               String?           @db.Text
-  nicknameColor      String?           @map("nickname_color") @db.VarChar(7)
-  pushDisableAllMentions Boolean       @default(false) @map("push_disable_all_mentions")
-  donationBadgeUntil DateTime?         @map("donation_badge_until") @db.Timestamptz(3)
-  passwordHash       String            @map("password_hash")
-  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
-  createdInvites     Invite[]          @relation("InviteCreatedBy")
-  usedInvites        Invite[]          @relation("InviteUsedBy")
-  createdRooms       Room[]            @relation("RoomCreatedBy")
-  roomMemberships    RoomUser[]
-  sentMessages       Message[]         @relation("MessageSender")
-  sessions           Session[]
-  reactions          MessageReaction[]
-  pushSubscriptions  PushSubscription[]
-  createdGameSessions GameSession[]     @relation("GameSessionCreatedBy")
-  gameSessionPlayers GameSessionPlayer[]
+  id                    Int                 @id @default(autoincrement())
+  nickname              String              @unique @db.VarChar(32)
+  name                  String              @db.VarChar(80)
+  isBot                 Boolean             @default(false) @map("is_bot")
+  info                  String?             @db.Text
+  nicknameColor         String?             @map("nickname_color") @db.VarChar(7)
+  pushDisableAllMentions Boolean            @default(false) @map("push_disable_all_mentions")
+  donationBadgeUntil    DateTime?           @map("donation_badge_until") @db.Timestamptz(3)
+  passwordHash          String              @map("password_hash")
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdInvites        Invite[]            @relation("InviteCreatedBy")
+  usedInvites           Invite[]            @relation("InviteUsedBy")
+  createdNodes          Node[]              @relation("NodeCreatedBy")
+  roomMemberships       RoomUser[]
+  sentMessages          Message[]           @relation("MessageSender")
+  sessions              Session[]
+  reactions             MessageReaction[]
+  pushSubscriptions     PushSubscription[]
+  createdGameSessions   GameSession[]       @relation("GameSessionCreatedBy")
+  gameSessionPlayers    GameSessionPlayer[]
 
   @@index([name], map: "users_name_idx")
   @@map("users")
@@ -107,33 +66,41 @@ model Invite {
   @@map("invites")
 }
 
+model Node {
+  id            Int      @id @default(autoincrement())
+  parentId      Int?     @map("parent_id")
+  parent        Node?    @relation("NodeTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Node[]   @relation("NodeTree")
+  type          String   @db.VarChar(64)
+  component     String?  @db.VarChar(160)
+  clientScript  String?  @map("client_script") @db.VarChar(160)
+  serverScript  String?  @map("server_script") @db.VarChar(160)
+  data          Json     @default("{}") @db.JsonB
+  createdById   Int?     @map("created_by")
+  createdBy     User?    @relation("NodeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  room          Room?
+  message       Message?
+  pinnedInRooms Room[]   @relation("RoomPinnedNode")
+
+  @@index([parentId], map: "nodes_parent_idx")
+  @@index([type], map: "nodes_type_idx")
+  @@index([parentId, type, id(sort: Desc)], map: "nodes_parent_type_id_desc_idx")
+  @@map("nodes")
+}
+
 model Room {
-  id              Int                  @id @default(autoincrement())
-  kind            RoomKind
-  title           String?
-  createdById     Int?                 @map("created_by")
-  createdBy       User?                @relation("RoomCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  pinnedMessageId Int?                 @map("pinned_message_id")
-  pinnedMessage   Message?             @relation("RoomPinnedMessage", fields: [pinnedMessageId], references: [id], onDelete: SetNull)
-  appEnabled      Boolean              @default(false) @map("app_enabled")
-  appType         RoomAppType?         @map("app_type")
-  appConfigJson   Json                 @default("{}") @map("app_config_json")
-  scriptId        String?              @map("script_id") @db.VarChar(128)
-  scriptRevision  Int                  @default(0) @map("script_revision")
-  scriptConfigJson Json                @default("{}") @map("script_config_json")
-  scriptStateJson Json                 @default("{}") @map("script_state_json")
-  scriptMode      ScriptExecutionMode? @map("script_mode")
-  roomUsers       RoomUser[]
-  messages        Message[]            @relation("RoomMessages")
-  discussionSourceMessages Message[]   @relation("MessageDiscussionRoom")
-  gameSessions    GameSession[]
+  id           Int      @id
+  node         Node     @relation(fields: [id], references: [id], onDelete: Cascade)
+  kind         String   @db.VarChar(64)
+  title        String?  @db.Text
+  pinnedNodeId Int?     @map("pinned_node_id")
+  pinnedNode   Node?    @relation("RoomPinnedNode", fields: [pinnedNodeId], references: [id], onDelete: SetNull)
+  roomUsers    RoomUser[]
+  gameSessions GameSession[]
 
   @@index([kind], map: "rooms_kind_idx")
-  @@index([pinnedMessageId], map: "rooms_pinned_message_idx")
-  @@index([appEnabled], map: "rooms_app_enabled_idx")
-  @@index([appType], map: "rooms_app_type_idx")
-  @@index([scriptId], map: "rooms_script_id_idx")
+  @@index([pinnedNodeId], map: "rooms_pinned_node_idx")
   @@map("rooms")
 }
 
@@ -149,58 +116,51 @@ model RoomUser {
   @@map("rooms_users")
 }
 
-model GraphNode {
-  id          Int             @id @default(autoincrement())
-  kind        GraphNodeKind
-  title       String          @db.VarChar(160)
-  pathSegment String?         @map("path_segment") @db.VarChar(80)
-  targetType  GraphTargetType @default(none) @map("target_type")
-  targetId    Int?            @map("target_id")
-  configJson  Json            @default("{}") @map("config_json")
-  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
-  archivedAt  DateTime?       @map("archived_at") @db.Timestamptz(3)
-  parentEdges GraphEdge[]     @relation("GraphEdgeParent")
-  childEdges  GraphEdge[]     @relation("GraphEdgeChild")
+model Message {
+  id           Int               @id
+  node         Node              @relation(fields: [id], references: [id], onDelete: Cascade)
+  senderId     Int?              @map("sender_id")
+  sender       User?             @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  kind         String            @db.VarChar(64)
+  rawText      String            @map("raw_text")
+  renderedHtml String            @map("rendered_html")
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  reactions    MessageReaction[]
 
-  @@index([kind], map: "graph_nodes_kind_idx")
-  @@index([targetType, targetId], map: "graph_nodes_target_idx")
-  @@index([archivedAt], map: "graph_nodes_archived_idx")
-  @@map("graph_nodes")
+  @@index([senderId], map: "messages_sender_idx")
+  @@index([createdAt(sort: Desc)], map: "messages_created_desc_idx")
+  @@map("messages")
 }
 
-model GraphEdge {
-  id           Int          @id @default(autoincrement())
-  parentNodeId Int          @map("parent_node_id")
-  childNodeId  Int          @map("child_node_id")
-  edgeType     GraphEdgeType @default(child) @map("edge_type")
-  sortOrder    Int          @default(0) @map("sort_order")
-  metaJson     Json         @default("{}") @map("meta_json")
-  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  parentNode   GraphNode    @relation("GraphEdgeParent", fields: [parentNodeId], references: [id], onDelete: Cascade)
-  childNode    GraphNode    @relation("GraphEdgeChild", fields: [childNodeId], references: [id], onDelete: Cascade)
+model MessageReaction {
+  id        Int      @id @default(autoincrement())
+  messageId Int      @map("message_id")
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reaction  String   @db.VarChar(32)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  @@unique([parentNodeId, childNodeId], map: "graph_edges_parent_child_unique")
-  @@unique([childNodeId], map: "graph_edges_child_unique")
-  @@index([parentNodeId, sortOrder], map: "graph_edges_parent_sort_idx")
-  @@map("graph_edges")
+  @@unique([messageId, userId], map: "message_reactions_unique")
+  @@index([messageId, reaction], map: "message_reactions_message_idx")
+  @@map("message_reactions")
 }
 
 model GameSession {
-  id          Int                   @id @default(autoincrement())
-  roomId      Int                   @map("room_id")
-  room        Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  moduleKey   String                @map("module_key") @db.VarChar(64)
-  status      GameSessionStatus
-  visibility  GameSessionVisibility
-  createdById Int?                  @map("created_by")
-  createdBy   User?                 @relation("GameSessionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  startedAt   DateTime?             @map("started_at") @db.Timestamptz(3)
-  finishedAt  DateTime?             @map("finished_at") @db.Timestamptz(3)
-  settingsJson Json                 @map("settings_json")
-  stateJson   Json                  @map("state_json")
-  players     GameSessionPlayer[]
+  id           Int                   @id @default(autoincrement())
+  roomId       Int                   @map("room_id")
+  room         Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  moduleKey    String                @map("module_key") @db.VarChar(64)
+  status       GameSessionStatus
+  visibility   GameSessionVisibility
+  createdById  Int?                  @map("created_by")
+  createdBy    User?                 @relation("GameSessionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  startedAt    DateTime?             @map("started_at") @db.Timestamptz(3)
+  finishedAt   DateTime?             @map("finished_at") @db.Timestamptz(3)
+  settingsJson Json                  @map("settings_json")
+  stateJson    Json                  @map("state_json")
+  players      GameSessionPlayer[]
 
   @@index([roomId], map: "game_sessions_room_idx")
   @@index([moduleKey, status], map: "game_sessions_module_status_idx")
@@ -221,46 +181,6 @@ model GameSessionPlayer {
   @@unique([sessionId, seat], map: "game_session_players_session_seat_key")
   @@index([userId], map: "game_session_players_user_idx")
   @@map("game_session_players")
-}
-
-model Message {
-  id               Int                  @id @default(autoincrement())
-  roomId           Int                  @map("room_id")
-  room             Room                 @relation("RoomMessages", fields: [roomId], references: [id], onDelete: Cascade)
-  senderId         Int?                 @map("sender_id")
-  sender           User?                @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
-  kind             MessageKind          @default(text)
-  rawText          String               @map("raw_text")
-  renderedHtml     String               @map("rendered_html")
-  scriptId         String?              @map("script_id") @db.VarChar(128)
-  scriptRevision   Int                  @default(0) @map("script_revision")
-  scriptConfigJson Json                 @default("{}") @map("script_config_json")
-  scriptStateJson  Json                 @default("{}") @map("script_state_json")
-  scriptMode       ScriptExecutionMode? @map("script_mode")
-  discussionRoomId Int?                 @map("discussion_room_id")
-  discussionRoom   Room?                @relation("MessageDiscussionRoom", fields: [discussionRoomId], references: [id], onDelete: SetNull)
-  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  reactions        MessageReaction[]
-  pinnedInRooms    Room[]               @relation("RoomPinnedMessage")
-
-  @@index([roomId, createdAt(sort: Desc)], map: "messages_room_created_idx")
-  @@index([scriptId], map: "messages_script_id_idx")
-  @@unique([discussionRoomId], map: "messages_discussion_room_id_key")
-  @@map("messages")
-}
-
-model MessageReaction {
-  id        Int      @id @default(autoincrement())
-  messageId Int      @map("message_id")
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  userId    Int      @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reaction  String   @db.VarChar(32)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  @@unique([messageId, userId], map: "message_reactions_unique")
-  @@index([messageId, reaction], map: "message_reactions_message_idx")
-  @@map("message_reactions")
 }
 
 model Session {

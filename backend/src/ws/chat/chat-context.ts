@@ -10,6 +10,14 @@ import {
 } from '../../common/message-format.js';
 import {ensureUserInGroupRooms, getOrCreateDirectRoom} from '../../common/rooms.js';
 import {deleteUploadFile, sanitizeUploadName} from '../../common/uploads.js';
+import {
+  findCommentRoomNodeIdByMessageId,
+  readNodeScriptConfig,
+  readNodeScriptId,
+  readNodeScriptMode,
+  readNodeScriptRevision,
+  readNodeScriptState,
+} from '../../common/nodes.js';
 import type {SocketState} from '../protocol.js';
 
 export const MAX_MESSAGE_LENGTH = 5000;
@@ -137,16 +145,17 @@ export class ChatContext {
   async pruneRoomOverflow(roomId: number) {
     await db.$executeRaw(
       Prisma.sql`
-        delete from messages
+        delete from nodes
         where id in (
           select id from (
             select
               m.id,
               row_number() over (order by m.created_at desc, m.id desc) as rn
             from messages m
-            left join rooms r on r.id = m.room_id
-            where m.room_id = ${roomId}
-              and (r.pinned_message_id is null or r.pinned_message_id <> m.id)
+            join nodes n on n.id = m.id
+            left join rooms r on r.id = ${roomId}
+            where n.parent_id = ${roomId}
+              and (r.pinned_node_id is null or r.pinned_node_id <> m.id)
           ) ranked
           where rn > ${MAX_MESSAGES_PER_ROOM}
         )
@@ -382,7 +391,9 @@ export class ChatContext {
     if (timeLabels.size > 0) {
       const timelineRows = await db.message.findMany({
         where: {
-          roomId,
+          node: {
+            parentId: roomId,
+          },
         },
         orderBy: [
           {createdAt: 'asc'},
@@ -487,22 +498,26 @@ export class ChatContext {
     const messageRow = await db.message.findFirst({
       where: {
         id: messageId,
-        roomId,
+        node: {
+          parentId: roomId,
+        },
       },
       select: {
         id: true,
-        roomId: true,
         senderId: true,
         kind: true,
         rawText: true,
         renderedHtml: true,
         createdAt: true,
-        scriptId: true,
-        scriptRevision: true,
-        scriptMode: true,
-        scriptConfigJson: true,
-        scriptStateJson: true,
-        discussionRoomId: true,
+        node: {
+          select: {
+            parentId: true,
+            component: true,
+            clientScript: true,
+            serverScript: true,
+            data: true,
+          },
+        },
         sender: {
           select: {
             id: true,
@@ -516,6 +531,13 @@ export class ChatContext {
     });
 
     if (!messageRow) return null;
+
+    const discussionRoomId = await findCommentRoomNodeIdByMessageId(messageRow.id);
+    const scriptId = readNodeScriptId(messageRow.node);
+    const scriptRevision = readNodeScriptRevision(messageRow.node);
+    const scriptMode = readNodeScriptMode(messageRow.node);
+    const scriptConfigJson = readNodeScriptConfig(messageRow.node);
+    const scriptStateJson = readNodeScriptState(messageRow.node);
 
     const isScriptable = messageRow.kind === 'scriptable';
     const compiled = isScriptable
@@ -533,9 +555,9 @@ export class ChatContext {
 
     return {
       id: messageRow.id,
-      roomId: messageRow.roomId,
-      dialogId: messageRow.roomId,
-      kind: messageRow.kind || 'text',
+      roomId,
+      dialogId: roomId,
+      kind: messageRow.kind === 'system' || messageRow.kind === 'scriptable' ? messageRow.kind : 'text',
       authorId: author.authorId,
       authorNickname: author.authorNickname,
       authorName: author.authorName,
@@ -544,12 +566,12 @@ export class ChatContext {
       rawText: compiled.rawText,
       renderedHtml: compiled.renderedHtml,
       renderedPreviews: compiled.renderedPreviews,
-      scriptId: messageRow.scriptId || null,
-      scriptRevision: Number(messageRow.scriptRevision || 0),
-      scriptMode: messageRow.scriptMode || null,
-      scriptConfigJson: messageRow.scriptConfigJson || {},
-      scriptStateJson: messageRow.scriptStateJson || {},
-      discussionRoomId: Number(messageRow.discussionRoomId || 0) || null,
+      scriptId,
+      scriptRevision,
+      scriptMode,
+      scriptConfigJson,
+      scriptStateJson,
+      discussionRoomId,
       createdAt: messageRow.createdAt.toISOString(),
       reactions: await this.loadMessageReactions(messageRow.id),
     };

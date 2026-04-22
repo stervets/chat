@@ -33,9 +33,6 @@ export * from '../chat-page.constants';
 export type {
   DiscussionMeta,
   Dialog,
-  GraphNode,
-  GraphNodeKind,
-  GraphRoomTarget,
   Message,
   MessageReaction,
   RoomApp,

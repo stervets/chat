@@ -9,6 +9,8 @@ async function run() {
       game_sessions,
       rooms_users,
       rooms,
+      nodes,
+      push_subscriptions,
       sessions,
       invites,
       users

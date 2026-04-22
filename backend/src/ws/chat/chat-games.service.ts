@@ -1,5 +1,6 @@
 import {db} from '../../db.js';
 import {getRoomById, userCanAccessRoom} from '../../common/rooms.js';
+import {createMessageNode, createRoomNode} from '../../common/nodes.js';
 import {DEFAULT_NICKNAME_COLOR} from '../../common/const.js';
 import {getGameModule} from '../../modules-runtime/registry.js';
 import {bindKingBotCast, type KingRuntimeBotProfile} from '../../modules/king/bot-cast.js';
@@ -179,26 +180,21 @@ export class ChatGamesService {
     if (!sender) return null;
 
     const compiled = await this.ctx.compileMessageForRoom(input.roomId, input.rawText);
-    const created = await db.message.create({
-      data: {
-        roomId: input.roomId,
-        senderId: sender.id,
-        kind: input.kind || 'text',
-        rawText: compiled.rawText,
-        renderedHtml: compiled.renderedHtml,
-      },
-      select: {
-        id: true,
-        createdAt: true,
-      },
+    const created = await createMessageNode(db, {
+      roomId: input.roomId,
+      senderId: sender.id,
+      createdById: sender.id,
+      kind: input.kind || 'text',
+      rawText: compiled.rawText,
+      renderedHtml: compiled.renderedHtml,
     });
 
     return this.toMessagePayload({
       roomId: input.roomId,
       author: sender,
       message: {
-        id: created.id,
-        createdAt: created.createdAt,
+        id: created.message.id,
+        createdAt: created.message.createdAt,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,
@@ -405,20 +401,16 @@ export class ChatGamesService {
     ];
 
     const created = await db.$transaction(async (tx) => {
-      const room = await tx.room.create({
-        data: {
-          kind: 'game',
-          title: 'King · solo',
-          createdById: state.user!.id,
-        },
-        select: {
-          id: true,
-        },
+      const room = await createRoomNode(tx, {
+        kind: 'game',
+        title: 'King · solo',
+        createdById: state.user!.id,
+        nodeData: {},
       });
 
       await tx.roomUser.createMany({
         data: players.map((player) => ({
-          roomId: room.id,
+          roomId: room.room.id,
           userId: player.userId,
         })),
         skipDuplicates: true,
@@ -426,7 +418,7 @@ export class ChatGamesService {
 
       const session = await tx.gameSession.create({
         data: {
-          roomId: room.id,
+          roomId: room.room.id,
           moduleKey,
           status: 'active',
           visibility: 'solo',
@@ -477,7 +469,7 @@ export class ChatGamesService {
       });
 
       return {
-        roomId: room.id,
+        roomId: room.room.id,
         sessionId: session.id,
       };
     });

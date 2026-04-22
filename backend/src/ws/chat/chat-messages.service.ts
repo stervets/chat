@@ -1,5 +1,6 @@
 import {db} from '../../db.js';
 import {getRoomById, userCanAccessRoom, userIsRoomAdmin} from '../../common/rooms.js';
+import {createMessageNode, createRoomNode} from '../../common/nodes.js';
 import {
   ANONYMOUS_AUTHOR_ID,
   ANONYMOUS_AUTHOR_NAME,
@@ -68,25 +69,21 @@ export class ChatMessagesService {
     const anonymous = options.anonymous;
     const senderId = anonymous ? null : state.user!.id;
 
-    const created = await db.message.create({
-      data: {
-        roomId,
-        senderId,
-        kind: 'text',
-        rawText: compiled.rawText,
-        renderedHtml: compiled.renderedHtml,
-      },
-      select: {
-        id: true,
-        createdAt: true,
-      },
+    const created = await createMessageNode(db, {
+      roomId,
+      senderId,
+      createdById: senderId,
+      kind: 'text',
+      rawText: compiled.rawText,
+      renderedHtml: compiled.renderedHtml,
     });
+
     await this.ctx.pruneRoomOverflow(roomId);
 
     return {
       ok: true,
       message: {
-        id: created.id,
+        id: created.message.id,
         roomId,
         dialogId: roomId,
         kind: 'text',
@@ -104,7 +101,7 @@ export class ChatMessagesService {
         scriptConfigJson: {},
         scriptStateJson: {},
         discussionRoomId: null,
-        createdAt: created.createdAt.toISOString(),
+        createdAt: created.message.createdAt.toISOString(),
         reactions: [],
       },
     };
@@ -116,8 +113,8 @@ export class ChatMessagesService {
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
-    const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
-    if (!Number.isFinite(messageId) || messageId <= 0) {
+    const messageId = this.parseMessageId(messageIdRaw);
+    if (!messageId) {
       return {ok: false, error: 'invalid_message'};
     }
 
@@ -125,18 +122,26 @@ export class ChatMessagesService {
       where: {id: messageId},
       select: {
         id: true,
-        roomId: true,
         senderId: true,
-        discussionRoomId: true,
         kind: true,
         rawText: true,
         renderedHtml: true,
         createdAt: true,
+        node: {
+          select: {
+            parentId: true,
+          },
+        },
       },
     });
 
     if (!existing) {
       return {ok: false, error: 'message_not_found'};
+    }
+
+    const roomId = Number(existing.node?.parentId || 0);
+    if (!Number.isFinite(roomId) || roomId <= 0) {
+      return {ok: false, error: 'room_not_found'};
     }
 
     if (existing.senderId !== state.user!.id) {
@@ -146,7 +151,7 @@ export class ChatMessagesService {
       return {ok: false, error: 'message_not_editable'};
     }
 
-    const room = await getRoomById(existing.roomId);
+    const room = await getRoomById(roomId);
     if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
@@ -159,7 +164,7 @@ export class ChatMessagesService {
     const rawText = trimmed.length > MAX_MESSAGE_LENGTH
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
-    const compiled = await this.ctx.compileMessageForRoom(existing.roomId, rawText, existing.id);
+    const compiled = await this.ctx.compileMessageForRoom(roomId, rawText, existing.id);
 
     const changed = compiled.rawText !== (existing.rawText || '') || compiled.renderedHtml !== (existing.renderedHtml || '');
     if (changed) {
@@ -172,31 +177,15 @@ export class ChatMessagesService {
       });
     }
 
+    const message = await this.ctx.loadMessagePayloadById(roomId, existing.id);
+    if (!message) {
+      return {ok: false, error: 'message_not_found'};
+    }
+
     return {
       ok: true,
       changed,
-      message: {
-        id: existing.id,
-        roomId: existing.roomId,
-        dialogId: existing.roomId,
-        kind: 'text',
-        authorId: state.user!.id,
-        authorNickname: state.user!.nickname,
-        authorName: state.user!.name,
-        authorNicknameColor: state.user!.nicknameColor,
-        authorDonationBadgeUntil: state.user!.donationBadgeUntil,
-        rawText: compiled.rawText,
-        renderedHtml: compiled.renderedHtml,
-        renderedPreviews: compiled.renderedPreviews,
-        scriptId: null,
-        scriptRevision: 0,
-        scriptMode: null,
-        scriptConfigJson: {},
-        scriptStateJson: {},
-        discussionRoomId: Number(existing.discussionRoomId || 0) || null,
-        createdAt: existing.createdAt.toISOString(),
-        reactions: await this.ctx.loadMessageReactions(messageId),
-      },
+      message,
     };
   }
 
@@ -209,8 +198,8 @@ export class ChatMessagesService {
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
-    const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
-    if (!Number.isFinite(messageId) || messageId <= 0) {
+    const messageId = this.parseMessageId(messageIdRaw);
+    if (!messageId) {
       return {ok: false, error: 'invalid_message'};
     }
 
@@ -218,12 +207,11 @@ export class ChatMessagesService {
       where: {id: messageId},
       select: {
         id: true,
-        roomId: true,
         senderId: true,
         rawText: true,
-        room: {
+        node: {
           select: {
-            pinnedMessageId: true,
+            parentId: true,
           },
         },
       },
@@ -233,18 +221,23 @@ export class ChatMessagesService {
       return {ok: false, error: 'message_not_found'};
     }
 
+    const roomId = Number(existing.node?.parentId || 0);
+    if (!Number.isFinite(roomId) || roomId <= 0) {
+      return {ok: false, error: 'room_not_found'};
+    }
+
     if (existing.senderId !== state.user!.id) {
       return {ok: false, error: 'forbidden'};
     }
 
-    const room = await getRoomById(existing.roomId);
+    const room = await getRoomById(roomId);
     if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
     const uploadNames = this.ctx.extractUploadNamesFromRawText(existing.rawText || '');
-    const pinnedCleared = Number(existing.room?.pinnedMessageId || 0) === messageId;
-    const result = await db.message.deleteMany({
+    const pinnedCleared = Number(room.pinned_node_id || 0) === messageId;
+    const result = await db.node.deleteMany({
       where: {id: messageId},
     });
     if (result.count > 0) {
@@ -253,8 +246,8 @@ export class ChatMessagesService {
     return {
       ok: true,
       changed: result.count > 0,
-      roomId: existing.roomId,
-      dialogId: existing.roomId,
+      roomId,
+      dialogId: roomId,
       messageId,
       pinnedCleared: result.count > 0 && pinnedCleared,
     };
@@ -281,8 +274,11 @@ export class ChatMessagesService {
       },
       select: {
         id: true,
-        roomId: true,
-        discussionRoomId: true,
+        node: {
+          select: {
+            parentId: true,
+          },
+        },
       },
     });
 
@@ -290,15 +286,32 @@ export class ChatMessagesService {
       return {ok: false, error: 'message_not_found'};
     }
 
-    const room = await getRoomById(message.roomId);
+    const sourceRoomId = Number(message.node?.parentId || 0);
+    if (!Number.isFinite(sourceRoomId) || sourceRoomId <= 0) {
+      return {ok: false, error: 'room_not_found'};
+    }
+
+    const room = await getRoomById(sourceRoomId);
     if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
+    const discussionRoom = await db.room.findFirst({
+      where: {
+        kind: 'comment',
+        node: {
+          parentId: message.id,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
     return {
       ok: true,
       messageId: message.id,
-      discussionRoomId: Number(message.discussionRoomId || 0) || null,
+      discussionRoomId: Number(discussionRoom?.id || 0) || null,
     };
   }
 
@@ -326,9 +339,12 @@ export class ChatMessagesService {
       },
       select: {
         id: true,
-        roomId: true,
         rawText: true,
-        discussionRoomId: true,
+        node: {
+          select: {
+            parentId: true,
+          },
+        },
       },
     });
 
@@ -336,27 +352,41 @@ export class ChatMessagesService {
       return {ok: false, error: 'message_not_found'};
     }
 
-    const sourceRoom = await getRoomById(existingMessage.roomId);
+    const sourceRoomId = Number(existingMessage.node?.parentId || 0);
+    if (!Number.isFinite(sourceRoomId) || sourceRoomId <= 0) {
+      return {ok: false, error: 'room_not_found'};
+    }
+
+    const sourceRoom = await getRoomById(sourceRoomId);
     if (!sourceRoom || !userCanAccessRoom(state.user!.id, sourceRoom)) {
       return {ok: false, error: 'forbidden'};
     }
 
-    if (Number(existingMessage.discussionRoomId || 0) > 0) {
+    const existingCommentRoom = await db.room.findFirst({
+      where: {
+        kind: 'comment',
+        node: {
+          parentId: existingMessage.id,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existingCommentRoom) {
       return {
         ok: true,
         created: false,
         messageId: existingMessage.id,
-        sourceRoomId: existingMessage.roomId,
-        discussionRoomId: Number(existingMessage.discussionRoomId || 0),
-        message: await this.ctx.loadMessagePayloadById(
-          existingMessage.roomId,
-          existingMessage.id,
-        ),
+        sourceRoomId,
+        discussionRoomId: existingCommentRoom.id,
+        message: await this.ctx.loadMessagePayloadById(sourceRoomId, existingMessage.id),
       };
     }
 
     const created = await db.$transaction(async (tx) => {
-      await tx.$queryRaw`select id from messages where id = ${messageId} for update`;
+      await tx.$queryRaw`select id from nodes where id = ${messageId} for update`;
 
       const locked = await tx.message.findUnique({
         where: {
@@ -364,43 +394,56 @@ export class ChatMessagesService {
         },
         select: {
           id: true,
-          roomId: true,
           rawText: true,
-          discussionRoomId: true,
+          node: {
+            select: {
+              parentId: true,
+            },
+          },
         },
       });
       if (!locked) {
         return {ok: false, error: 'message_not_found'} as const;
       }
 
-      const linkedDiscussionRoomId = Number(locked.discussionRoomId || 0);
-      if (linkedDiscussionRoomId > 0) {
-        return {
-          ok: true,
-          created: false,
-          messageId: locked.id,
-          sourceRoomId: locked.roomId,
-          discussionRoomId: linkedDiscussionRoomId,
-        } as const;
+      const lockedSourceRoomId = Number(locked.node?.parentId || 0);
+      if (!Number.isFinite(lockedSourceRoomId) || lockedSourceRoomId <= 0) {
+        return {ok: false, error: 'room_not_found'} as const;
       }
 
-      const createdRoom = await tx.room.create({
-        data: {
-          kind: 'group',
-          title: this.buildDiscussionRoomTitle(locked.id, locked.rawText),
-          createdById: state.user!.id,
-          appEnabled: false,
-          appType: null,
-          appConfigJson: {},
+      const linkedCommentRoom = await tx.room.findFirst({
+        where: {
+          kind: 'comment',
+          node: {
+            parentId: locked.id,
+          },
         },
         select: {
           id: true,
         },
       });
 
+      if (linkedCommentRoom) {
+        return {
+          ok: true,
+          created: false,
+          messageId: locked.id,
+          sourceRoomId: lockedSourceRoomId,
+          discussionRoomId: linkedCommentRoom.id,
+        } as const;
+      }
+
+      const createdRoom = await createRoomNode(tx, {
+        parentId: locked.id,
+        kind: 'comment',
+        title: this.buildDiscussionRoomTitle(locked.id, locked.rawText),
+        createdById: state.user!.id,
+        nodeData: {},
+      });
+
       const sourceMembers = await tx.roomUser.findMany({
         where: {
-          roomId: locked.roomId,
+          roomId: lockedSourceRoomId,
         },
         select: {
           userId: true,
@@ -410,28 +453,19 @@ export class ChatMessagesService {
       if (sourceMembers.length > 0) {
         await tx.roomUser.createMany({
           data: sourceMembers.map((item) => ({
-            roomId: createdRoom.id,
+            roomId: createdRoom.room.id,
             userId: item.userId,
           })),
           skipDuplicates: true,
         });
       }
 
-      await tx.message.update({
-        where: {
-          id: locked.id,
-        },
-        data: {
-          discussionRoomId: createdRoom.id,
-        },
-      });
-
       return {
         ok: true,
         created: true,
         messageId: locked.id,
-        sourceRoomId: locked.roomId,
-        discussionRoomId: createdRoom.id,
+        sourceRoomId: lockedSourceRoomId,
+        discussionRoomId: createdRoom.room.id,
       } as const;
     });
 
@@ -463,8 +497,8 @@ export class ChatMessagesService {
       return {ok: false, error: 'invalid_room'};
     }
 
-    const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
-    if (!Number.isFinite(messageId) || messageId <= 0) {
+    const messageId = this.parseMessageId(messageIdRaw);
+    if (!messageId) {
       return {ok: false, error: 'invalid_message'};
     }
 
@@ -485,28 +519,32 @@ export class ChatMessagesService {
       },
       select: {
         id: true,
-        roomId: true,
         kind: true,
+        node: {
+          select: {
+            parentId: true,
+          },
+        },
       },
     });
     if (!message) {
       return {ok: false, error: 'message_not_found'};
     }
-    if (message.roomId !== roomId) {
+    if (Number(message.node?.parentId || 0) !== roomId) {
       return {ok: false, error: 'message_not_in_room'};
     }
     if (room.app_enabled && message.kind !== 'scriptable') {
       return {ok: false, error: 'app_surface_must_be_scriptable'};
     }
 
-    const changed = Number(room.pinned_message_id || 0) !== messageId;
+    const changed = Number(room.pinned_node_id || 0) !== messageId;
     if (changed) {
       await db.room.update({
         where: {
           id: roomId,
         },
         data: {
-          pinnedMessageId: messageId,
+          pinnedNodeId: messageId,
         },
       });
     }
@@ -548,14 +586,14 @@ export class ChatMessagesService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const changed = Number(room.pinned_message_id || 0) > 0;
+    const changed = Number(room.pinned_node_id || 0) > 0;
     if (changed) {
       await db.room.update({
         where: {
           id: roomId,
         },
         data: {
-          pinnedMessageId: null,
+          pinnedNodeId: null,
         },
       });
     }

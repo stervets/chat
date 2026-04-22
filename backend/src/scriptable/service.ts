@@ -1,13 +1,22 @@
 import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
 import {db} from '../db.js';
 import {getRoomById, userCanAccessRoom} from '../common/rooms.js';
+import {
+  createMessageNode,
+  mergeNodeData,
+  readNodeScriptConfig,
+  readNodeScriptId,
+  readNodeScriptMode,
+  readNodeScriptRevision,
+  readNodeScriptState,
+  type ScriptExecutionMode,
+} from '../common/nodes.js';
 import {scriptableEvents} from './events.js';
 import {getLatestScriptDefinition, getScriptDefinition} from './registry.js';
 import {scriptRunnerClient} from './runner-client.js';
 import type {
   ScriptActionResult,
   ScriptEntityType,
-  ScriptExecutionMode,
 } from './types.js';
 import {ChatContext, type ApiError, type ApiOk, type ChatContextMessagePayload} from '../ws/chat/chat-context.js';
 
@@ -15,6 +24,7 @@ type ScriptedMessageRow = {
   id: number;
   roomId: number;
   kind: 'text' | 'system' | 'scriptable';
+  nodeData: any;
   scriptId: string | null;
   scriptRevision: number;
   scriptMode: ScriptExecutionMode | null;
@@ -24,21 +34,14 @@ type ScriptedMessageRow = {
 
 type ScriptedRoomRow = {
   id: number;
-  kind: 'group' | 'direct' | 'game';
+  kind: 'group' | 'direct' | 'game' | 'comment';
+  nodeData: any;
   scriptId: string | null;
   scriptRevision: number;
   scriptMode: ScriptExecutionMode | null;
   scriptConfigJson: any;
   scriptStateJson: any;
 };
-
-function normalizeMode(raw: unknown): ScriptExecutionMode | null {
-  const mode = String(raw || '').trim().toLowerCase();
-  if (mode === 'client' || mode === 'client_server' || mode === 'client_runner') {
-    return mode;
-  }
-  return null;
-}
 
 function cloneJson<T>(value: T): T {
   try {
@@ -60,6 +63,19 @@ function scriptFallbackHtml(scriptId: string, revision: number) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
   return `<span class="scriptable-fallback">script ${escapedId}@${revision}</span>`;
+}
+
+function pickNodeScripts(scriptId: string, mode: ScriptExecutionMode) {
+  if (mode === 'client_server') {
+    return {
+      clientScript: scriptId,
+      serverScript: scriptId,
+    };
+  }
+  return {
+    clientScript: scriptId,
+    serverScript: null,
+  };
 }
 
 export class ScriptableService {
@@ -113,22 +129,17 @@ export class ScriptableService {
     if (!sender) return null;
 
     const compiled = await this.ctx.compileMessageForRoom(roomId, rawText);
-    const created = await db.message.create({
-      data: {
-        roomId,
-        senderId: sender.id,
-        kind: 'system',
-        rawText: compiled.rawText,
-        renderedHtml: compiled.renderedHtml,
-      },
-      select: {
-        id: true,
-        createdAt: true,
-      },
+    const created = await createMessageNode(db, {
+      roomId,
+      senderId: sender.id,
+      createdById: sender.id,
+      kind: 'system',
+      rawText: compiled.rawText,
+      renderedHtml: compiled.renderedHtml,
     });
 
     const payload: ChatContextMessagePayload = {
-      id: created.id,
+      id: created.message.id,
       roomId,
       dialogId: roomId,
       kind: 'system',
@@ -145,7 +156,7 @@ export class ScriptableService {
       scriptMode: null,
       scriptConfigJson: {},
       scriptStateJson: {},
-      createdAt: created.createdAt.toISOString(),
+      createdAt: created.message.createdAt.toISOString(),
       reactions: [],
     };
 
@@ -170,13 +181,6 @@ export class ScriptableService {
   }
 
   private normalizeConfig(raw: unknown) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return {};
-    }
-    return cloneJson(raw);
-  }
-
-  private normalizeState(raw: unknown) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return {};
     }
@@ -221,30 +225,30 @@ export class ScriptableService {
       : {};
     const fallbackText = scriptFallbackText(definition.scriptId, definition.revision);
     const fallbackHtml = scriptFallbackHtml(definition.scriptId, definition.revision);
+    const nodeScripts = pickNodeScripts(definition.scriptId, definition.mode);
 
-    const created = await db.message.create({
-      data: {
-        roomId,
-        senderId: state.user!.id,
-        kind: 'scriptable',
-        rawText: fallbackText,
-        renderedHtml: fallbackHtml,
-        scriptId: definition.scriptId,
-        scriptRevision: definition.revision,
+    const created = await createMessageNode(db, {
+      roomId,
+      senderId: state.user!.id,
+      createdById: state.user!.id,
+      kind: 'scriptable',
+      rawText: fallbackText,
+      renderedHtml: fallbackHtml,
+      clientScript: nodeScripts.clientScript,
+      serverScript: nodeScripts.serverScript,
+      nodeData: mergeNodeData({
+        current: {},
         scriptMode: definition.mode,
-        scriptConfigJson: cloneJson(scriptConfigJson || {}),
-        scriptStateJson: cloneJson(scriptStateJson || {}),
-      },
-      select: {
-        id: true,
-        createdAt: true,
-      },
+        scriptRevision: definition.revision,
+        scriptConfig: cloneJson(scriptConfigJson || {}),
+        scriptState: cloneJson(scriptStateJson || {}),
+      }),
     });
 
     await this.ctx.pruneRoomOverflow(roomId);
 
     const message: ChatContextMessagePayload = {
-      id: created.id,
+      id: created.message.id,
       roomId,
       dialogId: roomId,
       kind: 'scriptable',
@@ -261,7 +265,7 @@ export class ScriptableService {
       scriptMode: definition.mode,
       scriptConfigJson: cloneJson(scriptConfigJson || {}),
       scriptStateJson: cloneJson(scriptStateJson || {}),
-      createdAt: created.createdAt.toISOString(),
+      createdAt: created.message.createdAt.toISOString(),
       reactions: [],
     };
 
@@ -276,16 +280,33 @@ export class ScriptableService {
       where: {id: messageId},
       select: {
         id: true,
-        roomId: true,
         kind: true,
-        scriptId: true,
-        scriptRevision: true,
-        scriptMode: true,
-        scriptConfigJson: true,
-        scriptStateJson: true,
+        node: {
+          select: {
+            parentId: true,
+            clientScript: true,
+            serverScript: true,
+            data: true,
+          },
+        },
       },
     });
-    return row as ScriptedMessageRow | null;
+    if (!row) return null;
+
+    const roomId = Number(row.node?.parentId || 0);
+    if (!Number.isFinite(roomId) || roomId <= 0) return null;
+
+    return {
+      id: row.id,
+      roomId,
+      kind: row.kind === 'system' || row.kind === 'scriptable' ? row.kind : 'text',
+      nodeData: cloneJson(row.node?.data || {}),
+      scriptId: readNodeScriptId(row.node),
+      scriptRevision: readNodeScriptRevision(row.node),
+      scriptMode: readNodeScriptMode(row.node),
+      scriptConfigJson: readNodeScriptConfig(row.node),
+      scriptStateJson: readNodeScriptState(row.node),
+    };
   }
 
   private async loadScriptedRoom(roomId: number): Promise<ScriptedRoomRow | null> {
@@ -294,14 +315,27 @@ export class ScriptableService {
       select: {
         id: true,
         kind: true,
-        scriptId: true,
-        scriptRevision: true,
-        scriptMode: true,
-        scriptConfigJson: true,
-        scriptStateJson: true,
+        node: {
+          select: {
+            clientScript: true,
+            serverScript: true,
+            data: true,
+          },
+        },
       },
     });
-    return row as ScriptedRoomRow | null;
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      kind: row.kind === 'direct' || row.kind === 'game' || row.kind === 'comment' ? row.kind : 'group',
+      nodeData: cloneJson(row.node?.data || {}),
+      scriptId: readNodeScriptId(row.node),
+      scriptRevision: readNodeScriptRevision(row.node),
+      scriptMode: readNodeScriptMode(row.node),
+      scriptConfigJson: readNodeScriptConfig(row.node),
+      scriptStateJson: readNodeScriptState(row.node),
+    };
   }
 
   async getRoomScriptEntity(
@@ -346,6 +380,18 @@ export class ScriptableService {
     };
   }
 
+  private async saveNodeScriptState(entityId: number, nodeData: any, nextState: any) {
+    await db.node.update({
+      where: {id: entityId},
+      data: {
+        data: mergeNodeData({
+          current: nodeData || {},
+          scriptState: nextState,
+        }),
+      },
+    });
+  }
+
   private async applyClientServerAction(input: {
     entityType: ScriptEntityType;
     entityId: number;
@@ -355,6 +401,7 @@ export class ScriptableService {
     scriptMode: ScriptExecutionMode;
     scriptConfigJson: any;
     scriptStateJson: any;
+    nodeData: any;
     actionType: string;
     actionPayload: any;
     actor: {
@@ -380,21 +427,7 @@ export class ScriptableService {
     });
     const nextState = cloneJson(actionResult?.nextState || {});
 
-    if (input.entityType === 'message') {
-      await db.message.update({
-        where: {id: input.entityId},
-        data: {
-          scriptStateJson: nextState,
-        },
-      });
-    } else {
-      await db.room.update({
-        where: {id: input.entityId},
-        data: {
-          scriptStateJson: nextState,
-        },
-      });
-    }
+    await this.saveNodeScriptState(input.entityId, input.nodeData, nextState);
 
     scriptableEvents.emit('scripts:state', this.toScriptStatePayload({
       roomId: input.roomId,
@@ -423,6 +456,7 @@ export class ScriptableService {
     scriptMode: ScriptExecutionMode;
     scriptConfigJson: any;
     scriptStateJson: any;
+    nodeData: any;
     actionType: string;
     actionPayload: any;
     actor: {
@@ -451,21 +485,7 @@ export class ScriptableService {
 
     const nextState = cloneJson(response.state || {});
 
-    if (input.entityType === 'message') {
-      await db.message.update({
-        where: {id: input.entityId},
-        data: {
-          scriptStateJson: nextState,
-        },
-      });
-    } else {
-      await db.room.update({
-        where: {id: input.entityId},
-        data: {
-          scriptStateJson: nextState,
-        },
-      });
-    }
+    await this.saveNodeScriptState(input.entityId, input.nodeData, nextState);
 
     scriptableEvents.emit('scripts:state', this.toScriptStatePayload({
       roomId: input.roomId,
@@ -516,6 +536,7 @@ export class ScriptableService {
     let scriptMode: ScriptExecutionMode | null = null;
     let scriptConfigJson: any = {};
     let scriptStateJson: any = {};
+    let nodeData: any = {};
 
     if (entityType === 'message') {
       const message = await this.loadScriptedMessage(entityId);
@@ -525,9 +546,10 @@ export class ScriptableService {
       roomId = message.roomId;
       scriptId = String(message.scriptId || '').trim().toLowerCase();
       scriptRevision = Number(message.scriptRevision || 0);
-      scriptMode = normalizeMode(message.scriptMode);
+      scriptMode = message.scriptMode;
       scriptConfigJson = cloneJson(message.scriptConfigJson || {});
       scriptStateJson = cloneJson(message.scriptStateJson || {});
+      nodeData = cloneJson(message.nodeData || {});
     } else {
       const room = await this.loadScriptedRoom(entityId);
       if (!room) {
@@ -536,9 +558,10 @@ export class ScriptableService {
       roomId = room.id;
       scriptId = String(room.scriptId || '').trim().toLowerCase();
       scriptRevision = Number(room.scriptRevision || 0);
-      scriptMode = normalizeMode(room.scriptMode);
+      scriptMode = room.scriptMode;
       scriptConfigJson = cloneJson(room.scriptConfigJson || {});
       scriptStateJson = cloneJson(room.scriptStateJson || {});
+      nodeData = cloneJson(room.nodeData || {});
     }
 
     if (!scriptId || !scriptMode || scriptRevision <= 0) {
@@ -563,6 +586,7 @@ export class ScriptableService {
       scriptMode,
       scriptConfigJson,
       scriptStateJson,
+      nodeData,
       actionType,
       actionPayload: cloneJson(payloadRaw?.payload),
       actor: {
@@ -618,12 +642,7 @@ export class ScriptableService {
     }
 
     const nextState = cloneJson(response.state || {});
-    await db.room.update({
-      where: {id: room.id},
-      data: {
-        scriptStateJson: nextState,
-      },
-    });
+    await this.saveNodeScriptState(room.id, room.nodeData, nextState);
 
     scriptableEvents.emit('scripts:state', this.toScriptStatePayload({
       roomId: room.id,
@@ -644,11 +663,17 @@ export class ScriptableService {
       orderBy: {id: 'asc'},
       select: {
         id: true,
-        scriptId: true,
+        node: {
+          select: {
+            clientScript: true,
+            serverScript: true,
+            data: true,
+          },
+        },
       },
     });
     if (!generalRoom) return;
-    if (generalRoom.scriptId) return;
+    if (readNodeScriptId(generalRoom.node)) return;
 
     const definition = getLatestScriptDefinition('room', 'demo:room_meter');
     if (!definition) return;
@@ -659,15 +684,22 @@ export class ScriptableService {
     const scriptStateJson = definition.makeInitialState
       ? definition.makeInitialState({config: scriptConfigJson})
       : {};
+    const nodeScripts = pickNodeScripts(definition.scriptId, definition.mode);
 
-    await db.room.update({
-      where: {id: generalRoom.id},
+    await db.node.update({
+      where: {
+        id: generalRoom.id,
+      },
       data: {
-        scriptId: definition.scriptId,
-        scriptRevision: definition.revision,
-        scriptMode: definition.mode,
-        scriptConfigJson: cloneJson(scriptConfigJson || {}),
-        scriptStateJson: cloneJson(scriptStateJson || {}),
+        clientScript: nodeScripts.clientScript,
+        serverScript: nodeScripts.serverScript,
+        data: mergeNodeData({
+          current: generalRoom.node?.data || {},
+          scriptMode: definition.mode,
+          scriptRevision: definition.revision,
+          scriptConfig: cloneJson(scriptConfigJson || {}),
+          scriptState: cloneJson(scriptStateJson || {}),
+        }),
       },
     });
   }

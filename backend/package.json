@@ -13,6 +13,7 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "db:init": "tsx src/cli/db-init.ts",
+    "db:migrate:nodes": "tsx src/scripts/migrate-to-nodes.ts",
     "admin:tui": "tsx src/cli/admin-tui.ts",
     "invite:create": "tsx src/cli/invite-create.ts",
     "user:bootstrap": "tsx src/cli/bootstrap-user.ts",

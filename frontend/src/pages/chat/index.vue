@@ -24,62 +24,6 @@
             Общий чат
           </button>
 
-          <div class="spaces-block">
-            <div class="section-head-row">
-              <div class="section-title">Пространства</div>
-              <div class="section-head-actions">
-                <button class="section-link-btn" @click="refreshSpacesNavigation">Обновить</button>
-                <button class="section-link-btn" @click="openSpacesPageFromChat">Весь экран</button>
-              </div>
-            </div>
-            <div v-if="spacesNavError" class="hint hint-error">{{ spacesNavError }}</div>
-            <div v-if="spacesNavLoading && !spacesNavSpaces.length" class="hint">Загружаю spaces...</div>
-            <div v-else-if="!spacesNavSpaces.length" class="hint">Пока нет spaces</div>
-            <template v-else>
-              <div class="spaces-chip-row">
-                <button
-                  v-for="space in spacesNavSpaces"
-                  :key="`chat-space-${space.id}`"
-                  class="space-chip"
-                  :class="{active: spacesNavActiveSpaceId === space.id}"
-                  @click="selectSpacesNavigationSpace(space.id)"
-                >
-                  {{ space.title }}
-                </button>
-              </div>
-
-              <div v-if="spacesNavPath.length > 1" class="spaces-path-row">
-                <button
-                  v-for="(node, index) in spacesNavPath"
-                  :key="`chat-space-path-${node.id}`"
-                  class="space-path-btn"
-                  :class="{active: index === spacesNavPath.length - 1}"
-                  @click="selectSpacesNavigationPath(index)"
-                >
-                  {{ node.title }}
-                </button>
-              </div>
-
-              <div v-if="spacesNavLoading && spacesNavPath.length" class="hint">Загрузка раздела...</div>
-              <div v-else-if="spacesNavPath.length && !spacesNavChildren.length" class="hint">Внутри пусто</div>
-              <div v-else class="menu-list spaces-node-list">
-                <button
-                  v-for="node in spacesNavChildren"
-                  :key="`chat-space-node-${node.id}`"
-                  class="menu-item menu-item-space-node"
-                  :class="{active: isSpacesNavNodeActive(node)}"
-                  @click="onSpacesNavigationNodeClick(node)"
-                >
-                  <span class="space-node-kind">{{ spacesNodeKindLabel(node.kind) }}</span>
-                  <span class="name">{{ node.title }}</span>
-                  <span v-if="node.kind === 'room_ref'" class="nickname">
-                    #{{ node.room?.id || node.targetId }} · {{ spacesNodeRoomMeta(node) }}
-                  </span>
-                </button>
-              </div>
-            </template>
-          </div>
-
           <div class="directs-block">
             <div class="section-title">Директы</div>
             <div class="directs-scroll">
@@ -185,13 +129,6 @@
               <div v-if="isAppRoom" class="subtitle subtitle-app">
                 {{ activeRoomAppTypeLabel }}
               </div>
-              <button
-                v-if="activeSpaceOriginTitle"
-                class="subtitle subtitle-space-link"
-                @click="onBackToSpaceFromRoom"
-              >
-                space · {{ activeSpaceOriginTitle }}
-              </button>
               <div
                 v-if="wsOffline"
                 class="ws-status"

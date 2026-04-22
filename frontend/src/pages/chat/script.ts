@@ -17,7 +17,6 @@ import {chatMethodsMessageBodyAndReactions} from './modules/methods-message-body
 import {chatMethodsAuthDialogsAndProfile} from './modules/methods-auth-dialogs-and-profile';
 import {chatMethodsSendUploadAndRuntime} from './modules/methods-send-upload-and-runtime';
 import {chatMethodsScriptableRuntime} from './modules/methods-scriptable-runtime';
-import {chatMethodsSpacesNavigation} from './modules/methods-spaces-navigation';
 
 export default {
   components: {
@@ -237,21 +236,6 @@ export default {
       };
     },
 
-    spacesNavContainer(this: any) {
-      const path = Array.isArray(this.spacesNavPath) ? this.spacesNavPath : [];
-      if (!path.length) return null;
-      return path[path.length - 1];
-    },
-
-    activeSpaceOriginTitle(this: any) {
-      const spaceId = this.getSpaceOriginIdFromRoute();
-      if (!spaceId) return '';
-      const space = (Array.isArray(this.spacesNavSpaces) ? this.spacesNavSpaces : [])
-        .find((item: any) => Number(item?.id || 0) === spaceId);
-      if (space?.title) return String(space.title);
-      return `Space #${spaceId}`;
-    },
-
     activeDiscussionMeta(this: any) {
       const raw = this.activeDialog?.discussion;
       if (!raw || typeof raw !== 'object') return null;
@@ -290,7 +274,6 @@ export default {
     ...chatMethodsAuthDialogsAndProfile,
     ...chatMethodsSendUploadAndRuntime,
     ...chatMethodsScriptableRuntime,
-    ...chatMethodsSpacesNavigation,
   },
 
   async mounted(this: any) {
@@ -381,7 +364,6 @@ export default {
     this.generalDialog = await this.fetchGeneralDialog();
     await this.fetchUsers();
     await this.fetchDirectDialogs();
-    await this.initSpacesNavigation();
 
     await this.syncDialogFromRoute({replaceInvalid: true});
     this.routeSyncReady = true;

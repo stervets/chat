@@ -8,7 +8,6 @@ import {ChatGamesService} from './chat-games.service.js';
 import {ChatMessagesService} from './chat-messages.service.js';
 import {ChatReactionsService} from './chat-reactions.service.js';
 import {ChatUsersService} from './chat-users.service.js';
-import {ChatGraphService} from './chat-graph.service.js';
 import {ScriptableService} from '../../scriptable/service.js';
 
 @Injectable()
@@ -21,7 +20,6 @@ export class ChatService implements OnApplicationShutdown {
   private readonly dialogsService = new ChatDialogsService(this.ctx);
   private readonly messagesService = new ChatMessagesService(this.ctx);
   private readonly reactionsService = new ChatReactionsService(this.ctx);
-  private readonly graphService = new ChatGraphService(this.ctx);
   private readonly scriptableService = new ScriptableService(this.ctx);
 
   constructor() {
@@ -126,38 +124,6 @@ export class ChatService implements OnApplicationShutdown {
 
   roomsAppConfigure(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
     return this.dialogsService.roomsAppConfigure(state, roomIdRaw, payloadRaw);
-  }
-
-  graphSpacesList(state: SocketState) {
-    return this.graphService.graphSpacesList(state);
-  }
-
-  graphChildren(state: SocketState, parentNodeIdRaw: unknown) {
-    return this.graphService.graphChildren(state, parentNodeIdRaw);
-  }
-
-  graphSpaceCreate(state: SocketState, payloadRaw: any) {
-    return this.graphService.graphSpaceCreate(state, payloadRaw);
-  }
-
-  graphFolderCreate(state: SocketState, payloadRaw: any) {
-    return this.graphService.graphFolderCreate(state, payloadRaw);
-  }
-
-  graphRoomRefCreate(state: SocketState, payloadRaw: any) {
-    return this.graphService.graphRoomRefCreate(state, payloadRaw);
-  }
-
-  graphChildrenReorder(state: SocketState, payloadRaw: any) {
-    return this.graphService.graphChildrenReorder(state, payloadRaw);
-  }
-
-  graphNodeArchive(state: SocketState, nodeIdRaw: unknown) {
-    return this.graphService.graphNodeArchive(state, nodeIdRaw);
-  }
-
-  graphRoomsList(state: SocketState) {
-    return this.graphService.graphRoomsList(state);
   }
 
   dialogsDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any) {

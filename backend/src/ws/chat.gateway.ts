@@ -430,38 +430,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'graph:spaces:list') {
-      return this.chatService.graphSpacesList(client.state);
-    }
-
-    if (com === 'graph:children') {
-      return this.chatService.graphChildren(client.state, args[0]);
-    }
-
-    if (com === 'graph:space:create') {
-      return this.chatService.graphSpaceCreate(client.state, args[0]);
-    }
-
-    if (com === 'graph:folder:create') {
-      return this.chatService.graphFolderCreate(client.state, args[0]);
-    }
-
-    if (com === 'graph:room-ref:create') {
-      return this.chatService.graphRoomRefCreate(client.state, args[0]);
-    }
-
-    if (com === 'graph:children:reorder') {
-      return this.chatService.graphChildrenReorder(client.state, args[0]);
-    }
-
-    if (com === 'graph:node:archive') {
-      return this.chatService.graphNodeArchive(client.state, args[0]);
-    }
-
-    if (com === 'graph:rooms:list') {
-      return this.chatService.graphRoomsList(client.state);
-    }
-
     if (com === 'messages:discussion:get') {
       return this.chatService.messagesDiscussionGet(client.state, args[0]);
     }

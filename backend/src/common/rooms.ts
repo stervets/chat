@@ -1,66 +1,65 @@
 import {db} from '../db.js';
-import {getLatestScriptDefinition} from '../scriptable/registry.js';
+import {
+  cloneJson,
+  createRoomNode,
+  type RoomAppType,
+  type RoomKind,
+  readRoomApp,
+} from './nodes.js';
 
-export type RoomKind = 'group' | 'direct' | 'game';
-export type RoomAppType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
+export type {RoomAppType, RoomKind} from './nodes.js';
 
 export type RoomRow = {
   id: number;
   kind: RoomKind;
   title: string | null;
   created_by: number | null;
+  pinned_node_id: number | null;
   pinned_message_id: number | null;
   app_enabled: boolean;
   app_type: RoomAppType | null;
   app_config_json: Record<string, any>;
+  component: string | null;
+  client_script: string | null;
+  server_script: string | null;
+  data: Record<string, any>;
   member_user_ids: number[];
 };
 
 type RoomWithUsers = {
   id: number;
-  kind: RoomKind;
+  kind: string;
   title: string | null;
-  createdById: number | null;
-  pinnedMessageId: number | null;
-  appEnabled: boolean;
-  appType: RoomAppType | null;
-  appConfigJson: any;
+  pinnedNodeId: number | null;
+  node: {
+    createdById: number | null;
+    component: string | null;
+    clientScript: string | null;
+    serverScript: string | null;
+    data: any;
+  };
   roomUsers: Array<{userId: number}>;
 };
 
-function cloneJson<T>(value: T): T {
-  try {
-    return JSON.parse(JSON.stringify(value)) as T;
-  } catch {
-    return value;
-  }
-}
-
-function normalizeRoomAppType(raw: unknown): RoomAppType | null {
-  const appType = String(raw || '').trim().toLowerCase();
-  if (appType === 'llm' || appType === 'poll' || appType === 'dashboard' || appType === 'bot_control' || appType === 'custom') {
-    return appType;
-  }
-  return null;
-}
-
-function normalizeRoomAppConfig(raw: unknown) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return {};
-  }
-  return cloneJson(raw as Record<string, any>);
-}
-
 function mapRoom(row: RoomWithUsers): RoomRow {
+  const roomApp = readRoomApp({
+    data: row.node?.data || {},
+  });
+
   return {
     id: row.id,
-    kind: row.kind,
+    kind: row.kind === 'direct' || row.kind === 'game' || row.kind === 'comment' ? row.kind : 'group',
     title: row.title || null,
-    created_by: row.createdById,
-    pinned_message_id: row.pinnedMessageId || null,
-    app_enabled: !!row.appEnabled,
-    app_type: normalizeRoomAppType(row.appType),
-    app_config_json: normalizeRoomAppConfig(row.appConfigJson),
+    created_by: Number(row.node?.createdById || 0) || null,
+    pinned_node_id: Number(row.pinnedNodeId || 0) || null,
+    pinned_message_id: Number(row.pinnedNodeId || 0) || null,
+    app_enabled: !!roomApp.enabled,
+    app_type: roomApp.type,
+    app_config_json: cloneJson(roomApp.config || {}),
+    component: row.node?.component || null,
+    client_script: row.node?.clientScript || null,
+    server_script: row.node?.serverScript || null,
+    data: cloneJson(row.node?.data || {}),
     member_user_ids: row.roomUsers.map((item) => item.userId),
   };
 }
@@ -81,10 +80,37 @@ async function ensureRoomMembership(roomId: number, userId: number) {
   });
 }
 
+function roomSelect() {
+  return {
+    id: true,
+    kind: true,
+    title: true,
+    pinnedNodeId: true,
+    node: {
+      select: {
+        createdById: true,
+        component: true,
+        clientScript: true,
+        serverScript: true,
+        data: true,
+      },
+    },
+    roomUsers: {
+      select: {
+        userId: true,
+      },
+    },
+  } as const;
+}
+
 export async function ensureUserInGroupRooms(userId: number) {
   const groupRooms = await db.room.findMany({
-    where: {kind: 'group'},
-    select: {id: true},
+    where: {
+      kind: 'group',
+    },
+    select: {
+      id: true,
+    },
   });
 
   if (!groupRooms.length) return;
@@ -103,80 +129,72 @@ export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<Roo
   const canAssignCreator = Number.isFinite(createdById) && createdById > 0;
 
   let room = await db.room.findFirst({
-    where: {kind: 'group'},
-    orderBy: {id: 'asc'},
-    select: {
-      id: true,
-      kind: true,
-      title: true,
-      createdById: true,
-      pinnedMessageId: true,
-      appEnabled: true,
-      appType: true,
-      appConfigJson: true,
-      roomUsers: {
-        select: {userId: true},
+    where: {
+      kind: 'group',
+      node: {
+        parentId: null,
       },
     },
-  });
+    orderBy: {
+      id: 'asc',
+    },
+    select: roomSelect(),
+  }) as RoomWithUsers | null;
 
   if (!room) {
-    const roomScriptDefinition = getLatestScriptDefinition('room', 'demo:room_meter');
-    const roomScriptConfig = roomScriptDefinition?.makeInitialConfig
-      ? roomScriptDefinition.makeInitialConfig({})
-      : {};
-    const roomScriptState = roomScriptDefinition?.makeInitialState
-      ? roomScriptDefinition.makeInitialState({config: roomScriptConfig})
-      : {};
-
     try {
-      room = await db.room.create({
-        data: {
+      room = await db.$transaction(async (tx) => {
+        const created = await createRoomNode(tx, {
           kind: 'group',
           title: 'Общий чат',
-          ...(canAssignCreator ? {createdById} : {}),
-          ...(roomScriptDefinition
-            ? {
-              scriptId: roomScriptDefinition.scriptId,
-              scriptRevision: roomScriptDefinition.revision,
-              scriptMode: roomScriptDefinition.mode,
-              scriptConfigJson: roomScriptConfig,
-              scriptStateJson: roomScriptState,
-            }
-            : {}),
-        },
-        select: {
-          id: true,
-          kind: true,
-          title: true,
-          createdById: true,
-          pinnedMessageId: true,
-          appEnabled: true,
-          appType: true,
-          appConfigJson: true,
-          roomUsers: {
-            select: {userId: true},
+          createdById: canAssignCreator ? createdById : null,
+          nodeData: {},
+        });
+
+        const users = await tx.user.findMany({
+          select: {
+            id: true,
           },
-        },
+        });
+
+        if (users.length > 0) {
+          await tx.roomUser.createMany({
+            data: users.map((user) => ({
+              roomId: created.room.id,
+              userId: user.id,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        return {
+          id: created.room.id,
+          kind: created.room.kind,
+          title: created.room.title,
+          pinnedNodeId: created.room.pinnedNodeId,
+          node: {
+            createdById: created.node.createdById,
+            component: created.node.component,
+            clientScript: created.node.clientScript,
+            serverScript: created.node.serverScript,
+            data: created.node.data,
+          },
+          roomUsers: users.map((user) => ({userId: user.id})),
+        } satisfies RoomWithUsers;
       });
     } catch {
       room = await db.room.findFirst({
-        where: {kind: 'group'},
-        orderBy: {id: 'asc'},
-        select: {
-          id: true,
-          kind: true,
-          title: true,
-          createdById: true,
-          pinnedMessageId: true,
-          appEnabled: true,
-          appType: true,
-          appConfigJson: true,
-          roomUsers: {
-            select: {userId: true},
+        where: {
+          kind: 'group',
+          node: {
+            parentId: null,
           },
         },
-      });
+        orderBy: {
+          id: 'asc',
+        },
+        select: roomSelect(),
+      }) as RoomWithUsers | null;
     }
   }
 
@@ -189,21 +207,11 @@ export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<Roo
 
 export async function getRoomById(roomId: number): Promise<RoomRow | null> {
   const row = await db.room.findUnique({
-    where: {id: roomId},
-    select: {
-      id: true,
-      kind: true,
-      title: true,
-      createdById: true,
-      pinnedMessageId: true,
-      appEnabled: true,
-      appType: true,
-      appConfigJson: true,
-      roomUsers: {
-        select: {userId: true},
-      },
+    where: {
+      id: roomId,
     },
-  });
+    select: roomSelect(),
+  }) as RoomWithUsers | null;
 
   if (!row) return null;
   return mapRoom(row);
@@ -214,12 +222,16 @@ async function findExistingDirectRoom(firstUserId: number, secondUserId: number)
     where: {
       kind: 'direct',
       roomUsers: {
-        some: {userId: firstUserId},
+        some: {
+          userId: firstUserId,
+        },
       },
       AND: [
         {
           roomUsers: {
-            some: {userId: secondUserId},
+            some: {
+              userId: secondUserId,
+            },
           },
         },
         {
@@ -233,21 +245,11 @@ async function findExistingDirectRoom(firstUserId: number, secondUserId: number)
         },
       ],
     },
-    orderBy: {id: 'asc'},
-    select: {
-      id: true,
-      kind: true,
-      title: true,
-      createdById: true,
-      pinnedMessageId: true,
-      appEnabled: true,
-      appType: true,
-      appConfigJson: true,
-      roomUsers: {
-        select: {userId: true},
-      },
+    orderBy: {
+      id: 'asc',
     },
-  });
+    select: roomSelect(),
+  }) as Promise<RoomWithUsers | null>;
 }
 
 export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: number): Promise<RoomRow> {
@@ -256,30 +258,21 @@ export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: n
   if (!room) {
     try {
       room = await db.$transaction(async (tx) => {
-        const created = await tx.room.create({
-          data: {
-            kind: 'direct',
-          },
-          select: {
-            id: true,
-            kind: true,
-            title: true,
-            createdById: true,
-            pinnedMessageId: true,
-            appEnabled: true,
-            appType: true,
-            appConfigJson: true,
-          },
+        const created = await createRoomNode(tx, {
+          kind: 'direct',
+          title: null,
+          createdById: null,
+          nodeData: {},
         });
 
         await tx.roomUser.createMany({
           data: [
             {
-              roomId: created.id,
+              roomId: created.room.id,
               userId: firstUserId,
             },
             {
-              roomId: created.id,
+              roomId: created.room.id,
               userId: secondUserId,
             },
           ],
@@ -287,12 +280,19 @@ export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: n
         });
 
         return {
-          ...created,
-          appEnabled: false,
-          appType: null,
-          appConfigJson: {},
+          id: created.room.id,
+          kind: created.room.kind,
+          title: created.room.title,
+          pinnedNodeId: created.room.pinnedNodeId,
+          node: {
+            createdById: created.node.createdById,
+            component: created.node.component,
+            clientScript: created.node.clientScript,
+            serverScript: created.node.serverScript,
+            data: created.node.data,
+          },
           roomUsers: [{userId: firstUserId}, {userId: secondUserId}],
-        };
+        } satisfies RoomWithUsers;
       });
     } catch {
       room = await findExistingDirectRoom(firstUserId, secondUserId);
@@ -315,35 +315,23 @@ export async function createPublicGroupRoom(createdById: number, titleRaw?: unkn
   const normalizedTitle = title ? title.slice(0, 120) : null;
 
   const room = await db.$transaction(async (tx) => {
-    const created = await tx.room.create({
-      data: {
-        kind: 'group',
-        title: normalizedTitle,
-        createdById,
-        appEnabled: false,
-        appType: null,
-        appConfigJson: {},
-      },
-      select: {
-        id: true,
-        kind: true,
-        title: true,
-        createdById: true,
-        pinnedMessageId: true,
-        appEnabled: true,
-        appType: true,
-        appConfigJson: true,
-      },
+    const created = await createRoomNode(tx, {
+      kind: 'group',
+      title: normalizedTitle,
+      createdById,
+      nodeData: {},
     });
 
     const users = await tx.user.findMany({
-      select: {id: true},
+      select: {
+        id: true,
+      },
     });
 
     if (users.length > 0) {
       await tx.roomUser.createMany({
         data: users.map((user) => ({
-          roomId: created.id,
+          roomId: created.room.id,
           userId: user.id,
         })),
         skipDuplicates: true,
@@ -351,9 +339,19 @@ export async function createPublicGroupRoom(createdById: number, titleRaw?: unkn
     }
 
     return {
-      ...created,
+      id: created.room.id,
+      kind: created.room.kind,
+      title: created.room.title,
+      pinnedNodeId: created.room.pinnedNodeId,
+      node: {
+        createdById: created.node.createdById,
+        component: created.node.component,
+        clientScript: created.node.clientScript,
+        serverScript: created.node.serverScript,
+        data: created.node.data,
+      },
       roomUsers: users.map((user) => ({userId: user.id})),
-    };
+    } satisfies RoomWithUsers;
   });
 
   return mapRoom(room);

@@ -15,15 +15,16 @@ export async function runMessagesCleanup(logger: CleanupLogger = console as Clea
   try {
     const limitResult = await db.$executeRaw(
       Prisma.sql`
-        delete from messages
+        delete from nodes
         where id in (
           select id from (
             select
               m.id,
-              row_number() over (partition by m.room_id order by m.created_at desc, m.id desc) as rn
+              row_number() over (partition by n.parent_id order by m.created_at desc, m.id desc) as rn
             from messages m
-            left join rooms r on r.id = m.room_id
-            where r.pinned_message_id is null or r.pinned_message_id <> m.id
+            join nodes n on n.id = m.id
+            left join rooms r on r.id = n.parent_id
+            where r.pinned_node_id is null or r.pinned_node_id <> m.id
           ) ranked
           where rn > ${MAX_MESSAGES_PER_ROOM}
         )

@@ -8,7 +8,7 @@ import {Client} from 'pg';
 import argon2 from 'argon2';
 import {config} from '../config.js';
 import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
-import {getLatestScriptDefinition} from '../scriptable/registry.js';
+import {createRoomNode} from '../common/nodes.js';
 
 const SYSTEM_NICKNAME = 'marx';
 const SYSTEM_NAME = 'MARX';
@@ -73,7 +73,7 @@ function runPrismaPush(connectionString: string) {
   const tempSchemaPath = createTempPrismaSchema(connectionString);
   const result = spawnSync(
     process.platform === 'win32' ? 'yarn.cmd' : 'yarn',
-    ['prisma', 'db', 'push', '--schema', tempSchemaPath],
+    ['prisma', 'db', 'push', '--schema', tempSchemaPath, '--skip-generate'],
     {
       cwd: process.cwd(),
       stdio: 'inherit',
@@ -115,20 +115,21 @@ async function ensureDirectRoom(prisma: PrismaClient, firstUserId: number, secon
 
   if (existing) return existing.id;
 
-  const created = await prisma.room.create({
-    data: {
-      kind: 'direct',
-      roomUsers: {
-        create: [
-          {userId: firstUserId},
-          {userId: secondUserId},
-        ],
-      },
-    },
-    select: {id: true},
+  const created = await createRoomNode(prisma, {
+    kind: 'direct',
+    title: null,
+    nodeData: {},
   });
 
-  return created.id;
+  await prisma.roomUser.createMany({
+    data: [
+      {roomId: created.room.id, userId: firstUserId},
+      {roomId: created.room.id, userId: secondUserId},
+    ],
+    skipDuplicates: true,
+  });
+
+  return created.room.id;
 }
 
 async function seedInitialData(connectionString: string) {
@@ -141,29 +142,10 @@ async function seedInitialData(connectionString: string) {
   });
 
   try {
-    const roomScriptDefinition = getLatestScriptDefinition('room', 'demo:room_meter');
-    const roomScriptConfig = roomScriptDefinition?.makeInitialConfig
-      ? roomScriptDefinition.makeInitialConfig({})
-      : {};
-    const roomScriptState = roomScriptDefinition?.makeInitialState
-      ? roomScriptDefinition.makeInitialState({config: roomScriptConfig})
-      : {};
-
-    const groupRoom = await prisma.room.create({
-      data: {
-        kind: 'group',
-        title: 'Общий чат',
-        ...(roomScriptDefinition
-          ? {
-            scriptId: roomScriptDefinition.scriptId,
-            scriptRevision: roomScriptDefinition.revision,
-            scriptMode: roomScriptDefinition.mode,
-            scriptConfigJson: roomScriptConfig,
-            scriptStateJson: roomScriptState,
-          }
-          : {}),
-      },
-      select: {id: true},
+    const groupRoom = await createRoomNode(prisma, {
+      kind: 'group',
+      title: 'Общий чат',
+      nodeData: {},
     });
 
     const [systemHash, ownerHash] = await Promise.all([
@@ -193,8 +175,8 @@ async function seedInitialData(connectionString: string) {
 
     await prisma.roomUser.createMany({
       data: [
-        {roomId: groupRoom.id, userId: systemUser.id},
-        {roomId: groupRoom.id, userId: ownerUser.id},
+        {roomId: groupRoom.room.id, userId: systemUser.id},
+        {roomId: groupRoom.room.id, userId: ownerUser.id},
       ],
       skipDuplicates: true,
     });

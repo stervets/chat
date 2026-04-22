@@ -2,7 +2,7 @@
 
 ## Проект
 `MARX` — закрытый mobile-first чат (PWA) с:
-- комнатами `group | direct | game`;
+- комнатами `group | direct | game | comment`;
 - игровым модулем `King`;
 - scriptable runtime (message-level и room-level).
 
@@ -13,22 +13,22 @@
   - `scripts/smoke-e2e.js`: отправка сообщения через кнопку `.send-btn` (чтобы не ловить конфликт с `Отправить тестовый push`).
 
 ## Ключевая модель данных
-- `rooms`, `rooms_users`, `messages`, `message_reactions`, `sessions`, `push_subscriptions`.
-- graph layer: `graph_nodes`, `graph_edges` (только контейнеры/навигация).
-- админ комнаты: `rooms.created_by` (только для non-direct, в direct админа нет).
-- `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`).
-- `messages.discussion_room_id -> rooms.id` (`ON DELETE SET NULL`) для discussion rooms.
-- app-room поля: `rooms.app_enabled`, `rooms.app_type`, `rooms.app_config_json`.
-- graph node kinds: `space | folder | room_ref`.
-- graph target type на текущем шаге: `none | room` (`message-ref` запрещён).
-- graph не хранит сообщения и не заменяет `rooms/messages`.
+- `nodes`, `rooms`, `rooms_users`, `messages`, `message_reactions`, `sessions`, `push_subscriptions`.
+- дерево существует только через `nodes.parent_id`.
+- `nodes.type` на текущем шаге: `room | message`.
+- `rooms.id = nodes.id` для room-node.
+- `messages.id = nodes.id` для message-node.
+- админ комнаты живёт в `nodes.created_by` room-ноды (в direct админа нет).
+- `rooms.pinned_node_id -> nodes.id` (`ON DELETE SET NULL`).
+- pinned сейчас всегда message-node, но хранится именно как `node id`.
+- comment room — это child room-node под message-node (`rooms.kind = 'comment'`).
 - pinned message может быть `text | system | scriptable` (ограничение только по принадлежности к той же комнате).
 - `messages.sender_id` может быть `NULL` для анонимной отправки.
 - `users.name` не уникален (поиск/выбор пользователя должен держать несколько совпадений).
 - `users.push_disable_all_mentions` — отключение push от `@all`.
-- scriptable поля:
-  - `messages.script_*`, `rooms.script_*`;
-  - `messages.kind = text | system | scriptable`.
+- scriptable/runtime поля живут в `nodes.client_script`, `nodes.server_script`, `nodes.data`.
+- `messages.kind = text | system | scriptable`.
+- в `nodes.data` лежат `scriptMode/scriptRevision/scriptConfig/scriptState` и `roomApp`.
   - для scriptable pinned действует правило `один runtime на message` (pinned может быть вторым view без второго worker).
   - runtime-контракт: identity по entity id (`message:<id>`, `room:<id>`), lifecycle `init -> mount/update -> unmount`.
   - эффекты (звук/вибрация/одноразовые side-effects) не хранить в shared state и не дублировать в passive view.
@@ -51,8 +51,6 @@
 - `chat:join`, `chat:send`, `chat:edit`, `chat:delete`, `chat:react`, `chat:pin`, `chat:unpin`
 - `messages:discussion:get`, `messages:discussion:create`
 - `rooms:create`, `rooms:app:configure`
-- `graph:spaces:list`, `graph:children`, `graph:space:create`, `graph:folder:create`
-- `graph:room-ref:create`, `graph:children:reorder`, `graph:node:archive`, `graph:rooms:list`
 - `scripts:create-message`, `scripts:action`, `scripts:room:get`
 
 `chat:send` поддерживает опции в 3-м аргументе:
@@ -78,7 +76,6 @@ Frontend:
 - `frontend/nuxt.config.ts`
 - `frontend/src/composables/ws-rpc.ts`
 - `frontend/src/pages/chat/*`
-- `frontend/src/pages/spaces/*` (graph container view + создание space/folder/room_ref)
 - `frontend/src/pages/games/*`
 - `frontend/src/pages/vpn/*`
 
@@ -129,22 +126,15 @@ Rooms/direct/messages/reactions:
 - `frontend/src/pages/chat/modules/*`
 
 Discussion rooms:
-- `messages.discussion_room_id` связывает post message и отдельную room обсуждения
+- post message и comment room связываются через `nodes.parent_id`
 - обсуждение открывается как обычная room через `/chat?room=<discussionRoomId>`
 - источник discussion для header подтягивается через `chat:join -> discussion`
-
-Graph containers:
-- `backend/src/ws/chat/chat-graph.service.ts`
-- `frontend/src/pages/spaces/*`
-- `frontend/src/pages/chat/modules/methods-spaces-navigation.ts` (entry point spaces в drawer чата)
-- room navigation через `room_ref -> /chat?room=<id>&space=<spaceId>&node=<nodeId>`
-- текущая модель: только `space/folder/room_ref`, без `message-ref`
 
 Scriptable:
 - `backend/src/scriptable/*`, `backend/src/script-runner/*`
 - `frontend/src/scriptable/*`, `frontend/src/pages/chat/message-scriptable/*`
  - app room model:
-   - `room` может быть обычной или `app room` (`app_enabled=true`);
+   - `room` может быть обычной или `app room` (`nodes.data.roomApp.enabled=true`);
    - `pinned scriptable message` = app-surface;
    - `room script` = опциональный room-runtime оркестратор;
    - один runtime на `message:<id>`, pinned не создаёт второй worker.

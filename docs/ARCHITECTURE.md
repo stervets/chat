@@ -1,176 +1,173 @@
 # Architecture
 
-Проект состоит из двух приложений:
-- `frontend/` — Nuxt 3 SPA (mobile-first).
-- `backend/` — NestJS HTTP + WebSocket API.
+## Состав
 
-Конфиг хранится в JSON:
-- `frontend/config.json`
+- `frontend/` — Nuxt 3 SPA (`ssr:false`), mobile-first UI чата.
+- `backend/` — NestJS HTTP + WebSocket API.
+- `backend/src/scriptable/*` и `backend/src/script-runner/*` — scriptable runtime и runner.
+- `scripts/` — smoke/e2e/stress.
+
+Конфиги:
 - `backend/config.json`
-- `scripts/config.json`
+- `frontend/config.json`
+
+## Каноническая модель данных
+
+В проекте больше нет отдельного graph-layer. Структура дерева живёт только в `nodes`.
+
+### `nodes`
+
+`nodes` — единственный источник истины про дерево:
+
+- `id`
+- `parent_id -> nodes.id`
+- `type = room | message`
+- `component`
+- `client_script`
+- `server_script`
+- `data jsonb`
+- `created_by`
+- `created_at`
+
+Правила:
+
+- у любой контентной сущности ровно один канонический parent: `nodes.parent_id`;
+- никаких `graph_nodes`, `graph_edges`, `discussion_room_id`, `parent_room_id`, `room_ref`, `space_id`, `folder_id`;
+- дефолтная сортировка детей идёт по `id`.
+
+### `rooms`
+
+`rooms` хранит room-specific поля, но id общий с `nodes`:
+
+- `rooms.id = nodes.id`
+- `kind = group | direct | game | comment`
+- `title`
+- `pinned_node_id -> nodes.id`
+
+Pinned у комнаты только один.
+
+Админ комнаты определяется через `nodes.created_by` для room-node.
+
+### `messages`
+
+`messages` хранит только message-specific поля:
+
+- `messages.id = nodes.id`
+- `sender_id`
+- `kind = text | system | scriptable`
+- `raw_text`
+- `rendered_html`
+- `created_at`
+
+Сообщение принадлежит комнате только через `nodes.parent_id`.
+`messages.room_id` больше нет.
+
+### Comment rooms
+
+Комментарии к сообщению больше не оформляются специальным FK.
+
+Модель такая:
+
+- room-node `10`
+- message-node `20`, где `nodes.parent_id = 10`
+- comment room-node `30`, где `nodes.parent_id = 20` и `rooms.kind = 'comment'`
+
+История внутри comment room обычная: под room-node лежат message-node.
+
+## Runtime / scriptable
+
+Скриптовая модель завязана на `nodes`, а не на отдельные `rooms.script_*` / `messages.script_*` колонки.
+
+Используется простая схема:
+
+- если у node есть `client_script`, у неё есть клиентский runtime;
+- если у node есть `server_script`, у неё есть серверный runtime;
+- конфиг и shared-state лежат в `nodes.data`.
+
+Для текущего runtime pipeline в payload наружу по-прежнему вычисляются:
+
+- `scriptId`
+- `scriptRevision`
+- `scriptMode`
+- `scriptConfigJson`
+- `scriptStateJson`
+
+Но в БД отдельные legacy-колонки под это больше не используются.
+
+App room тоже хранится в `nodes.data.roomApp`, а не в `rooms.app_*`.
 
 ## Backend
 
-Ключевые файлы:
-- `src/main.ts` — старт приложения, CORS, WS adapter, DB check, cleanup.
-- `src/config.ts` — загрузка `backend/config.json`.
-- `src/db.ts` — Prisma client + runtime DB checks/indexes.
-- `src/ws/chat.gateway.ts` — WS транспорт и маршрутизация команд.
-- `src/ws/chat/chat.service.ts` — фасад над auth/users/invites/dialogs/messages/reactions/games.
-- `src/ws/chat/chat-graph.service.ts` — graph-layer контейнеров (`space/folder/room_ref`).
-- `src/scriptable/*` — scriptable registry/shared-state/runner client.
-- `src/script-runner/*` — отдельный runner процесс для `client_runner`.
-- `src/http/uploads.controller.ts` — `POST /upload/image`, `GET /uploads/:name`.
-- `src/http/push.controller.ts` — `/push/public-key|subscribe|unsubscribe|test`.
-- `src/jobs/cleanup.ts` — cleanup при старте и раз в час.
+Ключевые entry points:
 
-### Модель данных
+- `backend/src/main.ts`
+- `backend/src/db.ts`
+- `backend/src/ws/chat.gateway.ts`
+- `backend/src/ws/chat/chat.service.ts`
+- `backend/src/common/nodes.ts`
+- `backend/src/common/rooms.ts`
+- `backend/src/ws/chat/chat-dialogs.service.ts`
+- `backend/src/ws/chat/chat-messages.service.ts`
+- `backend/src/scriptable/service.ts`
 
-Чатовая модель уже на `rooms`:
-- `rooms.kind = group | direct | game`
-- участники: `rooms_users`
-- сообщения: `messages.room_id`
-- discussion rooms: `messages.discussion_room_id -> rooms.id` (`ON DELETE SET NULL`)
-- админ комнаты: `rooms.created_by` (только для non-direct; `direct` без админа)
-- закреп комнаты: `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`)
-- app-room режим: `rooms.app_enabled`, `rooms.app_type`, `rooms.app_config_json`
-- push-настройка пользователя: `users.push_disable_all_mentions`
-- `users.name` не уникален (поиск пользователей работает по `name` и `nickname` с несколькими совпадениями)
+Что важно:
 
-Graph слой контейнеров:
-- `graph_nodes` (`kind = space | folder | room_ref`)
-- `graph_edges` (`parent_node_id -> child_node_id`, `edge_type = child`, `sort_order`)
-- `room_ref` хранит ссылку на существующую `rooms.id` через `target_type='room'` + `target_id`
-- на текущем шаге разрешены только `target_type = none | room`
-- `message-ref` отсутствует и не поддерживается
-- graph не хранит сообщения и не заменяет `rooms/messages`
-
-Scriptable расширение:
-- `messages.kind = text | system | scriptable`
-- `messages.script_*` (`script_id/revision/mode/config/state`)
-- `rooms.script_*` (`script_id/revision/mode/config/state`)
-
-Игровая модель:
-- `game_sessions`
-- `game_session_players`
-
-### Runtime гарантии
-
-В `src/db.ts` на старте:
-- проверяется подключение к PostgreSQL;
-- нормализуется `users.nickname` + constraints;
-- снимаются legacy unique-constraints/индексы с `users.name` и создаётся обычный индекс `users_name_idx`;
-- добавляется `users.donation_badge_until`, если нет;
-- добавляются `users.push_disable_all_mentions` и `rooms.pinned_message_id` (+ FK/index), если нет;
-- создаются runtime индексы `rooms_kind_idx`, `rooms_users_user_idx`.
-
-### Cleanup
-
-`src/jobs/cleanup.ts`:
-- хранит максимум `5000` сообщений на комнату;
-- закреплённое сообщение (`rooms.pinned_message_id`) не удаляется лимитом;
-- удаляет старые upload-файлы старше `30` дней.
-
-`messagesTtlDays` в рабочем backend больше не используется.
+- `graph:*` WS-команд больше нет;
+- `db.ts` больше не пытается runtime-миграциями возвращать legacy-схему;
+- cleanup удаляет лишние сообщения через `nodes`, а не через `messages.room_id`.
 
 ## Frontend
 
-Ключевые файлы:
-- `nuxt.config.ts` — runtime config, dev proxy для WS, `ssr: false`.
-- `src/composables/classes/ws.ts` — WS клиент с request/response по пакетам.
-- `src/composables/ws-rpc.ts` — reconnect + session restore + RPC-helpers.
-- `src/pages/chat/*` — чат UI.
-- `src/pages/chat/modules/methods-spaces-navigation.ts` — встроенная spaces-навигация в drawer чата.
-- `src/pages/spaces/*` — полный экран graph-контейнеров (управление space/folder/room_ref).
-- `src/pages/chat/modules/methods-message-body-and-reactions.ts` — time-reference jump, pinned state, image overlay.
-- `src/pages/direct/[username]/index.vue` — direct маршрут.
-- `src/pages/games/*` — King lobby/session UI.
-- `src/pages/vpn/*` — VPN UI.
-- `src/composables/use-web-push.ts` + `src/public/sw.js` — web-push/PWA.
+Ключевые entry points:
 
-## Протокол
+- `frontend/src/composables/ws-rpc.ts`
+- `frontend/src/pages/chat/*`
+- `frontend/src/scriptable/runtime/*`
+- `frontend/src/pages/games/*`
+- `frontend/src/pages/vpn/*`
 
-WS пакет:
+Что важно:
+
+- встроенная spaces-навигация выпилена;
+- отдельная `/spaces` страница выпилена;
+- чат работает только с room/message payload и comment rooms.
+
+## WebSocket
+
+Пакет:
+
 ```ts
 [com, args, senderId, recipientId, requestId?]
 ```
 
 Ответ:
+
 ```ts
 ['[res]', [result], 'backend', 'frontend', requestId]
 ```
 
-Важно: команды чата исторически остались с префиксом `dialogs:*`,
-но payload уже room-based (`roomId`, иногда с alias `dialogId`).
+Основные команды:
 
-## Доменные фичи
+- `dialogs:*`
+- `chat:*`
+- `messages:discussion:*`
+- `rooms:create`
+- `rooms:app:configure`
+- `scripts:*`
+- `games:*`
 
-- invite-only регистрация;
-- session-token auth (не JWT, не cookie);
-- group/direct чат, реакции, upload, push;
-- room pinned message (пин/анпин, realtime event `chat:pinned`, отдельная pinned-панель над лентой);
-  - закреп только для админа non-direct комнаты;
-  - в direct закреп отключён;
-  - можно закреплять `text | system | scriptable` сообщения (только из той же комнаты);
-  - pinned-панель можно свернуть локально, состояние хранится в `localStorage`;
-  - размер pinned-панели регулируется drag-разделителем (`Element Plus ElDivider`) и сохраняется в `localStorage`;
-- анонимная отправка: `chat:send(..., {anonymous:true})` создаёт сообщение с `sender_id = NULL`.
-- mention-резолв: `@nickname` + fallback `@Name` (без NLP, с предсказуемым matching);
-- image preview открывается во fullscreen overlay в текущем окне (без новой вкладки);
-- PWA install card поддерживает Telegram in-app fallback hint;
-- King solo mode (1 человек + 3 бота) в `room(kind='game')`;
-- Scriptable runtime:
-  - message-level mini-apps,
-  - room-level script behavior,
-  - worker runtime на клиенте,
-  - shared-state и runner режимы;
-  - при одновременном показе message в ленте и в pinned используется один runtime instance на `message.id` (без второго worker и без дубля локальных side-effects).
-- app room model:
-  - обычная комната: `app_enabled=false`, обычный чат;
-  - app room: `app_enabled=true`, `pinned scriptable message` выступает как app-surface;
-  - `room script` остаётся опциональным оркестратором комнаты;
-  - backend и frontend получают единый `roomApp` payload в `dialogs:*`/`chat:join`.
-- graph room navigation model:
-  - `space/folder` дают иерархию контейнеров;
-  - `room_ref` открывает обычную комнату через тот же chat route-flow (`/chat?room=<roomId>`);
-  - при переходе из space в room прокидывается контекст `space/node` (`/chat?room=<id>&space=<spaceId>&node=<nodeId>`) для UX-навигации;
-  - в основном chat UI есть встроенный вход в spaces (секция `Пространства` в левом drawer) и кнопка возврата в space в header комнаты;
-  - существующая навигация `/chat` (general) и `/direct/:username` не ломается.
-- discussion room model:
-  - у сообщения может быть отдельная room обсуждения (`messages.discussion_room_id`);
-  - discussion room остаётся обычной `room` и открывается тем же route-flow `/chat?room=<id>`;
-  - кнопка `Комментарии` в `message-item` создаёт discussion room при первом открытии и переиспользует её дальше;
-  - header discussion room показывает `Комментарии` и кнопку `К посту`;
-  - если исходный message удалён, discussion room остаётся, а UI помечает состояние `исходный пост удалён`.
-- VPN provisioning через `wg-admin` unix socket;
-- Telegram news pipeline в `scripts/telegram-news`.
+`graph:*` удалён.
 
-## Scriptable Runtime Layer
+## Миграция живой БД
 
-- identity:
-  - `message` runtime key = `message:<id>`
-  - `room` runtime key = `room:<id>`
-- lifecycle:
-  - `init` (создание worker/runtime)
-  - `mount` (первый UI view для entity)
-  - `update` (shared-state update)
-  - `unmount` (последний UI view ушёл)
-- unified event envelope:
-  - `{source: 'ui'|'room'|'server'|'system', type, payload}`
-- state:
-  - shared/persistent state (`script_state_json`) синхронизируется через `scripts:state`
-  - local state живёт в worker и не шарится между клиентами
-- effects:
-  - эффекты (звук/вибрация/одноразовые side-effects) не являются state
-  - для второго рендера того же message (pinned) используется `passiveEffects`, чтобы не дублировать эффекты
-- app-room связь:
-  - `scripts:action` после успешного применения прокидывается в room runtime как `script_action` (через существующий room-event pipeline, без отдельного bus);
-  - изменение app-room метаданных летит realtime-событием `chat:room-updated`.
+Для живой старой схемы есть отдельный реальный скрипт:
 
-## Источник истины
+- `backend/src/scripts/migrate-to-nodes.ts`
+- запуск: `yarn --cwd backend run db:migrate:nodes`
 
-Если docs расходятся с кодом, верить:
-1. `backend/prisma/schema.prisma`
-2. `backend/src/ws/**/*`
-3. `frontend/src/composables/types.ts`
-4. `frontend/src/pages/**/*`
+Скрипт:
+
+- делает remap `old_room_id -> new node id`;
+- делает remap `old_message_id -> new node id`;
+- переносит memberships, reactions, pinned, discussion rooms и game sessions;
+- удаляет legacy graph/discussion/schema-хвосты после успешного переноса.

@@ -2,6 +2,7 @@ import {randomBytes} from 'node:crypto';
 import {Logger} from '@nestjs/common';
 import {createSession, hashPassword} from '../../common/auth.js';
 import {DEFAULT_NICKNAME_COLOR} from '../../common/const.js';
+import {createRoomNode} from '../../common/nodes.js';
 import {WgAdminClient, WgAdminClientError} from '../../common/wg-admin.client.js';
 import {config} from '../../config.js';
 import {db} from '../../db.js';
@@ -336,20 +337,19 @@ export class ChatInvitesService {
           });
 
           if (!existingSystemRoom) {
-            const createdRoom = await tx.room.create({
-              data: {
-                kind: 'direct',
-              },
-              select: {id: true},
+            const createdRoom = await createRoomNode(tx, {
+              kind: 'direct',
+              title: null,
+              nodeData: {},
             });
             await tx.roomUser.createMany({
               data: [
                 {
-                  roomId: createdRoom.id,
+                  roomId: createdRoom.room.id,
                   userId: systemUser.id,
                 },
                 {
-                  roomId: createdRoom.id,
+                  roomId: createdRoom.room.id,
                   userId: user.id,
                 },
               ],
