@@ -8,6 +8,7 @@ import {ChatGamesService} from './chat-games.service.js';
 import {ChatMessagesService} from './chat-messages.service.js';
 import {ChatReactionsService} from './chat-reactions.service.js';
 import {ChatUsersService} from './chat-users.service.js';
+import {ScriptableService} from '../../scriptable/service.js';
 
 @Injectable()
 export class ChatService {
@@ -19,6 +20,11 @@ export class ChatService {
   private readonly dialogsService = new ChatDialogsService(this.ctx);
   private readonly messagesService = new ChatMessagesService(this.ctx);
   private readonly reactionsService = new ChatReactionsService(this.ctx);
+  private readonly scriptableService = new ScriptableService(this.ctx);
+
+  constructor() {
+    this.scriptableService.startRunnerClient();
+  }
 
   authLogin(state: SocketState, payload: any) {
     return this.authService.authLogin(state, payload);
@@ -126,5 +132,21 @@ export class ChatService {
 
   chatReact(state: SocketState, messageIdRaw: unknown, reactionRaw: unknown) {
     return this.reactionsService.chatReact(state, messageIdRaw, reactionRaw);
+  }
+
+  scriptsCreateMessage(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
+    return this.scriptableService.createScriptableMessage(state, roomIdRaw, payloadRaw);
+  }
+
+  scriptsAction(state: SocketState, payloadRaw: any) {
+    return this.scriptableService.applyScriptAction(state, payloadRaw);
+  }
+
+  scriptsRoomGet(state: SocketState, roomIdRaw: unknown) {
+    return this.scriptableService.getRoomScriptEntity(state, roomIdRaw);
+  }
+
+  scriptableNotifyRoomEvent(input: {roomId: number; eventType: string; eventPayload: any}) {
+    return this.scriptableService.notifyRoomEvent(input);
   }
 }

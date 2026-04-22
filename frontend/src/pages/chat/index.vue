@@ -228,6 +228,16 @@
             </button>
           </div>
         </header>
+        <div
+          v-if="activeRoomScriptViewModel && activeRoomScriptViewModel.kind === 'room_banner'"
+          class="room-script-banner"
+        >
+          <div class="room-script-title">{{ activeRoomScriptViewModel.title }}</div>
+          <div class="room-script-subtitle">{{ activeRoomScriptViewModel.subtitle }}</div>
+          <div v-if="activeRoomScriptViewModel.extra" class="room-script-extra">
+            {{ activeRoomScriptViewModel.extra }}
+          </div>
+        </div>
         <div v-if="toasts.length" class="toast-stack">
           <div
             v-for="toast in toasts"
@@ -274,6 +284,7 @@
               :is-fresh-message="isFreshMessage(item.message.id)"
               :rendered-html="getRenderedMessageHtml(item.message, item.sourceIndex)"
               :extra-previews="getMessageExtraPreviews(item.message)"
+              :script-view-model="getMessageScriptViewModel(item.message)"
               :reaction-picker-open="reactionPickerMessageId === item.message.id"
               :reaction-palette="reactionPalette()"
               @update:editing-message-text="onEditingMessageTextUpdate"
@@ -294,6 +305,7 @@
               @reaction-mouseenter="onReactionMouseEnter"
               @reaction-mousemove="onReactionMouseMove"
               @reaction-mouseleave="onReactionMouseLeave"
+              @script-action="onMessageScriptAction"
               @height-change="onVirtualItemHeight"
             />
             <div
@@ -391,6 +403,18 @@
                     @click="onComposerEmojiClick(emoji)"
                   >
                     {{ emoji }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="composer-section" v-if="activeDialog">
+                <div class="composer-section-title">Scriptable demo</div>
+                <div class="composer-scriptable-row">
+                  <button class="composer-format-btn" @click="createDemoFartMessage">
+                    Local button
+                  </button>
+                  <button class="composer-format-btn" @click="createDemoGuessWordMessage">
+                    Guess word
                   </button>
                 </div>
               </div>

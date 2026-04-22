@@ -149,6 +149,7 @@ export const chatMethodsComposerAndVirtual = {
     notifyMessagesChanged(this: any) {
       this.pruneVirtualHeightMap();
       this.scheduleVirtualSync();
+      this.syncScriptableRuntimes();
     },
 
     onVirtualItemHeight(this: any, messageIdRaw: unknown, heightRaw: unknown) {
@@ -237,14 +238,29 @@ export const chatMethodsComposerAndVirtual = {
     normalizeMessage(this: any, message: any): Message {
       const rawText = String(message?.rawText ?? message?.body ?? '');
       const renderedPreviews = Array.isArray(message?.renderedPreviews) ? message.renderedPreviews : [];
+      const scriptConfigJson = message?.scriptConfigJson && typeof message.scriptConfigJson === 'object'
+        ? message.scriptConfigJson
+        : {};
+      const scriptStateJson = message?.scriptStateJson && typeof message.scriptStateJson === 'object'
+        ? message.scriptStateJson
+        : {};
+      const messageKind = String(message?.kind || 'text').trim().toLowerCase();
       return {
         ...message,
+        kind: messageKind === 'scriptable'
+          ? 'scriptable'
+          : (messageKind === 'system' ? 'system' : 'text'),
         rawText,
         authorDonationBadgeUntil: message?.authorDonationBadgeUntil
           ? String(message.authorDonationBadgeUntil)
           : null,
         renderedHtml: String(message?.renderedHtml ?? ''),
         renderedPreviews,
+        scriptId: message?.scriptId ? String(message.scriptId) : null,
+        scriptRevision: Number(message?.scriptRevision || 0),
+        scriptMode: message?.scriptMode || null,
+        scriptConfigJson,
+        scriptStateJson,
         reactions: Array.isArray(message?.reactions) ? message.reactions : [],
       } as Message;
     },
@@ -529,6 +545,7 @@ export const chatMethodsComposerAndVirtual = {
 
     startMessageEdit(this: any, message: Message) {
       if (!this.isOwnMessage(message)) return;
+      if (message.kind !== 'text') return;
       this.hapticTap();
       this.editingMessageId = message.id;
       this.editingMessageText = this.getMessageRawText(message);
@@ -572,6 +589,11 @@ export const chatMethodsComposerAndVirtual = {
       this.messages = this.messages.filter((message: Message) => {
         return !(message.roomId === roomId && message.id === messageId);
       });
+      if (this.scriptMessageViewModels?.[messageId]) {
+        const nextViews = {...(this.scriptMessageViewModels || {})};
+        delete nextViews[messageId];
+        this.scriptMessageViewModels = nextViews;
+      }
       this.resetMessagePreviewCache();
       this.notifyMessagesChanged();
       this.updateScrollDownVisibility();
@@ -579,6 +601,7 @@ export const chatMethodsComposerAndVirtual = {
 
     async saveMessageEdit(this: any, message: Message) {
       if (!this.isOwnMessage(message)) return;
+      if (message.kind !== 'text') return;
       this.hapticTap();
       const body = String(this.editingMessageText || '').trim();
       if (!body) {

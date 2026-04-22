@@ -8,6 +8,7 @@ import {Client} from 'pg';
 import argon2 from 'argon2';
 import {config} from '../config.js';
 import {DEFAULT_NICKNAME_COLOR} from '../common/const.js';
+import {getLatestScriptDefinition} from '../scriptable/registry.js';
 
 const SYSTEM_NICKNAME = 'marx';
 const SYSTEM_NAME = 'MARX';
@@ -140,8 +141,28 @@ async function seedInitialData(connectionString: string) {
   });
 
   try {
+    const roomScriptDefinition = getLatestScriptDefinition('room', 'demo:room_meter');
+    const roomScriptConfig = roomScriptDefinition?.makeInitialConfig
+      ? roomScriptDefinition.makeInitialConfig({})
+      : {};
+    const roomScriptState = roomScriptDefinition?.makeInitialState
+      ? roomScriptDefinition.makeInitialState({config: roomScriptConfig})
+      : {};
+
     const groupRoom = await prisma.room.create({
-      data: {kind: 'group', title: 'Общий чат'},
+      data: {
+        kind: 'group',
+        title: 'Общий чат',
+        ...(roomScriptDefinition
+          ? {
+            scriptId: roomScriptDefinition.scriptId,
+            scriptRevision: roomScriptDefinition.revision,
+            scriptMode: roomScriptDefinition.mode,
+            scriptConfigJson: roomScriptConfig,
+            scriptStateJson: roomScriptState,
+          }
+          : {}),
+      },
       select: {id: true},
     });
 

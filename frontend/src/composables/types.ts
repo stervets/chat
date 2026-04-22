@@ -18,6 +18,7 @@ export type Invite = {
 };
 
 export type DialogKind = 'group' | 'direct';
+export type ScriptExecutionMode = 'client' | 'client_server' | 'client_runner';
 
 export type Dialog = {
   id: Id;
@@ -29,6 +30,7 @@ export type Dialog = {
 export type Message = {
   id: Id;
   roomId: Id;
+  kind: 'text' | 'system' | 'scriptable';
   authorId: Id;
   authorNickname: string;
   authorName: string;
@@ -42,9 +44,25 @@ export type Message = {
     src: string;
     href?: string;
   }>;
+  scriptId: string | null;
+  scriptRevision: number;
+  scriptMode: ScriptExecutionMode | null;
+  scriptConfigJson: Record<string, any>;
+  scriptStateJson: Record<string, any>;
   body?: string;
   createdAt: string;
   reactions: MessageReaction[];
+};
+
+export type ScriptEntitySnapshot = {
+  entityType: 'message' | 'room';
+  entityId: number;
+  roomId: number;
+  scriptId: string;
+  scriptRevision: number;
+  scriptMode: ScriptExecutionMode;
+  scriptConfigJson: Record<string, any>;
+  scriptStateJson: Record<string, any>;
 };
 
 export type MessageReactionUser = {

@@ -403,6 +403,14 @@ export const chatMethodsSendUploadAndRuntime = {
 
     async onChatMessage(this: any, message: Message) {
       const normalized = this.normalizeMessage(message);
+      this.scriptRuntimeManager?.emitRoomHostEvent(normalized.roomId, 'chat_message', {
+        id: normalized.id,
+        roomId: normalized.roomId,
+        kind: normalized.kind,
+        authorId: normalized.authorId,
+        authorNickname: normalized.authorNickname,
+      });
+
       if (this.messages.some((item: Message) => Number(item.id) === Number(normalized.id))) {
         this.applyMessageUpdate(normalized);
         return;
@@ -454,6 +462,10 @@ export const chatMethodsSendUploadAndRuntime = {
 
     onChatMessageUpdated(this: any, messageRaw: any) {
       const message = this.normalizeMessage(messageRaw);
+      this.scriptRuntimeManager?.emitRoomHostEvent(message.roomId, 'chat_message_updated', {
+        id: message.id,
+        roomId: message.roomId,
+      });
       if (this.activeDialog?.id !== message.roomId) return;
       this.applyMessageUpdate(message);
     },
@@ -470,6 +482,10 @@ export const chatMethodsSendUploadAndRuntime = {
       if (this.activeDialog?.id === roomId) {
         this.applyMessageDelete(roomId, messageId);
       }
+      this.scriptRuntimeManager?.emitRoomHostEvent(roomId, 'chat_message_deleted', {
+        roomId,
+        messageId,
+      });
       await this.fetchDirectDialogs();
     },
 
@@ -498,6 +514,7 @@ export const chatMethodsSendUploadAndRuntime = {
         await this.selectDialog(this.generalDialog, {routeMode: 'replace'});
       } else {
         this.activeDialog = null;
+        this.setActiveRoomScript(null);
       }
       await this.fetchDirectDialogs();
     },
@@ -515,6 +532,7 @@ export const chatMethodsSendUploadAndRuntime = {
 
       const activeDialogId = Number(this.activeDialog?.id || 0);
       if (Number.isFinite(activeDialogId) && activeDialogId > 0) {
+        await this.loadActiveRoomScript(activeDialogId);
         await this.catchUpRoomMessages(activeDialogId);
       }
 

@@ -120,6 +120,7 @@ export class ChatGamesService {
 
   private toMessagePayload(input: {
     roomId: number;
+    kind: 'text' | 'system';
     author: {
       id: number;
       nickname: string;
@@ -139,6 +140,7 @@ export class ChatGamesService {
       id: input.message.id,
       roomId: input.roomId,
       dialogId: input.roomId,
+      kind: input.kind,
       authorId: input.author.id,
       authorNickname: input.author.nickname,
       authorName: input.author.name || input.author.nickname,
@@ -147,6 +149,11 @@ export class ChatGamesService {
       rawText: input.message.rawText,
       renderedHtml: input.message.renderedHtml,
       renderedPreviews: input.message.renderedPreviews,
+      scriptId: null,
+      scriptRevision: 0,
+      scriptMode: null,
+      scriptConfigJson: {},
+      scriptStateJson: {},
       createdAt: input.message.createdAt.toISOString(),
       reactions: [],
     };
@@ -156,6 +163,7 @@ export class ChatGamesService {
     roomId: number;
     senderId: number;
     rawText: string;
+    kind?: 'text' | 'system';
   }): Promise<ChatContextMessagePayload | null> {
     const sender = await db.user.findUnique({
       where: {id: input.senderId},
@@ -175,6 +183,7 @@ export class ChatGamesService {
       data: {
         roomId: input.roomId,
         senderId: sender.id,
+        kind: input.kind || 'text',
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
       },
@@ -194,6 +203,7 @@ export class ChatGamesService {
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,
       },
+      kind: input.kind || 'text',
     });
   }
 
@@ -204,6 +214,7 @@ export class ChatGamesService {
       roomId,
       senderId,
       rawText: text,
+      kind: 'system',
     });
   }
 

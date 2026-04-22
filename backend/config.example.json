@@ -17,9 +17,16 @@
   "push": {
     "vapidPublicKey": "",
     "vapidPrivateKey": "",
-    "vapidSubject": ""
+    "vapidSubject": ""d
   },
   "db": {
     "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"
+  },
+  "scriptRunner": {
+    "enabled": true,
+    "url": "ws://127.0.0.1:8921/script-runner",
+    "host": "127.0.0.1",
+    "port": 8921,
+    "path": "/script-runner"
   }
 }

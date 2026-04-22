@@ -212,7 +212,19 @@ export class ChatDialogsService {
         {id: 'desc'},
       ],
       take: limit,
-      include: {
+      select: {
+        id: true,
+        roomId: true,
+        senderId: true,
+        kind: true,
+        rawText: true,
+        renderedHtml: true,
+        createdAt: true,
+        scriptId: true,
+        scriptRevision: true,
+        scriptMode: true,
+        scriptConfigJson: true,
+        scriptStateJson: true,
         sender: {
           select: {
             id: true,
@@ -231,16 +243,24 @@ export class ChatDialogsService {
     );
 
     const ordered = result.reverse().map((row) => {
-      const compiled = this.ctx.compileMessageWithContext(
-        String(row.rawText || ''),
-        renderContext,
-        row.id,
-      );
+      const isScriptable = row.kind === 'scriptable';
+      const compiled = isScriptable
+        ? {
+          rawText: String(row.rawText || ''),
+          renderedHtml: String(row.renderedHtml || ''),
+          renderedPreviews: [],
+        }
+        : this.ctx.compileMessageWithContext(
+          String(row.rawText || ''),
+          renderContext,
+          row.id,
+        );
 
       return {
         id: row.id,
         roomId: row.roomId,
         dialogId: row.roomId,
+        kind: row.kind || 'text',
         authorId: row.sender?.id || row.senderId || 0,
         authorNickname: row.sender?.nickname || 'deleted',
         authorName: row.sender?.name || row.sender?.nickname || 'deleted',
@@ -249,6 +269,11 @@ export class ChatDialogsService {
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,
+        scriptId: row.scriptId || null,
+        scriptRevision: Number(row.scriptRevision || 0),
+        scriptMode: row.scriptMode || null,
+        scriptConfigJson: row.scriptConfigJson || {},
+        scriptStateJson: row.scriptStateJson || {},
         createdAt: row.createdAt.toISOString(),
       };
     });
@@ -256,7 +281,7 @@ export class ChatDialogsService {
     return this.ctx.attachMessageReactions(ordered);
   }
 
-  async chatJoin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{roomId: number; dialogId: number}>> {
+  async chatJoin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{roomId: number; dialogId: number; roomScript: any | null}>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
@@ -274,8 +299,36 @@ export class ChatDialogsService {
       return {ok: false, error: 'forbidden'};
     }
 
+    const roomScript = await db.room.findUnique({
+      where: {id: roomId},
+      select: {
+        id: true,
+        scriptId: true,
+        scriptRevision: true,
+        scriptMode: true,
+        scriptConfigJson: true,
+        scriptStateJson: true,
+      },
+    });
+
     state.roomId = roomId;
-    return {ok: true, roomId, dialogId: roomId};
+    return {
+      ok: true,
+      roomId,
+      dialogId: roomId,
+      roomScript: roomScript?.scriptId && roomScript.scriptMode && Number(roomScript.scriptRevision || 0) > 0
+        ? {
+          entityType: 'room',
+          entityId: roomScript.id,
+          roomId,
+          scriptId: roomScript.scriptId,
+          scriptRevision: Number(roomScript.scriptRevision || 0),
+          scriptMode: roomScript.scriptMode,
+          scriptConfigJson: roomScript.scriptConfigJson || {},
+          scriptStateJson: roomScript.scriptStateJson || {},
+        }
+        : null,
+    };
   }
 
   async dialogsDelete(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{

@@ -253,7 +253,11 @@ export const chatMethodsAuthDialogsAndProfile = {
       const result = await ws.request('chat:join', roomId);
       if (!(result as any)?.ok) {
         this.error = 'Не удалось подключиться к диалогу.';
+        this.setActiveRoomScript(null);
+        return;
       }
+
+      this.setActiveRoomScript((result as any).roomScript || null);
     },
 
     async selectDialog(this: any, dialog: Dialog, optionsRaw?: {routeMode?: RouteMode}) {
@@ -261,7 +265,9 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.historyLoadSeq = seq;
       this.clearFreshMessageMarks();
       this.activeDialog = dialog;
+      this.setActiveRoomScript(null);
       this.messages = [];
+      this.scriptMessageViewModels = {};
       this.historyHasMore = true;
       this.historyLoadingMore = false;
       this.resetMessagePreviewCache();
@@ -276,6 +282,9 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
       await this.joinDialog(dialog.id);
+      if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
+
+      await this.loadActiveRoomScript(dialog.id);
       if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
       await this.catchUpRoomMessages(dialog.id);

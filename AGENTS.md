@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Что Это За Проект
-`MARX` — закрытый чат для аварийной связи (mobile-first/PWA) с игровым модулем `King`.
+`MARX` — закрытый чат для аварийной связи (mobile-first/PWA) с игровым модулем `King` и scriptable runtime для mini-app внутри чата.
 
 Репа состоит из:
 - `backend` — NestJS HTTP + WebSocket backend (auth/session, invites, rooms/messages/reactions, uploads, push, VPN, games).
@@ -14,6 +14,12 @@
 - связь участников через `rooms_users`
 - `messages.room_id`
 - payload в основном на `roomId`, но для обратной совместимости часто дублируется `dialogId`.
+
+Scriptable MVP:
+- `Message.kind = text | system | scriptable`
+- `messages.script_*` и `rooms.script_*` (id/revision/mode/config/state)
+- modes: `client | client_server | client_runner`
+- room-level runner процесс вынесен отдельно (`backend/src/script-runner/*`)
 
 Важно: WS-команды для чата исторически всё ещё называются с префиксом `dialogs:*`, но работают с `roomId`.
 
@@ -39,6 +45,13 @@
   - runtime-правки nickname модели
   - runtime-индексы `rooms_kind_idx`, `rooms_users_user_idx`
   - runtime ensure `donation_badge_until`
+  - runtime ensure scriptable columns/types + default room script
+- `backend/src/scriptable/*`
+  - backend shared-state layer (`scripts:create-message`, `scripts:action`, `scripts:room:get`)
+  - file-based registry
+  - runner ws-client
+- `backend/src/script-runner/main.ts`
+  - отдельный runner process для `client_runner` mode
 - `backend/prisma/schema.prisma`
   - актуальный источник истины по схеме БД
 
@@ -103,6 +116,9 @@
 - `chat:edit`
 - `chat:delete`
 - `chat:react`
+- `scripts:create-message`
+- `scripts:action`
+- `scripts:room:get`
 
 ### Games
 - `games:solo:create`
@@ -120,6 +136,7 @@
 - `games:session`
 - `games:event`
 - `games:state`
+- `scripts:state`
 
 Локальные фронтовые runtime-events:
 - `ws:connected`
@@ -148,6 +165,7 @@
 - `push_subscriptions`
 - `game_sessions`
 - `game_session_players`
+- scriptable поля в `rooms/messages`
 
 ### Filesystem
 - uploads (`backend/config.json -> uploads.path`)
@@ -208,6 +226,7 @@
 - `vpn.donationPhone`, `vpn.donationBank`
 - `push.vapidPublicKey`, `push.vapidPrivateKey`, `push.vapidSubject`
 - `db.url`
+- `scriptRunner.enabled`, `scriptRunner.url`, `scriptRunner.host`, `scriptRunner.port`, `scriptRunner.path`
 
 ### Frontend
 `frontend/config.json`:
@@ -246,6 +265,7 @@ cp scripts/config.example.json scripts/config.json
 
 Dev:
 ```bash
+yarn run backend:runner:dev
 yarn run backend:dev
 yarn run frontend:dev
 ```
@@ -259,6 +279,7 @@ yarn run frontend:dev
 - `yarn run message:send`
 - `yarn run frontend:dev`
 - `yarn run backend:dev`
+- `yarn run backend:runner:dev`
 - `yarn run telegram:login`
 - `yarn run telegram:fetch`
 - `yarn run telegram:hot`
@@ -298,6 +319,13 @@ yarn run frontend:dev
 - `frontend/src/pages/chat/message-item/*`
 - `frontend/src/pages/chat/modules/methods-message-body-and-reactions.ts`
 
+### Scriptable Runtime
+- `backend/src/scriptable/*`
+- `backend/src/script-runner/*`
+- `frontend/src/scriptable/*`
+- `frontend/src/pages/chat/message-scriptable/*`
+- `frontend/src/pages/chat/modules/methods-scriptable-runtime.ts`
+
 ### Uploads
 - `backend/src/common/uploads.ts`
 - `backend/src/http/uploads.controller.ts`
@@ -329,6 +357,7 @@ yarn run frontend:dev
 - `backend/src/cli/db-reset.ts`
 
 ## Practical Checklist
+- В слючае если задача связана с фронтендом или по прямой просьбе пользователя Codex обязан через headless Chromium проверить, что задача реально работает в UI, и только после этого считать задачу выполненной (или продолжать фиксить до зелёного результата). При проверке codex должен учитывать, что все сервисы обчно остановлены и тебе надо их поднять (фронтенд, бекенд). Пользователь lisov, пароль 123.
 - Любая существенная правка кода -> обнови `AGENTS.md`.
 - Если менял поведение, которое описано в `docs/*.md`, обнови docs в том же PR/коммите.
 - Если меняешь backend пути `/ws`, `/push`, `/upload/image`, `/uploads/*` — проверь `Caddyfile`.

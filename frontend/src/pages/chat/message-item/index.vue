@@ -40,7 +40,7 @@
         {{ formattedTime }}
       </span>
       <button
-        v-if="isOwnMessage() && !isEditing"
+        v-if="isOwnMessage() && !isEditing && message.kind === 'text'"
         class="message-inline-btn"
         :disabled="messageActionPendingId === message.id"
         @click="onStartEdit"
@@ -85,7 +85,13 @@
       @mousemove="onBodyMouseMove"
       @mouseleave="onBodyMouseLeave"
     >
-      <div class="message-rendered-html" v-html="renderedHtml"/>
+      <div v-if="message.kind !== 'scriptable'" class="message-rendered-html" v-html="renderedHtml"/>
+      <ScriptableMessage
+        v-else
+        :message="message"
+        :view-model="scriptViewModel"
+        @action="onScriptAction"
+      />
     </div>
 
     <div v-if="!isEditing && extraPreviews.length" class="message-previews">

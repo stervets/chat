@@ -515,6 +515,7 @@ export type ChatContextMessagePayload = {
   id: number;
   roomId: number;
   dialogId?: number;
+  kind: 'text' | 'system' | 'scriptable';
   authorId: number;
   authorNickname: string;
   authorName: string;
@@ -523,6 +524,11 @@ export type ChatContextMessagePayload = {
   rawText: string;
   renderedHtml: string;
   renderedPreviews: MessageLinkPreview[];
+  scriptId: string | null;
+  scriptRevision: number;
+  scriptMode: 'client' | 'client_server' | 'client_runner' | null;
+  scriptConfigJson: any;
+  scriptStateJson: any;
   createdAt: string;
   reactions: MessageReaction[];
 };

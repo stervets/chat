@@ -1,5 +1,6 @@
 import {nextTick, ref, type PropType} from 'vue';
 import type {Message, MessageReaction} from '@/composables/types';
+import ScriptableMessage from '../message-scriptable/index.vue';
 
 type LinkPreview = {
   key: string;
@@ -9,6 +10,10 @@ type LinkPreview = {
 };
 
 export default {
+  components: {
+    ScriptableMessage,
+  },
+
   props: {
     message: {
       type: Object as PropType<Message>,
@@ -86,6 +91,10 @@ export default {
       type: Array as PropType<string[]>,
       default: () => [],
     },
+    scriptViewModel: {
+      type: Object as PropType<Record<string, any> | null>,
+      default: null,
+    },
   },
 
   emits: [
@@ -108,6 +117,7 @@ export default {
     'reaction-mousemove',
     'reaction-mouseleave',
     'height-change',
+    'script-action',
   ],
 
   setup() {
@@ -209,6 +219,7 @@ export default {
     },
 
     onBodyClick(this: any, event: MouseEvent) {
+      if (this.message.kind === 'scriptable') return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('.message-spoiler')) {
         this.showHiddenText = true;
@@ -222,6 +233,10 @@ export default {
 
     onBodyMouseLeave(this: any) {
       this.$emit('message-body-mouseleave');
+    },
+
+    onScriptAction(this: any, message: Message, actionType: string, payload?: any) {
+      this.$emit('script-action', message, actionType, payload);
     },
 
     onToggleReactionPicker(this: any) {

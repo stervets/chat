@@ -12,6 +12,7 @@ import {config} from '../config.js';
 import {getRoomById, userCanAccessRoom, type RoomRow} from '../common/rooms.js';
 import {WebPushService} from '../common/web-push.js';
 import {ChatService} from './chat.service.js';
+import {scriptableEvents} from '../scriptable/events.js';
 import {
   SYSTEM_NICKNAME,
 } from './chat/chat-context.js';
@@ -41,7 +42,55 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly chatService: ChatService,
     @Inject(WebPushService)
     private readonly webPushService: WebPushService,
-  ) {}
+  ) {
+    scriptableEvents.on('scripts:state', (payload) => {
+      void this.handleScriptStateEvent(payload);
+    });
+
+    scriptableEvents.on('scripts:message', (message) => {
+      void this.handleScriptSystemMessage(message);
+    });
+  }
+
+  private async handleScriptStateEvent(payload: {
+    roomId: number;
+    entityType: 'message' | 'room';
+    entityId: number;
+    scriptId: string;
+    scriptRevision: number;
+    scriptMode: 'client' | 'client_server' | 'client_runner';
+    scriptStateJson: any;
+  }) {
+    const room = await getRoomById(payload.roomId);
+    if (room) {
+      this.broadcastToRoomMembers(room, 'scripts:state', payload);
+      return;
+    }
+    this.broadcast(payload.roomId, 'scripts:state', payload);
+  }
+
+  private async handleScriptSystemMessage(message: any) {
+    const roomId = Number(message?.roomId || 0);
+    if (!Number.isFinite(roomId) || roomId <= 0) return;
+
+    const room = await getRoomById(roomId);
+    if (room) {
+      this.broadcastToRoomMembers(room, 'chat:message', message);
+    } else {
+      this.broadcast(roomId, 'chat:message', message);
+    }
+
+    await this.chatService.scriptableNotifyRoomEvent({
+      roomId,
+      eventType: 'message_created',
+      eventPayload: {
+        id: Number(message?.id || 0),
+        kind: String(message?.kind || 'text'),
+        authorId: Number(message?.authorId || 0),
+        authorNickname: String(message?.authorNickname || ''),
+      },
+    });
+  }
 
   handleConnection(client: ClientSocket, ...args: any[]) {
     const request = args[0] as IncomingMessage | undefined;
@@ -236,6 +285,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             const messages = Array.isArray((result as any).messages) ? (result as any).messages : [];
             for (const message of messages) {
               this.broadcast(roomId, 'chat:message', message);
+              await this.chatService.scriptableNotifyRoomEvent({
+                roomId,
+                eventType: 'message_created',
+                eventPayload: {
+                  id: Number(message?.id || 0),
+                  kind: String(message?.kind || 'text'),
+                  authorId: Number(message?.authorId || 0),
+                  authorNickname: String(message?.authorNickname || ''),
+                },
+              });
             }
             this.broadcast(roomId, 'games:session', (result as any).session);
             const events = Array.isArray((result as any).events) ? (result as any).events : [];
@@ -274,6 +333,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const messages = Array.isArray((result as any).messages) ? (result as any).messages : [];
           for (const message of messages) {
             this.broadcast(roomId, 'chat:message', message);
+            await this.chatService.scriptableNotifyRoomEvent({
+              roomId,
+              eventType: 'message_created',
+              eventPayload: {
+                id: Number(message?.id || 0),
+                kind: String(message?.kind || 'text'),
+                authorId: Number(message?.authorId || 0),
+                authorNickname: String(message?.authorNickname || ''),
+              },
+            });
           }
 
           const events = Array.isArray((result as any).events) ? (result as any).events : [];
@@ -345,8 +414,52 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         } else {
           this.broadcast((result as any).message.roomId, 'chat:message', (result as any).message);
         }
+
+        await this.chatService.scriptableNotifyRoomEvent({
+          roomId: Number((result as any).message.roomId || 0),
+          eventType: 'message_created',
+          eventPayload: {
+            id: Number((result as any).message.id || 0),
+            kind: String((result as any).message.kind || 'text'),
+            authorId: Number((result as any).message.authorId || 0),
+            authorNickname: String((result as any).message.authorNickname || ''),
+          },
+        });
       }
       return result;
+    }
+
+    if (com === 'scripts:create-message') {
+      const result = await this.chatService.scriptsCreateMessage(client.state, args[0], args[1]);
+      if ((result as any)?.ok && (result as any)?.message) {
+        const roomId = Number((result as any).message.roomId || 0);
+        const room = Number.isFinite(roomId) && roomId > 0 ? await getRoomById(roomId) : null;
+        if (room) {
+          this.broadcastToRoomMembers(room, 'chat:message', (result as any).message);
+        } else if (Number.isFinite(roomId) && roomId > 0) {
+          this.broadcast(roomId, 'chat:message', (result as any).message);
+        }
+
+        await this.chatService.scriptableNotifyRoomEvent({
+          roomId,
+          eventType: 'message_created',
+          eventPayload: {
+            id: Number((result as any).message.id || 0),
+            kind: String((result as any).message.kind || 'scriptable'),
+            authorId: Number((result as any).message.authorId || 0),
+            authorNickname: String((result as any).message.authorNickname || ''),
+          },
+        });
+      }
+      return result;
+    }
+
+    if (com === 'scripts:action') {
+      return this.chatService.scriptsAction(client.state, args[0]);
+    }
+
+    if (com === 'scripts:room:get') {
+      return this.chatService.scriptsRoomGet(client.state, args[0]);
     }
 
     if (com === 'chat:edit') {

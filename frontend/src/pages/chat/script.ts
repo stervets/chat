@@ -15,6 +15,7 @@ import {chatMethodsNotifications} from './modules/methods-notifications';
 import {chatMethodsMessageBodyAndReactions} from './modules/methods-message-body-and-reactions';
 import {chatMethodsAuthDialogsAndProfile} from './modules/methods-auth-dialogs-and-profile';
 import {chatMethodsSendUploadAndRuntime} from './modules/methods-send-upload-and-runtime';
+import {chatMethodsScriptableRuntime} from './modules/methods-scriptable-runtime';
 
 export default {
   components: {
@@ -158,6 +159,7 @@ export default {
     ...chatMethodsMessageBodyAndReactions,
     ...chatMethodsAuthDialogsAndProfile,
     ...chatMethodsSendUploadAndRuntime,
+    ...chatMethodsScriptableRuntime,
   },
 
   async mounted(this: any) {
@@ -168,6 +170,7 @@ export default {
       return Number.isFinite(roomId) && roomId > 0 ? roomId : null;
     });
     this.resolveSoundStartupState();
+    this.initScriptRuntimeManager();
     this.initBrowserNotifications();
     await this.initWebPush();
 
@@ -192,6 +195,9 @@ export default {
     this.usersUpdatedHandler = (user: User) => {
       this.onUsersUpdated(user);
     };
+    this.scriptsStateHandler = (payload: any) => {
+      this.onScriptsState(payload);
+    };
     this.disconnectedHandler = () => this.onDisconnected();
     this.reconnectedHandler = () => {
       void this.onWsReconnected();
@@ -213,6 +219,7 @@ export default {
     on('dialogs:deleted', this.dialogsDeletedHandler);
     on('chat:reaction-notify', this.chatReactionNotifyHandler);
     on('users:updated', this.usersUpdatedHandler);
+    on('scripts:state', this.scriptsStateHandler);
     on('ws:disconnected', this.disconnectedHandler);
     on('ws:reconnected', this.reconnectedHandler);
     on('ws:session-expired', this.sessionExpiredHandler);
@@ -248,6 +255,7 @@ export default {
     this.dialogsDeletedHandler && off('dialogs:deleted', this.dialogsDeletedHandler);
     this.chatReactionNotifyHandler && off('chat:reaction-notify', this.chatReactionNotifyHandler);
     this.usersUpdatedHandler && off('users:updated', this.usersUpdatedHandler);
+    this.scriptsStateHandler && off('scripts:state', this.scriptsStateHandler);
     this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
     this.reconnectedHandler && off('ws:reconnected', this.reconnectedHandler);
     this.sessionExpiredHandler && off('ws:session-expired', this.sessionExpiredHandler);
@@ -286,5 +294,6 @@ export default {
     }
     setWsReconnectDialogResolver(null);
     this.persistHandledMessageNotificationIds();
+    this.disposeScriptRuntimeManager();
   },
 };

@@ -1,4 +1,5 @@
 import {db} from '../db.js';
+import {getLatestScriptDefinition} from '../scriptable/registry.js';
 
 export type RoomKind = 'group' | 'direct' | 'game';
 
@@ -77,11 +78,28 @@ export async function getOrCreateGroupRoom(): Promise<RoomRow> {
   });
 
   if (!room) {
+    const roomScriptDefinition = getLatestScriptDefinition('room', 'demo:room_meter');
+    const roomScriptConfig = roomScriptDefinition?.makeInitialConfig
+      ? roomScriptDefinition.makeInitialConfig({})
+      : {};
+    const roomScriptState = roomScriptDefinition?.makeInitialState
+      ? roomScriptDefinition.makeInitialState({config: roomScriptConfig})
+      : {};
+
     try {
       room = await db.room.create({
         data: {
           kind: 'group',
           title: 'Общий чат',
+          ...(roomScriptDefinition
+            ? {
+              scriptId: roomScriptDefinition.scriptId,
+              scriptRevision: roomScriptDefinition.revision,
+              scriptMode: roomScriptDefinition.mode,
+              scriptConfigJson: roomScriptConfig,
+              scriptStateJson: roomScriptState,
+            }
+            : {}),
         },
         select: {
           id: true,

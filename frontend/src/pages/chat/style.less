@@ -134,6 +134,36 @@
     z-index: 8;
   }
 
+  .room-script-banner {
+    margin: 8px 12px 0;
+    border-radius: 10px;
+    border: 1px solid rgba(112, 132, 156, 0.42);
+    background: rgba(24, 34, 46, 0.74);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 6;
+  }
+
+  .room-script-title {
+    font-size: 11px;
+    color: #9cb2cc;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .room-script-subtitle {
+    font-size: 13px;
+    color: #e4edf9;
+    font-weight: 600;
+  }
+
+  .room-script-extra {
+    font-size: 11px;
+    color: #afc1d7;
+  }
+
   .header-center-btn {
     position: absolute;
     left: 50%;
@@ -350,6 +380,12 @@
     gap: 8px;
     z-index: 32;
     pointer-events: none;
+  }
+
+  .composer-scriptable-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
   }
 
   .toast-item {

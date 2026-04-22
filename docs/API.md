@@ -59,13 +59,18 @@ HTTP используется для upload и web-push.
 - `dialogs:private([userId])` -> `{roomId, dialogId, type:'direct', targetUser}`
 - `dialogs:directs([])` -> `[{roomId, dialogId, targetUser, lastMessageAt}]`
 - `dialogs:messages([roomId, limit?, beforeMessageId?])` -> `Message[]` (старые -> новые)
-- `chat:join([roomId])` -> `{ok:true, roomId, dialogId}`
+- `chat:join([roomId])` -> `{ok:true, roomId, dialogId, roomScript}`
 - `dialogs:delete([roomId])` -> `{ok:true, changed, roomId, dialogId, kind:'direct'}`
 
 - `chat:send([roomId, body, {silent?}?])` -> `{ok:true, message}`
 - `chat:edit([messageId, body])` -> `{ok:true, changed, message}`
 - `chat:delete([messageId])` -> `{ok:true, changed, roomId, dialogId, messageId}`
 - `chat:react([messageId, emoji|null])` -> `{ok:true, changed, roomId, dialogId, messageId, reactions, notify}`
+
+### Scriptable
+- `scripts:create-message([roomId, payload])` -> `{ok:true, message}`
+- `scripts:action([{entityType, entityId, actionType, payload?}])` -> `{ok:true, roomId, entityType, entityId, state}`
+- `scripts:room:get([roomId])` -> `{ok:true, roomId, roomScript|null}`
 
 ### Games
 - `games:solo:create([{moduleKey:'king'}])` -> `{ok:true, roomId, sessionId, session, messages, events}`
@@ -87,6 +92,7 @@ HTTP используется для upload и web-push.
 - `chat:reaction-notify` -> `[payload]`
 - `dialogs:deleted` -> `[{roomId, dialogId, kind}]`
 - `users:updated` -> `[user]`
+- `scripts:state` -> `[{roomId, entityType, entityId, scriptId, scriptRevision, scriptMode, scriptStateJson}]`
 
 ### Games
 - `games:session` -> `[sessionPayload]`
@@ -108,6 +114,8 @@ HTTP используется для upload и web-push.
 - `rawText`
 - `renderedHtml`
 - `renderedPreviews[]`
+- `kind` (`text | system | scriptable`)
+- `scriptId`, `scriptRevision`, `scriptMode`, `scriptConfigJson`, `scriptStateJson`
 - `createdAt`
 - `reactions[]`
 

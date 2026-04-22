@@ -17,6 +17,8 @@
 - `src/db.ts` — Prisma client + runtime DB checks/indexes.
 - `src/ws/chat.gateway.ts` — WS транспорт и маршрутизация команд.
 - `src/ws/chat/chat.service.ts` — фасад над auth/users/invites/dialogs/messages/reactions/games.
+- `src/scriptable/*` — scriptable registry/shared-state/runner client.
+- `src/script-runner/*` — отдельный runner процесс для `client_runner`.
 - `src/http/uploads.controller.ts` — `POST /upload/image`, `GET /uploads/:name`.
 - `src/http/push.controller.ts` — `/push/public-key|subscribe|unsubscribe|test`.
 - `src/jobs/cleanup.ts` — cleanup при старте и раз в час.
@@ -27,6 +29,11 @@
 - `rooms.kind = group | direct | game`
 - участники: `rooms_users`
 - сообщения: `messages.room_id`
+
+Scriptable расширение:
+- `messages.kind = text | system | scriptable`
+- `messages.script_*` (`script_id/revision/mode/config/state`)
+- `rooms.script_*` (`script_id/revision/mode/config/state`)
 
 Игровая модель:
 - `game_sessions`
@@ -81,6 +88,11 @@ WS пакет:
 - session-token auth (не JWT, не cookie);
 - group/direct чат, реакции, upload, push;
 - King solo mode (1 человек + 3 бота) в `room(kind='game')`;
+- Scriptable runtime:
+  - message-level mini-apps,
+  - room-level script behavior,
+  - worker runtime на клиенте,
+  - shared-state и runner режимы;
 - VPN provisioning через `wg-admin` unix socket;
 - Telegram news pipeline в `scripts/telegram-news`.
 

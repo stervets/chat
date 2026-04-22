@@ -26,6 +26,13 @@ type ConfigFile = {
   db?: {
     url?: string;
   };
+  scriptRunner?: {
+    enabled?: boolean;
+    url?: string;
+    host?: string;
+    port?: number;
+    path?: string;
+  };
 };
 
 const trimTrailingSlashes = (value: string) => value.replace(/\/+$/, '');
@@ -67,6 +74,13 @@ export const config = {
   corsOrigins: resolvedCorsOrigins,
   db: {
     url: String(fileConfig.db?.url || 'postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public').trim(),
+  },
+  scriptRunner: {
+    enabled: fileConfig.scriptRunner?.enabled !== false,
+    url: String(fileConfig.scriptRunner?.url || 'ws://127.0.0.1:8921/script-runner').trim(),
+    host: String(fileConfig.scriptRunner?.host || '127.0.0.1').trim() || '127.0.0.1',
+    port: Math.max(1, Number(fileConfig.scriptRunner?.port || 8921)),
+    path: String(fileConfig.scriptRunner?.path || '/script-runner').trim() || '/script-runner',
   },
   uploads: {
     path: fileConfig.uploads?.path || './data/uploads',

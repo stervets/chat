@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
+    "runner:dev": "tsx watch src/script-runner/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",

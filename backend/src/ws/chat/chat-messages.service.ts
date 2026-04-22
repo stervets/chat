@@ -42,6 +42,7 @@ export class ChatMessagesService {
       data: {
         roomId,
         senderId: state.user!.id,
+        kind: 'text',
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
       },
@@ -58,6 +59,7 @@ export class ChatMessagesService {
         id: created.id,
         roomId,
         dialogId: roomId,
+        kind: 'text',
         authorId: state.user!.id,
         authorNickname: state.user!.nickname,
         authorName: state.user!.name,
@@ -66,6 +68,11 @@ export class ChatMessagesService {
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,
+        scriptId: null,
+        scriptRevision: 0,
+        scriptMode: null,
+        scriptConfigJson: {},
+        scriptStateJson: {},
         createdAt: created.createdAt.toISOString(),
         reactions: [],
       },
@@ -89,6 +96,7 @@ export class ChatMessagesService {
         id: true,
         roomId: true,
         senderId: true,
+        kind: true,
         rawText: true,
         renderedHtml: true,
         createdAt: true,
@@ -101,6 +109,9 @@ export class ChatMessagesService {
 
     if (existing.senderId !== state.user!.id) {
       return {ok: false, error: 'forbidden'};
+    }
+    if (existing.kind !== 'text') {
+      return {ok: false, error: 'message_not_editable'};
     }
 
     const room = await getRoomById(existing.roomId);
@@ -136,6 +147,7 @@ export class ChatMessagesService {
         id: existing.id,
         roomId: existing.roomId,
         dialogId: existing.roomId,
+        kind: 'text',
         authorId: state.user!.id,
         authorNickname: state.user!.nickname,
         authorName: state.user!.name,
@@ -144,6 +156,11 @@ export class ChatMessagesService {
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,
+        scriptId: null,
+        scriptRevision: 0,
+        scriptMode: null,
+        scriptConfigJson: {},
+        scriptStateJson: {},
         createdAt: existing.createdAt.toISOString(),
         reactions: await this.ctx.loadMessageReactions(messageId),
       },

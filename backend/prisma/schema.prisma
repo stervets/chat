@@ -13,6 +13,18 @@ enum RoomKind {
   game
 }
 
+enum MessageKind {
+  text
+  system
+  scriptable
+}
+
+enum ScriptExecutionMode {
+  client
+  client_server
+  client_runner
+}
+
 enum GameSessionStatus {
   lobby
   active
@@ -71,17 +83,23 @@ model Invite {
 }
 
 model Room {
-  id         Int        @id @default(autoincrement())
-  kind       RoomKind
-  title      String?
-  createdById Int?      @map("created_by")
-  createdBy  User?      @relation("RoomCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  roomUsers  RoomUser[]
-  messages   Message[]
-  gameSessions GameSession[]
+  id              Int                  @id @default(autoincrement())
+  kind            RoomKind
+  title           String?
+  createdById     Int?                 @map("created_by")
+  createdBy       User?                @relation("RoomCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  scriptId        String?              @map("script_id") @db.VarChar(128)
+  scriptRevision  Int                  @default(0) @map("script_revision")
+  scriptConfigJson Json                @default("{}") @map("script_config_json")
+  scriptStateJson Json                 @default("{}") @map("script_state_json")
+  scriptMode      ScriptExecutionMode? @map("script_mode")
+  roomUsers       RoomUser[]
+  messages        Message[]
+  gameSessions    GameSession[]
 
   @@index([kind], map: "rooms_kind_idx")
+  @@index([scriptId], map: "rooms_script_id_idx")
   @@map("rooms")
 }
 
@@ -135,17 +153,24 @@ model GameSessionPlayer {
 }
 
 model Message {
-  id           Int               @id @default(autoincrement())
-  roomId       Int               @map("room_id")
-  room         Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  senderId     Int?              @map("sender_id")
-  sender       User?             @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
-  rawText      String            @map("raw_text")
-  renderedHtml String            @map("rendered_html")
-  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  reactions    MessageReaction[]
+  id               Int                  @id @default(autoincrement())
+  roomId           Int                  @map("room_id")
+  room             Room                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  senderId         Int?                 @map("sender_id")
+  sender           User?                @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  kind             MessageKind          @default(text)
+  rawText          String               @map("raw_text")
+  renderedHtml     String               @map("rendered_html")
+  scriptId         String?              @map("script_id") @db.VarChar(128)
+  scriptRevision   Int                  @default(0) @map("script_revision")
+  scriptConfigJson Json                 @default("{}") @map("script_config_json")
+  scriptStateJson  Json                 @default("{}") @map("script_state_json")
+  scriptMode       ScriptExecutionMode? @map("script_mode")
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  reactions        MessageReaction[]
 
   @@index([roomId, createdAt(sort: Desc)], map: "messages_room_created_idx")
+  @@index([scriptId], map: "messages_script_id_idx")
   @@map("messages")
 }
 

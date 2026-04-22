@@ -2,6 +2,7 @@ import {ref} from 'vue';
 import type {Dialog, Message, User} from '@/composables/types';
 import {wsConnectionState} from '@/composables/ws-rpc';
 import type {DirectDialog, NotificationItem, ToastItem} from './chat-page.constants';
+import type {ScriptRuntimeManager} from '@/scriptable/runtime/manager';
 
 export function createChatPageState() {
   return {
@@ -12,6 +13,10 @@ export function createChatPageState() {
     activeDialog: ref<Dialog | null>(null),
 
     messages: ref<Message[]>([]),
+    scriptRuntimeManager: ref<ScriptRuntimeManager | null>(null),
+    scriptMessageViewModels: ref<Record<number, Record<string, any>>>({}),
+    activeRoomScript: ref<any | null>(null),
+    activeRoomScriptViewModel: ref<Record<string, any> | null>(null),
     messageText: ref(''),
     composerToolsOpen: ref(false),
     composerColorPicker: ref('#61afef'),
@@ -111,6 +116,7 @@ export function createChatPageState() {
     chatReactionsHandler: ref<Function | null>(null),
     dialogsDeletedHandler: ref<Function | null>(null),
     chatReactionNotifyHandler: ref<Function | null>(null),
+    scriptsStateHandler: ref<Function | null>(null),
     usersUpdatedHandler: ref<Function | null>(null),
     disconnectedHandler: ref<Function | null>(null),
     reconnectedHandler: ref<Function | null>(null),

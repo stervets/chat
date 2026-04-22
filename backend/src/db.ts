@@ -12,6 +12,7 @@ export const db = new PrismaClient({
 let runtimeIndexesReady = false;
 let nicknameModelReady = false;
 let donationBadgeModelReady = false;
+let scriptableModelReady = false;
 
 async function ensureNicknameModel() {
   if (nicknameModelReady) return;
@@ -121,10 +122,80 @@ async function ensureDonationBadgeModel() {
   donationBadgeModelReady = true;
 }
 
+async function ensureScriptableModel() {
+  if (scriptableModelReady) return;
+
+  await db.$executeRawUnsafe(
+    `do $$
+     begin
+       if not exists (select 1 from pg_type where typname = 'MessageKind') then
+         create type "MessageKind" as enum ('text', 'system', 'scriptable');
+       end if;
+
+       if not exists (select 1 from pg_type where typname = 'ScriptExecutionMode') then
+         create type "ScriptExecutionMode" as enum ('client', 'client_server', 'client_runner');
+       end if;
+     end
+     $$`
+  );
+
+  await db.$executeRawUnsafe(
+    `alter table messages
+       add column if not exists kind "MessageKind" not null default 'text',
+       add column if not exists script_id varchar(128),
+       add column if not exists script_revision integer not null default 0,
+       add column if not exists script_config_json jsonb not null default '{}'::jsonb,
+       add column if not exists script_state_json jsonb not null default '{}'::jsonb,
+       add column if not exists script_mode "ScriptExecutionMode"`
+  );
+
+  await db.$executeRawUnsafe(
+    `alter table rooms
+       add column if not exists script_id varchar(128),
+       add column if not exists script_revision integer not null default 0,
+       add column if not exists script_config_json jsonb not null default '{}'::jsonb,
+       add column if not exists script_state_json jsonb not null default '{}'::jsonb,
+       add column if not exists script_mode "ScriptExecutionMode"`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists messages_script_id_idx
+     on messages(script_id)`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists rooms_script_id_idx
+     on rooms(script_id)`
+  );
+
+  await db.$executeRawUnsafe(
+    `with target_room as (
+       select id
+       from rooms
+       where kind = 'group'
+       order by id asc
+       limit 1
+     )
+     update rooms as r
+     set
+       script_id = 'demo:room_meter',
+       script_revision = 1,
+       script_mode = 'client_runner',
+       script_config_json = jsonb_build_object('title', 'Счётчик комнаты', 'announceEvery', 5),
+       script_state_json = jsonb_build_object('totalMessages', 0, 'lastAuthorNickname', '', 'updatedAt', null)
+     from target_room t
+     where r.id = t.id
+       and (r.script_id is null or btrim(r.script_id) = '')`
+  );
+
+  scriptableModelReady = true;
+}
+
 export async function checkDb() {
   await db.$queryRawUnsafe('select 1 as ok');
   await ensureNicknameModel();
   await ensureDonationBadgeModel();
+  await ensureScriptableModel();
   await ensureRuntimeIndexes();
 }
 
