@@ -14,8 +14,14 @@
 
 ## Ключевая модель данных
 - `rooms`, `rooms_users`, `messages`, `message_reactions`, `sessions`, `push_subscriptions`.
+- graph layer: `graph_nodes`, `graph_edges` (только контейнеры/навигация).
 - админ комнаты: `rooms.created_by` (только для non-direct, в direct админа нет).
 - `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`).
+- `messages.discussion_room_id -> rooms.id` (`ON DELETE SET NULL`) для discussion rooms.
+- app-room поля: `rooms.app_enabled`, `rooms.app_type`, `rooms.app_config_json`.
+- graph node kinds: `space | folder | room_ref`.
+- graph target type на текущем шаге: `none | room` (`message-ref` запрещён).
+- graph не хранит сообщения и не заменяет `rooms/messages`.
 - pinned message может быть `text | system | scriptable` (ограничение только по принадлежности к той же комнате).
 - `messages.sender_id` может быть `NULL` для анонимной отправки.
 - `users.name` не уникален (поиск/выбор пользователя должен держать несколько совпадений).
@@ -43,6 +49,10 @@
 Основные команды чата:
 - `dialogs:general`, `dialogs:private`, `dialogs:directs`, `dialogs:messages`, `dialogs:delete`
 - `chat:join`, `chat:send`, `chat:edit`, `chat:delete`, `chat:react`, `chat:pin`, `chat:unpin`
+- `messages:discussion:get`, `messages:discussion:create`
+- `rooms:create`, `rooms:app:configure`
+- `graph:spaces:list`, `graph:children`, `graph:space:create`, `graph:folder:create`
+- `graph:room-ref:create`, `graph:children:reorder`, `graph:node:archive`, `graph:rooms:list`
 - `scripts:create-message`, `scripts:action`, `scripts:room:get`
 
 `chat:send` поддерживает опции в 3-м аргументе:
@@ -51,6 +61,7 @@
 
 Основные events:
 - `chat:message`, `chat:message-updated`, `chat:message-deleted`, `chat:pinned`
+- `chat:room-updated`
 - `chat:reactions`, `chat:reaction-notify`, `dialogs:deleted`, `users:updated`
 - `scripts:state`, `games:*`
 
@@ -67,6 +78,7 @@ Frontend:
 - `frontend/nuxt.config.ts`
 - `frontend/src/composables/ws-rpc.ts`
 - `frontend/src/pages/chat/*`
+- `frontend/src/pages/spaces/*` (graph container view + создание space/folder/room_ref)
 - `frontend/src/pages/games/*`
 - `frontend/src/pages/vpn/*`
 
@@ -116,9 +128,26 @@ Rooms/direct/messages/reactions:
 - `backend/src/ws/chat/chat-reactions.service.ts`
 - `frontend/src/pages/chat/modules/*`
 
+Discussion rooms:
+- `messages.discussion_room_id` связывает post message и отдельную room обсуждения
+- обсуждение открывается как обычная room через `/chat?room=<discussionRoomId>`
+- источник discussion для header подтягивается через `chat:join -> discussion`
+
+Graph containers:
+- `backend/src/ws/chat/chat-graph.service.ts`
+- `frontend/src/pages/spaces/*`
+- `frontend/src/pages/chat/modules/methods-spaces-navigation.ts` (entry point spaces в drawer чата)
+- room navigation через `room_ref -> /chat?room=<id>&space=<spaceId>&node=<nodeId>`
+- текущая модель: только `space/folder/room_ref`, без `message-ref`
+
 Scriptable:
 - `backend/src/scriptable/*`, `backend/src/script-runner/*`
 - `frontend/src/scriptable/*`, `frontend/src/pages/chat/message-scriptable/*`
+ - app room model:
+   - `room` может быть обычной или `app room` (`app_enabled=true`);
+   - `pinned scriptable message` = app-surface;
+   - `room script` = опциональный room-runtime оркестратор;
+   - один runtime на `message:<id>`, pinned не создаёт второй worker.
 
 Push/PWA:
 - `backend/src/common/web-push.ts`, `backend/src/http/push.controller.ts`

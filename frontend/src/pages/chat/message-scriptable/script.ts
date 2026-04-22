@@ -30,6 +30,7 @@ export default {
   setup() {
     return {
       guessInput: ref(''),
+      botLevelDraft: ref(50),
       lastSoundTick: ref(0),
       audioEl: ref<HTMLAudioElement | null>(null),
       runtimeViewInstanceId: `view-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -46,6 +47,11 @@ export default {
         return;
       }
       this.tryPlaySoundByTick();
+    },
+    'viewModel.level'(this: any, levelRaw: unknown) {
+      const level = Number(levelRaw);
+      if (!Number.isFinite(level)) return;
+      this.botLevelDraft = Math.max(0, Math.min(100, Math.round(level)));
     },
     'message.id'(this: any, nextIdRaw: unknown, prevIdRaw: unknown) {
       const nextId = Number(nextIdRaw || 0);
@@ -81,6 +87,27 @@ export default {
       if (!guess) return;
       this.onAction('submit_guess', {guess});
       this.guessInput = '';
+    },
+
+    onPollVote(this: any, optionIndexRaw: unknown) {
+      const optionIndex = Number(optionIndexRaw);
+      if (!Number.isFinite(optionIndex) || optionIndex < 0) return;
+      this.onAction('vote_option', {optionIndex});
+    },
+
+    onBotToggle(this: any, enabledRaw: unknown) {
+      this.onAction('toggle_enabled', {enabled: !!enabledRaw});
+    },
+
+    onBotLevelInput(this: any, event: Event) {
+      const target = event.target as HTMLInputElement | null;
+      const level = Number(target?.value || this.botLevelDraft || 0);
+      this.botLevelDraft = Math.max(0, Math.min(100, Math.round(level)));
+    },
+
+    onBotLevelSubmit(this: any) {
+      const level = Math.max(0, Math.min(100, Math.round(Number(this.botLevelDraft || 0))));
+      this.onAction('set_level', {level});
     },
 
     stopAudioPlayback(this: any) {
@@ -136,6 +163,10 @@ export default {
   },
 
   mounted(this: any) {
+    const initialLevel = Number(this.viewModel?.level || 50);
+    if (Number.isFinite(initialLevel)) {
+      this.botLevelDraft = Math.max(0, Math.min(100, Math.round(initialLevel)));
+    }
     this.emitRuntimeViewMounted();
   },
 

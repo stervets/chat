@@ -18,8 +18,31 @@ export type Invite = {
   isUsed: boolean;
 };
 
-export type DialogKind = 'group' | 'direct';
+export type DialogKind = 'group' | 'direct' | 'game';
 export type ScriptExecutionMode = 'client' | 'client_server' | 'client_runner';
+export type RoomAppType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
+export type GraphNodeKind = 'space' | 'folder' | 'room_ref';
+export type GraphTargetType = 'none' | 'room';
+
+export type RoomApp = {
+  enabled: boolean;
+  appType: RoomAppType | null;
+  config: Record<string, any>;
+  surfaceMessageId: Id | null;
+  surfaceKind: 'text' | 'system' | 'scriptable' | null;
+  hasRoomRuntime: boolean;
+  requiresRoomRuntime: boolean;
+  canCollapseSurface: boolean;
+};
+
+export type DiscussionMeta = {
+  sourceMessageId: Id | null;
+  sourceRoomId: Id | null;
+  sourceRoomKind: DialogKind | null;
+  sourceRoomTitle: string | null;
+  sourceMessagePreview: string;
+  sourceMessageDeleted: boolean;
+};
 
 export type Dialog = {
   id: Id;
@@ -28,6 +51,8 @@ export type Dialog = {
   targetUser?: User;
   createdById?: Id | null;
   pinnedMessageId?: Id | null;
+  roomApp?: RoomApp | null;
+  discussion?: DiscussionMeta | null;
 };
 
 export type Message = {
@@ -52,6 +77,7 @@ export type Message = {
   scriptMode: ScriptExecutionMode | null;
   scriptConfigJson: Record<string, any>;
   scriptStateJson: Record<string, any>;
+  discussionRoomId: Id | null;
   body?: string;
   createdAt: string;
   reactions: MessageReaction[];
@@ -91,4 +117,27 @@ export type WsEnvelope<T = unknown> = {
   type: string;
   payload?: T;
   requestId?: string;
+};
+
+export type GraphRoomTarget = {
+  id: Id;
+  kind: DialogKind;
+  title: string | null;
+  createdById: Id | null;
+  appEnabled: boolean;
+  appType: RoomAppType | null;
+  pinnedMessageId: Id | null;
+};
+
+export type GraphNode = {
+  id: Id;
+  kind: GraphNodeKind;
+  title: string;
+  pathSegment: string | null;
+  targetType: GraphTargetType;
+  targetId: Id | null;
+  config: Record<string, any>;
+  parentNodeId: Id | null;
+  sortOrder: number;
+  room: GraphRoomTarget | null;
 };

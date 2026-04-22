@@ -55,6 +55,14 @@ export default {
       type: Boolean,
       default: false,
     },
+    canOpenDiscussion: {
+      type: Boolean,
+      default: false,
+    },
+    discussionOpenPendingId: {
+      type: Number,
+      default: null,
+    },
     isPinnedMessage: {
       type: Boolean,
       default: false,
@@ -129,6 +137,7 @@ export default {
     'script-view-mounted',
     'script-view-unmounted',
     'toggle-pinned-message',
+    'open-discussion',
     'image-preview-click',
   ],
 
@@ -216,6 +225,10 @@ export default {
 
     onTogglePinnedMessage(this: any) {
       this.$emit('toggle-pinned-message', this.message);
+    },
+
+    onOpenDiscussion(this: any) {
+      this.$emit('open-discussion', this.message);
     },
 
     onDeleteMessage(this: any) {

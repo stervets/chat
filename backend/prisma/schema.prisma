@@ -13,6 +13,14 @@ enum RoomKind {
   game
 }
 
+enum RoomAppType {
+  llm
+  poll
+  dashboard
+  bot_control
+  custom
+}
+
 enum MessageKind {
   text
   system
@@ -23,6 +31,21 @@ enum ScriptExecutionMode {
   client
   client_server
   client_runner
+}
+
+enum GraphNodeKind {
+  space
+  folder
+  room_ref
+}
+
+enum GraphTargetType {
+  none
+  room
+}
+
+enum GraphEdgeType {
+  child
 }
 
 enum GameSessionStatus {
@@ -93,6 +116,9 @@ model Room {
   createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   pinnedMessageId Int?                 @map("pinned_message_id")
   pinnedMessage   Message?             @relation("RoomPinnedMessage", fields: [pinnedMessageId], references: [id], onDelete: SetNull)
+  appEnabled      Boolean              @default(false) @map("app_enabled")
+  appType         RoomAppType?         @map("app_type")
+  appConfigJson   Json                 @default("{}") @map("app_config_json")
   scriptId        String?              @map("script_id") @db.VarChar(128)
   scriptRevision  Int                  @default(0) @map("script_revision")
   scriptConfigJson Json                @default("{}") @map("script_config_json")
@@ -100,10 +126,13 @@ model Room {
   scriptMode      ScriptExecutionMode? @map("script_mode")
   roomUsers       RoomUser[]
   messages        Message[]            @relation("RoomMessages")
+  discussionSourceMessages Message[]   @relation("MessageDiscussionRoom")
   gameSessions    GameSession[]
 
   @@index([kind], map: "rooms_kind_idx")
   @@index([pinnedMessageId], map: "rooms_pinned_message_idx")
+  @@index([appEnabled], map: "rooms_app_enabled_idx")
+  @@index([appType], map: "rooms_app_type_idx")
   @@index([scriptId], map: "rooms_script_id_idx")
   @@map("rooms")
 }
@@ -118,6 +147,43 @@ model RoomUser {
   @@id([roomId, userId])
   @@index([userId], map: "rooms_users_user_idx")
   @@map("rooms_users")
+}
+
+model GraphNode {
+  id          Int             @id @default(autoincrement())
+  kind        GraphNodeKind
+  title       String          @db.VarChar(160)
+  pathSegment String?         @map("path_segment") @db.VarChar(80)
+  targetType  GraphTargetType @default(none) @map("target_type")
+  targetId    Int?            @map("target_id")
+  configJson  Json            @default("{}") @map("config_json")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt  DateTime?       @map("archived_at") @db.Timestamptz(3)
+  parentEdges GraphEdge[]     @relation("GraphEdgeParent")
+  childEdges  GraphEdge[]     @relation("GraphEdgeChild")
+
+  @@index([kind], map: "graph_nodes_kind_idx")
+  @@index([targetType, targetId], map: "graph_nodes_target_idx")
+  @@index([archivedAt], map: "graph_nodes_archived_idx")
+  @@map("graph_nodes")
+}
+
+model GraphEdge {
+  id           Int          @id @default(autoincrement())
+  parentNodeId Int          @map("parent_node_id")
+  childNodeId  Int          @map("child_node_id")
+  edgeType     GraphEdgeType @default(child) @map("edge_type")
+  sortOrder    Int          @default(0) @map("sort_order")
+  metaJson     Json         @default("{}") @map("meta_json")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  parentNode   GraphNode    @relation("GraphEdgeParent", fields: [parentNodeId], references: [id], onDelete: Cascade)
+  childNode    GraphNode    @relation("GraphEdgeChild", fields: [childNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([parentNodeId, childNodeId], map: "graph_edges_parent_child_unique")
+  @@unique([childNodeId], map: "graph_edges_child_unique")
+  @@index([parentNodeId, sortOrder], map: "graph_edges_parent_sort_idx")
+  @@map("graph_edges")
 }
 
 model GameSession {
@@ -171,12 +237,15 @@ model Message {
   scriptConfigJson Json                 @default("{}") @map("script_config_json")
   scriptStateJson  Json                 @default("{}") @map("script_state_json")
   scriptMode       ScriptExecutionMode? @map("script_mode")
+  discussionRoomId Int?                 @map("discussion_room_id")
+  discussionRoom   Room?                @relation("MessageDiscussionRoom", fields: [discussionRoomId], references: [id], onDelete: SetNull)
   createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   reactions        MessageReaction[]
   pinnedInRooms    Room[]               @relation("RoomPinnedMessage")
 
   @@index([roomId, createdAt(sort: Desc)], map: "messages_room_created_idx")
   @@index([scriptId], map: "messages_script_id_idx")
+  @@unique([discussionRoomId], map: "messages_discussion_room_id_key")
   @@map("messages")
 }
 

@@ -17,6 +17,7 @@
 - `src/db.ts` — Prisma client + runtime DB checks/indexes.
 - `src/ws/chat.gateway.ts` — WS транспорт и маршрутизация команд.
 - `src/ws/chat/chat.service.ts` — фасад над auth/users/invites/dialogs/messages/reactions/games.
+- `src/ws/chat/chat-graph.service.ts` — graph-layer контейнеров (`space/folder/room_ref`).
 - `src/scriptable/*` — scriptable registry/shared-state/runner client.
 - `src/script-runner/*` — отдельный runner процесс для `client_runner`.
 - `src/http/uploads.controller.ts` — `POST /upload/image`, `GET /uploads/:name`.
@@ -29,10 +30,20 @@
 - `rooms.kind = group | direct | game`
 - участники: `rooms_users`
 - сообщения: `messages.room_id`
+- discussion rooms: `messages.discussion_room_id -> rooms.id` (`ON DELETE SET NULL`)
 - админ комнаты: `rooms.created_by` (только для non-direct; `direct` без админа)
 - закреп комнаты: `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`)
+- app-room режим: `rooms.app_enabled`, `rooms.app_type`, `rooms.app_config_json`
 - push-настройка пользователя: `users.push_disable_all_mentions`
 - `users.name` не уникален (поиск пользователей работает по `name` и `nickname` с несколькими совпадениями)
+
+Graph слой контейнеров:
+- `graph_nodes` (`kind = space | folder | room_ref`)
+- `graph_edges` (`parent_node_id -> child_node_id`, `edge_type = child`, `sort_order`)
+- `room_ref` хранит ссылку на существующую `rooms.id` через `target_type='room'` + `target_id`
+- на текущем шаге разрешены только `target_type = none | room`
+- `message-ref` отсутствует и не поддерживается
+- graph не хранит сообщения и не заменяет `rooms/messages`
 
 Scriptable расширение:
 - `messages.kind = text | system | scriptable`
@@ -69,6 +80,8 @@ Scriptable расширение:
 - `src/composables/classes/ws.ts` — WS клиент с request/response по пакетам.
 - `src/composables/ws-rpc.ts` — reconnect + session restore + RPC-helpers.
 - `src/pages/chat/*` — чат UI.
+- `src/pages/chat/modules/methods-spaces-navigation.ts` — встроенная spaces-навигация в drawer чата.
+- `src/pages/spaces/*` — полный экран graph-контейнеров (управление space/folder/room_ref).
 - `src/pages/chat/modules/methods-message-body-and-reactions.ts` — time-reference jump, pinned state, image overlay.
 - `src/pages/direct/[username]/index.vue` — direct маршрут.
 - `src/pages/games/*` — King lobby/session UI.
@@ -112,6 +125,23 @@ WS пакет:
   - worker runtime на клиенте,
   - shared-state и runner режимы;
   - при одновременном показе message в ленте и в pinned используется один runtime instance на `message.id` (без второго worker и без дубля локальных side-effects).
+- app room model:
+  - обычная комната: `app_enabled=false`, обычный чат;
+  - app room: `app_enabled=true`, `pinned scriptable message` выступает как app-surface;
+  - `room script` остаётся опциональным оркестратором комнаты;
+  - backend и frontend получают единый `roomApp` payload в `dialogs:*`/`chat:join`.
+- graph room navigation model:
+  - `space/folder` дают иерархию контейнеров;
+  - `room_ref` открывает обычную комнату через тот же chat route-flow (`/chat?room=<roomId>`);
+  - при переходе из space в room прокидывается контекст `space/node` (`/chat?room=<id>&space=<spaceId>&node=<nodeId>`) для UX-навигации;
+  - в основном chat UI есть встроенный вход в spaces (секция `Пространства` в левом drawer) и кнопка возврата в space в header комнаты;
+  - существующая навигация `/chat` (general) и `/direct/:username` не ломается.
+- discussion room model:
+  - у сообщения может быть отдельная room обсуждения (`messages.discussion_room_id`);
+  - discussion room остаётся обычной `room` и открывается тем же route-flow `/chat?room=<id>`;
+  - кнопка `Комментарии` в `message-item` создаёт discussion room при первом открытии и переиспользует её дальше;
+  - header discussion room показывает `Комментарии` и кнопку `К посту`;
+  - если исходный message удалён, discussion room остаётся, а UI помечает состояние `исходный пост удалён`.
 - VPN provisioning через `wg-admin` unix socket;
 - Telegram news pipeline в `scripts/telegram-news`.
 
@@ -133,6 +163,9 @@ WS пакет:
 - effects:
   - эффекты (звук/вибрация/одноразовые side-effects) не являются state
   - для второго рендера того же message (pinned) используется `passiveEffects`, чтобы не дублировать эффекты
+- app-room связь:
+  - `scripts:action` после успешного применения прокидывается в room runtime как `script_action` (через существующий room-event pipeline, без отдельного bus);
+  - изменение app-room метаданных летит realtime-событием `chat:room-updated`.
 
 ## Источник истины
 

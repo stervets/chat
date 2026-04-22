@@ -1,4 +1,5 @@
 import type {User} from '@/composables/types';
+import type {RoomApp} from '@/composables/types';
 
 export type DirectDialog = {
   roomId: number;
@@ -6,6 +7,7 @@ export type DirectDialog = {
   lastMessageAt: string;
   createdById?: number | null;
   pinnedMessageId?: number | null;
+  roomApp?: RoomApp | null;
 };
 
 export type LinkPreview = {

@@ -245,6 +245,7 @@ export const chatMethodsComposerAndVirtual = {
         ? message.scriptStateJson
         : {};
       const messageKind = String(message?.kind || 'text').trim().toLowerCase();
+      const discussionRoomId = Number(message?.discussionRoomId || 0);
       return {
         ...message,
         kind: messageKind === 'scriptable'
@@ -261,6 +262,7 @@ export const chatMethodsComposerAndVirtual = {
         scriptMode: message?.scriptMode || null,
         scriptConfigJson,
         scriptStateJson,
+        discussionRoomId: Number.isFinite(discussionRoomId) && discussionRoomId > 0 ? discussionRoomId : null,
         reactions: Array.isArray(message?.reactions) ? message.reactions : [],
       } as Message;
     },
@@ -526,6 +528,125 @@ export const chatMethodsComposerAndVirtual = {
       if (this.activeDialog?.kind === 'direct') return false;
       if (Number(message.authorId || 0) <= 0) return false;
       return this.me.id !== message.authorId;
+    },
+
+    canOpenDiscussionFromMessage(this: any, message: Message) {
+      if (!this.activeDialog) return false;
+      if (this.activeDialog.kind === 'direct') return false;
+      const messageId = Number(message?.id || 0);
+      return Number.isFinite(messageId) && messageId > 0;
+    },
+
+    applyMessageDiscussionRoomId(this: any, messageIdRaw: unknown, discussionRoomIdRaw: unknown) {
+      const messageId = Number(messageIdRaw || 0);
+      const discussionRoomId = Number(discussionRoomIdRaw || 0);
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+      const nextDiscussionRoomId = Number.isFinite(discussionRoomId) && discussionRoomId > 0
+        ? discussionRoomId
+        : null;
+
+      this.messages = this.messages.map((item: Message) => {
+        if (Number(item.id || 0) !== messageId) return item;
+        return {
+          ...item,
+          discussionRoomId: nextDiscussionRoomId,
+        };
+      });
+
+      if (Number(this.activePinnedMessage?.id || 0) === messageId) {
+        this.activePinnedMessage = {
+          ...this.activePinnedMessage,
+          discussionRoomId: nextDiscussionRoomId,
+        };
+      }
+    },
+
+    buildDiscussionRouteContext(this: any, sourceMessageIdRaw: unknown) {
+      const sourceMessageId = Number(sourceMessageIdRaw || 0);
+      const routeContext = this.getRoomRouteContext();
+      return {
+        spaceId: routeContext.spaceId,
+        nodeId: routeContext.nodeId,
+        sourceRoomId: Number(this.activeDialog?.id || 0) || null,
+        sourceMessageId: Number.isFinite(sourceMessageId) && sourceMessageId > 0
+          ? sourceMessageId
+          : null,
+      };
+    },
+
+    async openMessageDiscussion(this: any, message: Message) {
+      if (!this.canOpenDiscussionFromMessage(message)) return;
+      if (this.discussionOpenPendingMessageId) return;
+
+      const messageId = Number(message.id || 0);
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+
+      this.hapticTap();
+      this.discussionOpenPendingMessageId = messageId;
+      try {
+        let discussionRoomId = Number(message.discussionRoomId || 0);
+        if (Number.isFinite(discussionRoomId) && discussionRoomId > 0) {
+          const current = await ws.request('messages:discussion:get', messageId);
+          if (!(current as any)?.ok) {
+            discussionRoomId = 0;
+          } else {
+            discussionRoomId = Number((current as any).discussionRoomId || 0);
+          }
+        }
+
+        if (!Number.isFinite(discussionRoomId) || discussionRoomId <= 0) {
+          const result = await ws.request('messages:discussion:create', messageId);
+          if (!(result as any)?.ok) {
+            this.error = 'Не удалось открыть комментарии.';
+            return;
+          }
+
+          discussionRoomId = Number((result as any).discussionRoomId || 0);
+          if (!Number.isFinite(discussionRoomId) || discussionRoomId <= 0) {
+            this.error = 'Не удалось открыть комментарии.';
+            return;
+          }
+
+          const updatedMessageRaw = (result as any).message;
+          if (updatedMessageRaw && typeof updatedMessageRaw === 'object') {
+            this.applyMessageUpdate(updatedMessageRaw);
+          } else {
+            this.applyMessageDiscussionRoomId(messageId, discussionRoomId);
+          }
+          await this.fetchDirectDialogs();
+        }
+
+        const path = this.buildRoomRoutePath(
+          discussionRoomId,
+          this.buildDiscussionRouteContext(messageId),
+        );
+        await this.router.push(path);
+      } finally {
+        this.discussionOpenPendingMessageId = null;
+      }
+    },
+
+    async onBackToDiscussionSource(this: any) {
+      const discussion = this.activeDialog?.discussion;
+      if (!discussion) return;
+      this.hapticTap();
+
+      const sourceRoomId = Number(discussion.sourceRoomId || 0);
+      const sourceMessageId = Number(discussion.sourceMessageId || 0);
+      if (!Number.isFinite(sourceRoomId) || sourceRoomId <= 0) {
+        this.pushToast('Комментарии', 'Исходный пост удалён');
+        return;
+      }
+
+      const routeContext = this.getRoomRouteContext();
+      const path = this.buildRoomRoutePath(sourceRoomId, {
+        spaceId: routeContext.spaceId,
+        nodeId: routeContext.nodeId,
+        focusMessageId: Number.isFinite(sourceMessageId) && sourceMessageId > 0
+          ? sourceMessageId
+          : null,
+      });
+      await this.router.push(path);
     },
 
     async onDirectFromMessageClick(this: any, message: Message) {

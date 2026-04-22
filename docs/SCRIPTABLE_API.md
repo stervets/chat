@@ -131,6 +131,7 @@ type ScriptRuntimeEvent = {
 
 - `ui:action` (`source='ui'`)
 - `chat_message` / `chat_message_updated` / `chat_message_deleted` (`source='room'`)
+- `script_action` (`source='room'`, для room runtime после успешного `scripts:action`)
 - `state:update` / `shared_action_error` (`source='server'`)
 - `runtime:init`, `runtime:dispose`, `lifecycle:mount`, `lifecycle:unmount`, `system:ws_disconnected`, `system:ws_reconnected`, `system:session_expired` (`source='system'`)
 
@@ -161,3 +162,4 @@ type ScriptRuntimeEvent = {
 - Не смешивать effects со shared state.
 - Не тащить бизнес-логику UI в backend reducer без необходимости.
 - Обратная совместимость с legacy-hooks не поддерживается.
+- В app room роль app-surface выполняет только pinned `scriptable` message.

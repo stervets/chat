@@ -660,6 +660,81 @@ export const chatMethodsRuntimeAndRouting = {
       return `/direct/${encodeURIComponent(nickname)}`;
     },
 
+    parseRoutePositiveInt(this: any, raw: unknown) {
+      const parsed = Number.parseInt(String(raw ?? ''), 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) return null;
+      return parsed;
+    },
+
+    getRoomRouteContext(this: any) {
+      const roomRaw = Array.isArray(this.route?.query?.room)
+        ? this.route.query.room[0]
+        : this.route?.query?.room;
+      const spaceRaw = Array.isArray(this.route?.query?.space)
+        ? this.route.query.space[0]
+        : this.route?.query?.space;
+      const nodeRaw = Array.isArray(this.route?.query?.node)
+        ? this.route.query.node[0]
+        : this.route?.query?.node;
+      const sourceRoomRaw = Array.isArray(this.route?.query?.sourceRoom)
+        ? this.route.query.sourceRoom[0]
+        : this.route?.query?.sourceRoom;
+      const sourceMessageRaw = Array.isArray(this.route?.query?.sourceMessage)
+        ? this.route.query.sourceMessage[0]
+        : this.route?.query?.sourceMessage;
+      const focusMessageRaw = Array.isArray(this.route?.query?.focusMessage)
+        ? this.route.query.focusMessage[0]
+        : this.route?.query?.focusMessage;
+
+      return {
+        roomId: this.parseRoutePositiveInt(roomRaw),
+        spaceId: this.parseRoutePositiveInt(spaceRaw),
+        nodeId: this.parseRoutePositiveInt(nodeRaw),
+        sourceRoomId: this.parseRoutePositiveInt(sourceRoomRaw),
+        sourceMessageId: this.parseRoutePositiveInt(sourceMessageRaw),
+        focusMessageId: this.parseRoutePositiveInt(focusMessageRaw),
+      };
+    },
+
+    buildRoomRoutePath(this: any, roomIdRaw: unknown, contextRaw?: {
+      spaceId?: number | null;
+      nodeId?: number | null;
+      sourceRoomId?: number | null;
+      sourceMessageId?: number | null;
+      focusMessageId?: number | null;
+    }) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return '/chat';
+      const generalRoomId = Number(this.generalDialog?.id || 0);
+      if (Number.isFinite(generalRoomId) && generalRoomId > 0 && roomId === generalRoomId) {
+        return '/chat';
+      }
+
+      const spaceId = Number(contextRaw?.spaceId || 0);
+      const nodeId = Number(contextRaw?.nodeId || 0);
+      const sourceRoomId = Number(contextRaw?.sourceRoomId || 0);
+      const sourceMessageId = Number(contextRaw?.sourceMessageId || 0);
+      const focusMessageId = Number(contextRaw?.focusMessageId || 0);
+      const query = new URLSearchParams();
+      query.set('room', String(roomId));
+      if (Number.isFinite(spaceId) && spaceId > 0) {
+        query.set('space', String(spaceId));
+      }
+      if (Number.isFinite(nodeId) && nodeId > 0) {
+        query.set('node', String(nodeId));
+      }
+      if (Number.isFinite(sourceRoomId) && sourceRoomId > 0) {
+        query.set('sourceRoom', String(sourceRoomId));
+      }
+      if (Number.isFinite(sourceMessageId) && sourceMessageId > 0) {
+        query.set('sourceMessage', String(sourceMessageId));
+      }
+      if (Number.isFinite(focusMessageId) && focusMessageId > 0) {
+        query.set('focusMessage', String(focusMessageId));
+      }
+      return `/chat?${query.toString()}`;
+    },
+
     safeDecodeRouteParam(this: any, valueRaw: unknown) {
       const value = String(valueRaw || '');
       if (!value) return '';
@@ -681,6 +756,12 @@ export const chatMethodsRuntimeAndRouting = {
       return this.normalizeRouteNickname(decoded);
     },
 
+    getRoomIdFromRoute(this: any) {
+      const path = String(this.route?.path || '');
+      if (path !== '/chat') return null;
+      return this.getRoomRouteContext().roomId;
+    },
+
     findUserByNickname(this: any, nicknameRaw: unknown) {
       const nickname = this.normalizeRouteNickname(nicknameRaw);
       if (!nickname) return null;
@@ -696,15 +777,55 @@ export const chatMethodsRuntimeAndRouting = {
       return null;
     },
 
+    findDirectDialogByRoomId(this: any, roomIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return null;
+      return this.directDialogs.find((dialog: DirectDialog) => Number(dialog.roomId || 0) === roomId) || null;
+    },
+
+    buildDialogFromRoomRoute(this: any, roomIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return null;
+
+      const generalRoomId = Number(this.generalDialog?.id || 0);
+      if (generalRoomId > 0 && roomId === generalRoomId && this.generalDialog) {
+        return this.generalDialog as Dialog;
+      }
+
+      const direct = this.findDirectDialogByRoomId(roomId);
+      if (direct) {
+        return {
+          id: direct.roomId,
+          kind: 'direct',
+          targetUser: direct.targetUser,
+          title: direct.targetUser.name,
+          createdById: null,
+          pinnedMessageId: Number(direct.pinnedMessageId || 0) || null,
+          roomApp: this.normalizeRoomApp(direct.roomApp, direct.pinnedMessageId),
+          discussion: null,
+        } as Dialog;
+      }
+
+      return {
+        id: roomId,
+        kind: 'group',
+        title: `Комната #${roomId}`,
+        createdById: null,
+        pinnedMessageId: null,
+        roomApp: this.normalizeRoomApp(null, null),
+        discussion: null,
+      } as Dialog;
+    },
+
     async syncRouteForDialog(this: any, dialog: Dialog, modeRaw?: RouteMode) {
       const mode = modeRaw || 'push';
       if (mode === 'none') return;
 
       const targetPath = dialog.kind === 'direct'
         ? this.buildDirectRoutePath(dialog.targetUser?.nickname)
-        : '/chat';
-      const currentPath = String(this.route?.path || '');
-      if (currentPath === targetPath) return;
+        : this.buildRoomRoutePath(dialog.id);
+      const currentFullPath = String(this.route?.fullPath || this.route?.path || '');
+      if (currentFullPath === targetPath) return;
 
       if (mode === 'replace') {
         await this.router.replace(targetPath);
@@ -716,36 +837,82 @@ export const chatMethodsRuntimeAndRouting = {
     async syncDialogFromRoute(this: any, optionsRaw?: {replaceInvalid?: boolean}) {
       const replaceInvalid = optionsRaw?.replaceInvalid !== false;
       const directNickname = this.getDirectNicknameFromRoute();
-      if (!directNickname) {
+      if (directNickname) {
+        const targetUser = this.findUserByNickname(directNickname);
+        if (!targetUser || targetUser.id === this.me?.id) {
+          if (replaceInvalid) {
+            await this.router.replace('/chat');
+          }
+          if (this.generalDialog) {
+            await this.selectDialog(this.generalDialog, {routeMode: 'none'});
+          }
+          return;
+        }
+
+        await this.selectPrivate(targetUser, {
+          routeMode: 'none',
+          closeMenu: false,
+          refreshDirects: true,
+        });
+
+        const canonicalPath = this.buildDirectRoutePath(targetUser.nickname);
+        if (String(this.route?.path || '') !== canonicalPath) {
+          await this.router.replace(canonicalPath);
+        }
+        return;
+      }
+
+      const roomIdFromRoute = this.getRoomIdFromRoute();
+      if (!roomIdFromRoute) {
         if (this.generalDialog) {
           await this.selectDialog(this.generalDialog, {routeMode: 'none'});
           if (replaceInvalid && String(this.route?.path || '') !== '/chat') {
             await this.router.replace('/chat');
           }
+          const focusMessageId = Number(this.getRoomRouteContext().focusMessageId || 0);
+          if (Number.isFinite(focusMessageId) && focusMessageId > 0) {
+            void this.scrollToMessageById(focusMessageId);
+          }
         }
         return;
       }
 
-      const targetUser = this.findUserByNickname(directNickname);
-      if (!targetUser || targetUser.id === this.me?.id) {
-        if (replaceInvalid) {
-          await this.router.replace('/chat');
-        }
+      const roomDialog = this.buildDialogFromRoomRoute(roomIdFromRoute);
+      if (!roomDialog) {
         if (this.generalDialog) {
           await this.selectDialog(this.generalDialog, {routeMode: 'none'});
         }
+        if (replaceInvalid) await this.router.replace('/chat');
         return;
       }
 
-      await this.selectPrivate(targetUser, {
-        routeMode: 'none',
-        closeMenu: false,
-        refreshDirects: true,
-      });
+      await this.selectDialog(roomDialog, {routeMode: 'none'});
 
-      const canonicalPath = this.buildDirectRoutePath(targetUser.nickname);
-      if (String(this.route?.path || '') !== canonicalPath) {
-        await this.router.replace(canonicalPath);
+      if (this.error) {
+        if (this.generalDialog) {
+          await this.selectDialog(this.generalDialog, {routeMode: 'none'});
+        }
+        if (replaceInvalid) await this.router.replace('/chat');
+        return;
+      }
+
+      if (roomDialog.kind !== 'direct') {
+        const routeContext = this.getRoomRouteContext();
+        const canonicalPath = this.buildRoomRoutePath(roomDialog.id, {
+          spaceId: routeContext.spaceId,
+          nodeId: routeContext.nodeId,
+          sourceRoomId: routeContext.sourceRoomId,
+          sourceMessageId: routeContext.sourceMessageId,
+          focusMessageId: routeContext.focusMessageId,
+        });
+        if (String(this.route?.fullPath || this.route?.path || '') !== canonicalPath) {
+          await this.router.replace(canonicalPath);
+        }
+      }
+
+      const focusMessageId = Number(this.getRoomRouteContext().focusMessageId || 0);
+      if (Number.isFinite(focusMessageId) && focusMessageId > 0) {
+        void this.scrollToMessageById(focusMessageId);
       }
     },
 
@@ -754,8 +921,31 @@ export const chatMethodsRuntimeAndRouting = {
 
       const path = String(this.route?.path || '');
       if (path === '/chat') {
-        if (this.activeDialog?.kind === 'group') return;
-        await this.selectGeneral({routeMode: 'none', closeMenu: false});
+        const roomIdFromRoute = this.getRoomIdFromRoute();
+        if (!roomIdFromRoute) {
+          if (this.activeDialog?.kind === 'group' && Number(this.activeDialog?.id || 0) === Number(this.generalDialog?.id || 0)) {
+            return;
+          }
+          await this.selectGeneral({routeMode: 'none', closeMenu: false});
+          return;
+        }
+
+        if (Number(this.activeDialog?.id || 0) === roomIdFromRoute) {
+          return;
+        }
+
+        const roomDialog = this.buildDialogFromRoomRoute(roomIdFromRoute);
+        if (!roomDialog) {
+          await this.selectGeneral({routeMode: 'replace', closeMenu: false});
+          return;
+        }
+
+        await this.selectDialog(roomDialog, {
+          routeMode: 'none',
+        });
+        if (this.error) {
+          await this.selectGeneral({routeMode: 'replace', closeMenu: false});
+        }
         return;
       }
 

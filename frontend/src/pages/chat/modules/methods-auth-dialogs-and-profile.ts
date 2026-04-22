@@ -9,8 +9,10 @@ import {
   HISTORY_BATCH_SIZE,
 } from './shared';
 import type {
+  DiscussionMeta,
   Dialog,
   Message,
+  RoomApp,
   User,
   DirectDialog,
   NotificationItem,
@@ -35,6 +37,60 @@ export const chatMethodsAuthDialogsAndProfile = {
         nicknameColor: raw?.nicknameColor ? String(raw.nicknameColor) : null,
         donationBadgeUntil: raw?.donationBadgeUntil ? String(raw.donationBadgeUntil) : null,
         pushDisableAllMentions: !!raw?.pushDisableAllMentions,
+      };
+    },
+
+    normalizeRoomApp(this: any, raw: any, fallbackSurfaceMessageIdRaw?: unknown): RoomApp {
+      const appTypeRaw = String(raw?.appType || '').trim().toLowerCase();
+      const appType = appTypeRaw === 'llm' || appTypeRaw === 'poll' || appTypeRaw === 'dashboard' || appTypeRaw === 'bot_control' || appTypeRaw === 'custom'
+        ? appTypeRaw
+        : null;
+      const fallbackSurfaceMessageId = Number(fallbackSurfaceMessageIdRaw || 0);
+      const surfaceMessageId = Number(raw?.surfaceMessageId || fallbackSurfaceMessageId || 0);
+      const surfaceKindRaw = String(raw?.surfaceKind || '').trim().toLowerCase();
+      const surfaceKind = surfaceKindRaw === 'text' || surfaceKindRaw === 'system' || surfaceKindRaw === 'scriptable'
+        ? surfaceKindRaw
+        : null;
+      const config = raw?.config && typeof raw.config === 'object' && !Array.isArray(raw.config)
+        ? {...raw.config}
+        : {};
+
+      return {
+        enabled: !!raw?.enabled,
+        appType,
+        config,
+        surfaceMessageId: Number.isFinite(surfaceMessageId) && surfaceMessageId > 0 ? surfaceMessageId : null,
+        surfaceKind,
+        hasRoomRuntime: !!raw?.hasRoomRuntime,
+        requiresRoomRuntime: !!raw?.requiresRoomRuntime,
+        canCollapseSurface: raw?.canCollapseSurface !== false,
+      };
+    },
+
+    normalizeDiscussionMeta(this: any, raw: any): DiscussionMeta | null {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+      const sourceMessageIdRaw = Number(raw?.sourceMessageId || 0);
+      const sourceRoomIdRaw = Number(raw?.sourceRoomId || 0);
+      const sourceRoomKindRaw = String(raw?.sourceRoomKind || '').trim().toLowerCase();
+      const sourceRoomKind = sourceRoomKindRaw === 'group' || sourceRoomKindRaw === 'direct' || sourceRoomKindRaw === 'game'
+        ? sourceRoomKindRaw
+        : null;
+      const sourceMessageId = Number.isFinite(sourceMessageIdRaw) && sourceMessageIdRaw > 0
+        ? sourceMessageIdRaw
+        : null;
+      const sourceRoomId = Number.isFinite(sourceRoomIdRaw) && sourceRoomIdRaw > 0
+        ? sourceRoomIdRaw
+        : null;
+      const sourceMessageDeleted = !!raw?.sourceMessageDeleted;
+      if (!sourceMessageDeleted && !sourceRoomId && !sourceMessageId) return null;
+
+      return {
+        sourceMessageId,
+        sourceRoomId,
+        sourceRoomKind,
+        sourceRoomTitle: raw?.sourceRoomTitle ? String(raw.sourceRoomTitle) : null,
+        sourceMessagePreview: raw?.sourceMessagePreview ? String(raw.sourceMessagePreview) : '',
+        sourceMessageDeleted,
       };
     },
 
@@ -151,7 +207,10 @@ export const chatMethodsAuthDialogsAndProfile = {
     async fetchDirectDialogs(this: any) {
       const result = await ws.request('dialogs:directs');
       if (Array.isArray(result)) {
-        this.directDialogs = result;
+        this.directDialogs = result.map((dialogRaw: any) => ({
+          ...dialogRaw,
+          roomApp: this.normalizeRoomApp(dialogRaw?.roomApp, dialogRaw?.pinnedMessageId),
+        }));
       }
     },
 
@@ -164,6 +223,8 @@ export const chatMethodsAuthDialogsAndProfile = {
         title: (result as any).title,
         createdById: Number((result as any).createdById || 0) || null,
         pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
+        roomApp: this.normalizeRoomApp((result as any).roomApp, (result as any).pinnedMessageId),
+        discussion: null,
       } as Dialog;
     },
 
@@ -180,6 +241,8 @@ export const chatMethodsAuthDialogsAndProfile = {
         title: (result as any).targetUser.name,
         createdById: null,
         pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
+        roomApp: this.normalizeRoomApp((result as any).roomApp, (result as any).pinnedMessageId),
+        discussion: null,
       } as Dialog;
     },
 
@@ -265,12 +328,18 @@ export const chatMethodsAuthDialogsAndProfile = {
       }
 
       if (this.activeDialog && Number(this.activeDialog.id || 0) === roomId) {
+        const joinedKind = String((result as any).kind || '').trim().toLowerCase();
+        const nextKind = joinedKind === 'direct' || joinedKind === 'game'
+          ? joinedKind
+          : 'group';
+        const nextPinnedMessageId = Number((result as any).pinnedMessageId || 0) || null;
         this.activeDialog = {
           ...this.activeDialog,
-          kind: String((result as any).kind || this.activeDialog.kind) === 'direct'
-            ? 'direct'
-            : this.activeDialog.kind,
+          kind: nextKind,
           createdById: Number((result as any).createdById || 0) || null,
+          pinnedMessageId: nextPinnedMessageId,
+          roomApp: this.normalizeRoomApp((result as any).roomApp, nextPinnedMessageId),
+          discussion: this.normalizeDiscussionMeta((result as any).discussion),
         };
       }
 
@@ -292,6 +361,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.activePinnedMessage = null;
       this.pinnedCollapsed = this.loadPinnedCollapsedState(dialog.id);
       this.scriptMessageViewModels = {};
+      this.discussionOpenPendingMessageId = null;
       this.historyHasMore = true;
       this.historyLoadingMore = false;
       this.resetMessagePreviewCache();
@@ -368,8 +438,34 @@ export const chatMethodsAuthDialogsAndProfile = {
         title: dialog.targetUser.name,
         createdById: null,
         pinnedMessageId: Number(dialog.pinnedMessageId || 0) || null,
+        roomApp: this.normalizeRoomApp(dialog?.roomApp, dialog?.pinnedMessageId),
+        discussion: null,
       }, {routeMode: 'push'});
       this.closeLeftMenu();
+    },
+
+    onChatRoomUpdated(this: any, payloadRaw: any) {
+      const roomId = Number(payloadRaw?.roomId || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      if (Number(this.activeDialog?.id || 0) !== roomId) return;
+
+      const roomKindRaw = String(payloadRaw?.kind || '').trim().toLowerCase();
+      const roomKind = roomKindRaw === 'direct' || roomKindRaw === 'game'
+        ? roomKindRaw
+        : 'group';
+      const pinnedMessageId = Number(payloadRaw?.pinnedMessageId || 0) || null;
+      const hasDiscussionPayload = Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'discussion');
+      const discussion = hasDiscussionPayload
+        ? this.normalizeDiscussionMeta(payloadRaw?.discussion)
+        : (this.activeDialog?.discussion || null);
+      this.activeDialog = {
+        ...this.activeDialog,
+        kind: roomKind,
+        createdById: Number(payloadRaw?.createdById || 0) || null,
+        pinnedMessageId,
+        roomApp: this.normalizeRoomApp(payloadRaw?.roomApp, pinnedMessageId),
+        discussion,
+      };
     },
 
     async onDeleteActiveRoom(this: any) {
@@ -405,6 +501,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (this.leftMenuOpen) {
         this.rightMenuOpen = false;
         this.notificationsMenuOpen = false;
+        void this.refreshSpacesNavigation({silent: true});
       }
     },
 

@@ -360,18 +360,42 @@ export const chatMethodsMessageBodyAndReactions = {
       const roomId = Number(payloadRaw?.roomId || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return;
       if (Number(this.activeDialog?.id || 0) !== roomId) return;
+      const pinnedMessageId = Number(payloadRaw?.pinnedMessageId || 0) || null;
       if (this.activeDialog?.kind === 'direct') {
         this.activePinnedMessage = null;
+        this.activeDialog = {
+          ...this.activeDialog,
+          pinnedMessageId: null,
+          roomApp: this.normalizeRoomApp(this.activeDialog?.roomApp, null),
+        };
         return;
       }
 
       const pinnedMessageRaw = payloadRaw?.pinnedMessage;
       if (pinnedMessageRaw && typeof pinnedMessageRaw === 'object') {
         this.activePinnedMessage = this.normalizeMessage(pinnedMessageRaw);
+        this.activeDialog = {
+          ...this.activeDialog,
+          pinnedMessageId: Number(this.activePinnedMessage?.id || 0) || pinnedMessageId,
+          roomApp: this.normalizeRoomApp({
+            ...(this.activeDialog?.roomApp || {}),
+            surfaceMessageId: Number(this.activePinnedMessage?.id || 0) || pinnedMessageId,
+            surfaceKind: this.activePinnedMessage?.kind || null,
+          }, this.activePinnedMessage?.id || pinnedMessageId),
+        };
         this.pinnedCollapsed = this.loadPinnedCollapsedState(roomId);
         return;
       }
       this.activePinnedMessage = null;
+      this.activeDialog = {
+        ...this.activeDialog,
+        pinnedMessageId: null,
+        roomApp: this.normalizeRoomApp({
+          ...(this.activeDialog?.roomApp || {}),
+          surfaceMessageId: null,
+          surfaceKind: null,
+        }, null),
+      };
     },
 
     togglePinnedCollapsed(this: any) {

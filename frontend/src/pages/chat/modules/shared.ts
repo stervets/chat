@@ -30,4 +30,14 @@ export {
   persistNumberSetting,
 } from '../helpers/storage';
 export * from '../chat-page.constants';
-export type {Dialog, Message, MessageReaction, User} from '@/composables/types';
+export type {
+  DiscussionMeta,
+  Dialog,
+  GraphNode,
+  GraphNodeKind,
+  GraphRoomTarget,
+  Message,
+  MessageReaction,
+  RoomApp,
+  User,
+} from '@/composables/types';

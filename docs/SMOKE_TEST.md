@@ -67,6 +67,33 @@ yarn run invite:create
   - после временного offline/online (reconnect) scriptable runtime продолжает работать без повторного старта второго runtime;
   - pinned panel: collapse/expand, drag splitter, max-height 50%;
   - после перезагрузки страницы сохраняются: состояние collapse/expand и высота pinned panel;
+- app room (MVP):
+  - `rooms:create` создаёт обычную non-app room (`roomApp.enabled=false`);
+  - `rooms:app:configure` переводит комнату в app mode (`roomApp.enabled=true`, `appType` задан);
+  - для app room surface должен быть scriptable message (иначе `app_surface_must_be_scriptable`);
+  - на фронте виден маркер app room (`subtitle-app`) и app-surface в pinned блоке;
+  - изменения app room прилетают realtime-событием `chat:room-updated`;
+  - poll/bot-control app-surface синхронизирует shared state между двумя клиентами;
+  - после reload/reconnect app-surface и shared state сохраняются.
+- graph containers (MVP):
+  - из основного `/chat` открыть левый drawer и убедиться, что есть секция `Пространства` (entry point встроен в основной UI);
+  - из drawer открыть полный экран spaces (`Весь экран`) или перейти по `/spaces`, создать `space` (например `DeepSeek`);
+  - внутри `space` создать `folder` и `room_ref` на существующую комнату;
+  - клик по `room_ref` открывает обычную комнату через `/chat?room=<id>&space=<spaceId>&node=<nodeId>`;
+  - для app-room через `room_ref` pinned app-surface продолжает работать;
+  - в header комнаты, открытой из space, видна кнопка возврата `space · <title>`;
+  - reorder children (кнопки вверх/вниз) меняет порядок в контейнере;
+  - архивированный node исчезает из списка children;
+  - `/chat` (general) и `/direct/:username` остаются рабочими.
+- discussion rooms (MVP):
+  - в любой non-direct комнате отправить сообщение;
+  - нажать `комментарии+` у сообщения;
+  - должна создаться discussion room и открыться как обычный `/chat?room=<id>`;
+  - в header discussion room должны быть: метка `комментарии` и кнопка `к посту`;
+  - `к посту` возвращает в исходную room, по возможности с фокусом на исходный message;
+  - повторный клик `комментарии` не создаёт вторую room (переиспользуется существующая связь);
+  - второй клиент, находясь в исходной room, получает `chat:message-updated` и видит активную ссылку комментариев;
+  - после reload discussion room открывается корректно и не теряет состояние.
 - анонимная отправка:
   - включить галку `Отправить анонимно` в composer tools;
   - в ленте автор должен быть `Аноним`;
@@ -84,3 +111,25 @@ yarn run invite:create
 - под третьим пользователем отправить
   `['dialogs:messages', [<roomId>, 100], 'frontend', 'backend', 'req-1']`
 - ожидаемый ответ: `{ok:false, error:'forbidden'}`.
+
+## Graph headless сценарий
+
+Минимальный e2e-сценарий (Playwright + WS setup) должен покрывать:
+1. `lisov` из основного `/chat` открывает `Пространства` в drawer.
+2. `lisov` создаёт `space/folder/room_ref`.
+3. Переход `space -> room_ref -> chat` работает через стандартный room route-flow.
+4. В обычной room отправка сообщения через открытие из graph работает.
+5. В app-room (через `room_ref`) pinned scriptable surface активен и виден app marker.
+6. Второй клиент (`marx`) видит то же состояние app-surface.
+7. После reload/reconnect app-surface не ломается.
+
+## Discussion headless сценарий
+
+Минимальный e2e-сценарий (Playwright + WS setup) должен покрывать:
+1. `lisov` создаёт сообщение в обычной room.
+2. `lisov` нажимает `комментарии+` и попадает в discussion room.
+3. В discussion room отправка сообщений работает.
+4. Повторное открытие комментариев для того же post не создаёт новую room.
+5. `marx` видит discussion room и может писать в неё.
+6. Кнопка `к посту` возвращает в исходную room.
+7. Reload в discussion room не ломает открытие и header-метки discussion.

@@ -578,7 +578,7 @@ export const chatMethodsSendUploadAndRuntime = {
 
       const activeDialogId = Number(this.activeDialog?.id || 0);
       if (Number.isFinite(activeDialogId) && activeDialogId > 0) {
-        await this.loadActiveRoomScript(activeDialogId);
+        await this.joinDialog(activeDialogId);
         await this.catchUpRoomMessages(activeDialogId);
       }
 

@@ -1,5 +1,5 @@
 import {ref} from 'vue';
-import type {Dialog, Message, User} from '@/composables/types';
+import type {Dialog, GraphNode, User} from '@/composables/types';
 import {wsConnectionState} from '@/composables/ws-rpc';
 import type {DirectDialog, NotificationItem, ToastItem} from './chat-page.constants';
 import type {ScriptRuntimeManager} from '@/scriptable/runtime/manager';
@@ -33,6 +33,7 @@ export function createChatPageState() {
     editingMessageId: ref<number | null>(null),
     editingMessageText: ref(''),
     messageActionPendingId: ref<number | null>(null),
+    discussionOpenPendingMessageId: ref<number | null>(null),
     error: ref(''),
     historyLoading: ref(false),
     historyLoadingMore: ref(false),
@@ -82,6 +83,12 @@ export function createChatPageState() {
     rightMenuOpen: ref(false),
     isCompactLayout: ref(false),
     searchQuery: ref(''),
+    spacesNavLoading: ref(false),
+    spacesNavError: ref(''),
+    spacesNavSpaces: ref<GraphNode[]>([]),
+    spacesNavChildren: ref<GraphNode[]>([]),
+    spacesNavPath: ref<GraphNode[]>([]),
+    spacesNavActiveSpaceId: ref<number | null>(null),
     notificationsMenuOpen: ref(false),
     notifications: ref<NotificationItem[]>([]),
     notificationsSeq: ref(1),
@@ -134,6 +141,7 @@ export function createChatPageState() {
     chatMessageUpdatedHandler: ref<Function | null>(null),
     chatMessageDeletedHandler: ref<Function | null>(null),
     chatPinnedHandler: ref<Function | null>(null),
+    chatRoomUpdatedHandler: ref<Function | null>(null),
     chatReactionsHandler: ref<Function | null>(null),
     dialogsDeletedHandler: ref<Function | null>(null),
     chatReactionNotifyHandler: ref<Function | null>(null),

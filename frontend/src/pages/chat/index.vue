@@ -18,11 +18,67 @@
 
           <button
             class="menu-item menu-item-general"
-            :class="{active: activeDialog?.kind === 'group'}"
+            :class="{active: isGeneralDialogActive}"
             @click="selectGeneral({haptic: true})"
           >
             Общий чат
           </button>
+
+          <div class="spaces-block">
+            <div class="section-head-row">
+              <div class="section-title">Пространства</div>
+              <div class="section-head-actions">
+                <button class="section-link-btn" @click="refreshSpacesNavigation">Обновить</button>
+                <button class="section-link-btn" @click="openSpacesPageFromChat">Весь экран</button>
+              </div>
+            </div>
+            <div v-if="spacesNavError" class="hint hint-error">{{ spacesNavError }}</div>
+            <div v-if="spacesNavLoading && !spacesNavSpaces.length" class="hint">Загружаю spaces...</div>
+            <div v-else-if="!spacesNavSpaces.length" class="hint">Пока нет spaces</div>
+            <template v-else>
+              <div class="spaces-chip-row">
+                <button
+                  v-for="space in spacesNavSpaces"
+                  :key="`chat-space-${space.id}`"
+                  class="space-chip"
+                  :class="{active: spacesNavActiveSpaceId === space.id}"
+                  @click="selectSpacesNavigationSpace(space.id)"
+                >
+                  {{ space.title }}
+                </button>
+              </div>
+
+              <div v-if="spacesNavPath.length > 1" class="spaces-path-row">
+                <button
+                  v-for="(node, index) in spacesNavPath"
+                  :key="`chat-space-path-${node.id}`"
+                  class="space-path-btn"
+                  :class="{active: index === spacesNavPath.length - 1}"
+                  @click="selectSpacesNavigationPath(index)"
+                >
+                  {{ node.title }}
+                </button>
+              </div>
+
+              <div v-if="spacesNavLoading && spacesNavPath.length" class="hint">Загрузка раздела...</div>
+              <div v-else-if="spacesNavPath.length && !spacesNavChildren.length" class="hint">Внутри пусто</div>
+              <div v-else class="menu-list spaces-node-list">
+                <button
+                  v-for="node in spacesNavChildren"
+                  :key="`chat-space-node-${node.id}`"
+                  class="menu-item menu-item-space-node"
+                  :class="{active: isSpacesNavNodeActive(node)}"
+                  @click="onSpacesNavigationNodeClick(node)"
+                >
+                  <span class="space-node-kind">{{ spacesNodeKindLabel(node.kind) }}</span>
+                  <span class="name">{{ node.title }}</span>
+                  <span v-if="node.kind === 'room_ref'" class="nickname">
+                    #{{ node.room?.id || node.targetId }} · {{ spacesNodeRoomMeta(node) }}
+                  </span>
+                </button>
+              </div>
+            </template>
+          </div>
 
           <div class="directs-block">
             <div class="section-title">Директы</div>
@@ -107,12 +163,35 @@
           </button-->
           <div class="header-text">
             <div class="title">
-              {{ activeDialog?.kind === 'group' ? 'Общий чат' : (activeDialog?.title || 'Чат') }}
+              {{ activeDialog?.kind === 'direct' ? (activeDialog?.title || 'Чат') : (activeDialog?.title || 'Общий чат') }}
             </div>
             <div class="subtitle-row">
               <div class="subtitle" v-if="activeDialog?.kind === 'direct'">
                 директ
               </div>
+              <div v-if="isDiscussionRoom" class="subtitle subtitle-discussion">
+                комментарии
+              </div>
+              <button
+                v-if="canBackToDiscussionSource"
+                class="subtitle subtitle-discussion-link"
+                @click="onBackToDiscussionSource"
+              >
+                к посту
+              </button>
+              <div v-if="isDiscussionRoom && activeDiscussionSourceDeleted" class="subtitle subtitle-discussion-deleted">
+                исходный пост удалён
+              </div>
+              <div v-if="isAppRoom" class="subtitle subtitle-app">
+                {{ activeRoomAppTypeLabel }}
+              </div>
+              <button
+                v-if="activeSpaceOriginTitle"
+                class="subtitle subtitle-space-link"
+                @click="onBackToSpaceFromRoom"
+              >
+                space · {{ activeSpaceOriginTitle }}
+              </button>
               <div
                 v-if="wsOffline"
                 class="ws-status"
@@ -261,10 +340,14 @@
             :class="{
               'pinned-panel-collapsed': pinnedCollapsed,
               'pinned-panel-scriptable': activePinnedMessage?.kind === 'scriptable',
+              'pinned-panel-app-surface': isPinnedAppSurface,
             }"
             :style="pinnedPanelStyle"
           >
             <div class="pinned-head">
+              <span v-if="isPinnedAppSurface" class="pinned-app-label">
+                APP SURFACE · {{ activeRoomAppTypeLabel }}
+              </span>
               <span class="pinned-author" :style="getAuthorStyle(activePinnedMessage)">
                 {{ activePinnedMessage.authorName }}
               </span>
@@ -313,6 +396,12 @@
             class="pinned-splitter"
             @pointerdown.prevent="onPinnedSplitterPointerDown"
           />
+          <div v-if="shouldShowAppSurfacePlaceholder" class="app-surface-placeholder">
+            <div class="app-surface-placeholder-title">App room активен</div>
+            <div class="app-surface-placeholder-body">
+              Поверхность ещё не назначена. Закрепи scriptable message как app-surface.
+            </div>
+          </div>
           <div class="chat-body" ref="messagesEl" @scroll="onMessagesScroll">
             <div class="chat-feed">
               <div v-if="historyLoading" class="hint">Загрузка...</div>
@@ -335,6 +424,8 @@
                 :editing-message-text="editingMessageText"
                 :message-action-pending-id="messageActionPendingId"
                 :can-pin-message="canManagePinnedMessages"
+                :can-open-discussion="canOpenDiscussionFromMessage(item.message)"
+                :discussion-open-pending-id="discussionOpenPendingMessageId"
                 :is-pinned-message="activePinnedMessage?.id === item.message.id"
                 :can-open-direct="canOpenDirectFromMessage(item.message)"
                 :author-style="getAuthorStyle(item.message)"
@@ -355,6 +446,7 @@
                 @start-edit="startMessageEdit"
                 @delete-message="deleteOwnMessage"
                 @toggle-pinned-message="onTogglePinnedMessage"
+                @open-discussion="openMessageDiscussion"
                 @edit-input-keydown="onEditMessageKeydown"
                 @save-edit="saveMessageEdit"
                 @cancel-edit="cancelMessageEdit"
@@ -483,17 +575,29 @@
                 </label>
               </div>
 
-              <!--div class="composer-section" v-if="activeDialog">
-                <div class="composer-section-title">Scriptable demo</div>
+              <div class="composer-section" v-if="activeDialog && activeDialog.kind !== 'direct' && isActiveDialogAdmin">
+                <div class="composer-section-title">Room app (MVP)</div>
                 <div class="composer-scriptable-row">
-                  <button class="composer-format-btn" @click="createDemoFartMessage">
-                    Local button
+                  <button class="composer-format-btn" @click="setupPollRoomDemo">
+                    Poll surface
                   </button>
-                  <button class="composer-format-btn" @click="createDemoGuessWordMessage">
-                    Guess word
+                  <button class="composer-format-btn" @click="setupBotControlRoomDemo">
+                    Bot-control
+                  </button>
+                  <button class="composer-format-btn" @click="setupDashboardRoomDemo">
+                    Dashboard
+                  </button>
+                  <button class="composer-format-btn" @click="disableCurrentRoomApp">
+                    Disable app
+                  </button>
+                  <button class="composer-format-btn" @click="createAppRoom('poll')">
+                    + Poll room
+                  </button>
+                  <button class="composer-format-btn" @click="createAppRoom('bot_control')">
+                    + Bot room
                   </button>
                 </div>
-              </div-->
+              </div>
             </div>
           </div>
 

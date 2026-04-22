@@ -48,6 +48,14 @@
         {{ isPinnedMessage ? 'откреп.' : 'закреп.' }}
       </button>
       <button
+        v-if="canOpenDiscussion && !isEditing"
+        class="message-inline-btn"
+        :disabled="discussionOpenPendingId === message.id"
+        @click="onOpenDiscussion"
+      >
+        {{ message.discussionRoomId ? 'комментарии' : 'комментарии+' }}
+      </button>
+      <button
         v-if="isOwnMessage() && !isEditing && message.kind === 'text'"
         class="message-inline-btn"
         :disabled="messageActionPendingId === message.id"

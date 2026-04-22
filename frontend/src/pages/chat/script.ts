@@ -17,6 +17,7 @@ import {chatMethodsMessageBodyAndReactions} from './modules/methods-message-body
 import {chatMethodsAuthDialogsAndProfile} from './modules/methods-auth-dialogs-and-profile';
 import {chatMethodsSendUploadAndRuntime} from './modules/methods-send-upload-and-runtime';
 import {chatMethodsScriptableRuntime} from './modules/methods-scriptable-runtime';
+import {chatMethodsSpacesNavigation} from './modules/methods-spaces-navigation';
 
 export default {
   components: {
@@ -173,6 +174,14 @@ export default {
         && Number(this.activeDialog.createdById) === Number(this.me.id);
     },
 
+    isGeneralDialogActive(this: any) {
+      const activeId = Number(this.activeDialog?.id || 0);
+      const generalId = Number(this.generalDialog?.id || 0);
+      if (!Number.isFinite(activeId) || activeId <= 0) return false;
+      if (!Number.isFinite(generalId) || generalId <= 0) return false;
+      return activeId === generalId;
+    },
+
     canManagePinnedMessages(this: any) {
       if (!this.activeDialog) return false;
       if (this.activeDialog.kind === 'direct') return false;
@@ -183,6 +192,35 @@ export default {
       if (!this.activeDialog) return false;
       if (this.activeDialog.kind === 'direct') return true;
       return !!this.isActiveDialogAdmin;
+    },
+
+    activeRoomApp(this: any) {
+      const fallbackSurfaceId = Number(this.activePinnedMessage?.id || this.activeDialog?.pinnedMessageId || 0) || null;
+      return this.normalizeRoomApp(this.activeDialog?.roomApp, fallbackSurfaceId);
+    },
+
+    isAppRoom(this: any) {
+      return !!this.activeDialog && this.activeDialog.kind !== 'direct' && !!this.activeRoomApp?.enabled;
+    },
+
+    activeRoomAppTypeLabel(this: any) {
+      const appType = String(this.activeRoomApp?.appType || '').trim().toLowerCase();
+      if (appType === 'llm') return 'LLM room';
+      if (appType === 'poll') return 'Poll room';
+      if (appType === 'dashboard') return 'Dashboard room';
+      if (appType === 'bot_control') return 'Bot control';
+      if (appType === 'custom') return 'Custom app';
+      return 'App room';
+    },
+
+    isPinnedAppSurface(this: any) {
+      if (!this.isAppRoom) return false;
+      return this.activePinnedMessage?.kind === 'scriptable';
+    },
+
+    shouldShowAppSurfacePlaceholder(this: any) {
+      if (!this.isAppRoom) return false;
+      return !this.activePinnedMessage;
     },
 
     shouldShowPinnedPanel(this: any) {
@@ -197,6 +235,43 @@ export default {
       return {
         height: `${(ratio * 100).toFixed(2)}%`,
       };
+    },
+
+    spacesNavContainer(this: any) {
+      const path = Array.isArray(this.spacesNavPath) ? this.spacesNavPath : [];
+      if (!path.length) return null;
+      return path[path.length - 1];
+    },
+
+    activeSpaceOriginTitle(this: any) {
+      const spaceId = this.getSpaceOriginIdFromRoute();
+      if (!spaceId) return '';
+      const space = (Array.isArray(this.spacesNavSpaces) ? this.spacesNavSpaces : [])
+        .find((item: any) => Number(item?.id || 0) === spaceId);
+      if (space?.title) return String(space.title);
+      return `Space #${spaceId}`;
+    },
+
+    activeDiscussionMeta(this: any) {
+      const raw = this.activeDialog?.discussion;
+      if (!raw || typeof raw !== 'object') return null;
+      return raw;
+    },
+
+    isDiscussionRoom(this: any) {
+      return !!this.activeDiscussionMeta;
+    },
+
+    activeDiscussionSourceDeleted(this: any) {
+      if (!this.activeDiscussionMeta) return false;
+      return !!this.activeDiscussionMeta.sourceMessageDeleted;
+    },
+
+    canBackToDiscussionSource(this: any) {
+      if (!this.activeDiscussionMeta) return false;
+      if (this.activeDiscussionSourceDeleted) return false;
+      const sourceRoomId = Number(this.activeDiscussionMeta.sourceRoomId || 0);
+      return Number.isFinite(sourceRoomId) && sourceRoomId > 0;
     },
   },
 
@@ -215,6 +290,7 @@ export default {
     ...chatMethodsAuthDialogsAndProfile,
     ...chatMethodsSendUploadAndRuntime,
     ...chatMethodsScriptableRuntime,
+    ...chatMethodsSpacesNavigation,
   },
 
   async mounted(this: any) {
@@ -240,6 +316,9 @@ export default {
     };
     this.chatPinnedHandler = (payload: any) => {
       this.onChatPinned(payload);
+    };
+    this.chatRoomUpdatedHandler = (payload: any) => {
+      this.onChatRoomUpdated(payload);
     };
     this.chatReactionsHandler = (payload: any) => {
       this.onChatReactions(payload);
@@ -274,6 +353,7 @@ export default {
     on('chat:message-updated', this.chatMessageUpdatedHandler);
     on('chat:message-deleted', this.chatMessageDeletedHandler);
     on('chat:pinned', this.chatPinnedHandler);
+    on('chat:room-updated', this.chatRoomUpdatedHandler);
     on('chat:reactions', this.chatReactionsHandler);
     on('dialogs:deleted', this.dialogsDeletedHandler);
     on('chat:reaction-notify', this.chatReactionNotifyHandler);
@@ -301,6 +381,7 @@ export default {
     this.generalDialog = await this.fetchGeneralDialog();
     await this.fetchUsers();
     await this.fetchDirectDialogs();
+    await this.initSpacesNavigation();
 
     await this.syncDialogFromRoute({replaceInvalid: true});
     this.routeSyncReady = true;
@@ -312,6 +393,7 @@ export default {
     this.chatMessageUpdatedHandler && off('chat:message-updated', this.chatMessageUpdatedHandler);
     this.chatMessageDeletedHandler && off('chat:message-deleted', this.chatMessageDeletedHandler);
     this.chatPinnedHandler && off('chat:pinned', this.chatPinnedHandler);
+    this.chatRoomUpdatedHandler && off('chat:room-updated', this.chatRoomUpdatedHandler);
     this.chatReactionsHandler && off('chat:reactions', this.chatReactionsHandler);
     this.dialogsDeletedHandler && off('dialogs:deleted', this.dialogsDeletedHandler);
     this.chatReactionNotifyHandler && off('chat:reaction-notify', this.chatReactionNotifyHandler);

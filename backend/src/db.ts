@@ -15,6 +15,9 @@ let displayNameModelReady = false;
 let donationBadgeModelReady = false;
 let scriptableModelReady = false;
 let roomPinAndPushPrefsModelReady = false;
+let roomAppModelReady = false;
+let graphModelReady = false;
+let messageDiscussionModelReady = false;
 
 async function ensureNicknameModel() {
   if (nicknameModelReady) return;
@@ -291,6 +294,152 @@ async function ensureRoomPinAndPushPrefsModel() {
   roomPinAndPushPrefsModelReady = true;
 }
 
+async function ensureRoomAppModel() {
+  if (roomAppModelReady) return;
+
+  await db.$executeRawUnsafe(
+    `do $$
+     begin
+       if not exists (select 1 from pg_type where typname = 'RoomAppType') then
+         create type "RoomAppType" as enum ('llm', 'poll', 'dashboard', 'bot_control', 'custom');
+       end if;
+     end
+     $$`
+  );
+
+  await db.$executeRawUnsafe(
+    `alter table rooms
+       add column if not exists app_enabled boolean not null default false,
+       add column if not exists app_type "RoomAppType",
+       add column if not exists app_config_json jsonb not null default '{}'::jsonb`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists rooms_app_enabled_idx
+     on rooms(app_enabled)`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists rooms_app_type_idx
+     on rooms(app_type)`
+  );
+
+  roomAppModelReady = true;
+}
+
+async function ensureGraphModel() {
+  if (graphModelReady) return;
+
+  await db.$executeRawUnsafe(
+    `do $$
+     begin
+       if not exists (select 1 from pg_type where typname = 'GraphNodeKind') then
+         create type "GraphNodeKind" as enum ('space', 'folder', 'room_ref');
+       end if;
+
+       if not exists (select 1 from pg_type where typname = 'GraphTargetType') then
+         create type "GraphTargetType" as enum ('none', 'room');
+       end if;
+
+       if not exists (select 1 from pg_type where typname = 'GraphEdgeType') then
+         create type "GraphEdgeType" as enum ('child');
+       end if;
+     end
+     $$`
+  );
+
+  await db.$executeRawUnsafe(
+    `create table if not exists graph_nodes (
+       id serial primary key,
+       kind "GraphNodeKind" not null,
+       title varchar(160) not null,
+       path_segment varchar(80),
+       target_type "GraphTargetType" not null default 'none',
+       target_id integer,
+       config_json jsonb not null default '{}'::jsonb,
+       created_at timestamptz(3) not null default now(),
+       updated_at timestamptz(3) not null default now(),
+       archived_at timestamptz(3)
+     )`
+  );
+
+  await db.$executeRawUnsafe(
+    `create table if not exists graph_edges (
+       id serial primary key,
+       parent_node_id integer not null references graph_nodes(id) on delete cascade,
+       child_node_id integer not null references graph_nodes(id) on delete cascade,
+       edge_type "GraphEdgeType" not null default 'child',
+       sort_order integer not null default 0,
+       meta_json jsonb not null default '{}'::jsonb,
+       created_at timestamptz(3) not null default now()
+     )`
+  );
+
+  await db.$executeRawUnsafe(
+    `create unique index if not exists graph_edges_parent_child_unique
+     on graph_edges(parent_node_id, child_node_id)`
+  );
+
+  await db.$executeRawUnsafe(
+    `create unique index if not exists graph_edges_child_unique
+     on graph_edges(child_node_id)`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists graph_edges_parent_sort_idx
+     on graph_edges(parent_node_id, sort_order)`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists graph_nodes_kind_idx
+     on graph_nodes(kind)`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists graph_nodes_target_idx
+     on graph_nodes(target_type, target_id)`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists graph_nodes_archived_idx
+     on graph_nodes(archived_at)`
+  );
+
+  graphModelReady = true;
+}
+
+async function ensureMessageDiscussionModel() {
+  if (messageDiscussionModelReady) return;
+
+  await db.$executeRawUnsafe(
+    `alter table messages
+     add column if not exists discussion_room_id integer`
+  );
+
+  await db.$executeRawUnsafe(
+    `do $$
+     begin
+       if not exists (
+         select 1
+         from pg_constraint
+         where conname = 'messages_discussion_room_id_fkey'
+       ) then
+         alter table messages
+           add constraint messages_discussion_room_id_fkey
+           foreign key (discussion_room_id) references rooms(id) on delete set null on update cascade;
+       end if;
+     end
+     $$`
+  );
+
+  await db.$executeRawUnsafe(
+    `create unique index if not exists messages_discussion_room_id_key
+     on messages(discussion_room_id)`
+  );
+
+  messageDiscussionModelReady = true;
+}
+
 export async function checkDb() {
   await db.$queryRawUnsafe('select 1 as ok');
   await ensureNicknameModel();
@@ -298,6 +447,9 @@ export async function checkDb() {
   await ensureDonationBadgeModel();
   await ensureScriptableModel();
   await ensureRoomPinAndPushPrefsModel();
+  await ensureRoomAppModel();
+  await ensureGraphModel();
+  await ensureMessageDiscussionModel();
   await ensureRuntimeIndexes();
 }
 

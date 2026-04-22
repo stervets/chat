@@ -502,6 +502,7 @@ export class ChatContext {
         scriptMode: true,
         scriptConfigJson: true,
         scriptStateJson: true,
+        discussionRoomId: true,
         sender: {
           select: {
             id: true,
@@ -548,6 +549,7 @@ export class ChatContext {
       scriptMode: messageRow.scriptMode || null,
       scriptConfigJson: messageRow.scriptConfigJson || {},
       scriptStateJson: messageRow.scriptStateJson || {},
+      discussionRoomId: Number(messageRow.discussionRoomId || 0) || null,
       createdAt: messageRow.createdAt.toISOString(),
       reactions: await this.loadMessageReactions(messageRow.id),
     };
@@ -693,6 +695,7 @@ export type ChatContextMessagePayload = {
   scriptMode: 'client' | 'client_server' | 'client_runner' | null;
   scriptConfigJson: any;
   scriptStateJson: any;
+  discussionRoomId?: number | null;
   createdAt: string;
   reactions: MessageReaction[];
 };

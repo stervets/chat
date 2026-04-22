@@ -395,6 +395,93 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
+    if (com === 'rooms:create') {
+      return this.chatService.roomsCreate(client.state, args[0]);
+    }
+
+    if (com === 'rooms:app:configure') {
+      const result = await this.chatService.roomsAppConfigure(client.state, args[0], args[1]);
+      if ((result as any)?.ok) {
+        const room = await getRoomById((result as any).roomId);
+        const roomPayload = {
+          roomId: (result as any).roomId,
+          dialogId: (result as any).roomId,
+          kind: (result as any).kind,
+          createdById: (result as any).createdById || null,
+          roomApp: (result as any).roomApp || null,
+          roomScript: (result as any).roomScript || null,
+          pinnedMessageId: (result as any).pinnedMessageId || null,
+        };
+        const pinPayload = {
+          roomId: (result as any).roomId,
+          dialogId: (result as any).roomId,
+          pinnedMessageId: (result as any).pinnedMessageId || null,
+          pinnedMessage: (result as any).pinnedMessage || null,
+        };
+
+        if (room) {
+          this.broadcastToRoomMembers(room, 'chat:room-updated', roomPayload);
+          this.broadcastToRoomMembers(room, 'chat:pinned', pinPayload);
+        } else {
+          this.broadcast((result as any).roomId, 'chat:room-updated', roomPayload);
+          this.broadcast((result as any).roomId, 'chat:pinned', pinPayload);
+        }
+      }
+      return result;
+    }
+
+    if (com === 'graph:spaces:list') {
+      return this.chatService.graphSpacesList(client.state);
+    }
+
+    if (com === 'graph:children') {
+      return this.chatService.graphChildren(client.state, args[0]);
+    }
+
+    if (com === 'graph:space:create') {
+      return this.chatService.graphSpaceCreate(client.state, args[0]);
+    }
+
+    if (com === 'graph:folder:create') {
+      return this.chatService.graphFolderCreate(client.state, args[0]);
+    }
+
+    if (com === 'graph:room-ref:create') {
+      return this.chatService.graphRoomRefCreate(client.state, args[0]);
+    }
+
+    if (com === 'graph:children:reorder') {
+      return this.chatService.graphChildrenReorder(client.state, args[0]);
+    }
+
+    if (com === 'graph:node:archive') {
+      return this.chatService.graphNodeArchive(client.state, args[0]);
+    }
+
+    if (com === 'graph:rooms:list') {
+      return this.chatService.graphRoomsList(client.state);
+    }
+
+    if (com === 'messages:discussion:get') {
+      return this.chatService.messagesDiscussionGet(client.state, args[0]);
+    }
+
+    if (com === 'messages:discussion:create') {
+      const result = await this.chatService.messagesDiscussionCreate(client.state, args[0]);
+      if ((result as any)?.ok && (result as any)?.message) {
+        const sourceRoomId = Number((result as any).sourceRoomId || 0);
+        const room = Number.isFinite(sourceRoomId) && sourceRoomId > 0
+          ? await getRoomById(sourceRoomId)
+          : null;
+        if (room) {
+          this.broadcastToRoomMembers(room, 'chat:message-updated', (result as any).message);
+        } else if (Number.isFinite(sourceRoomId) && sourceRoomId > 0) {
+          this.broadcast(sourceRoomId, 'chat:message-updated', (result as any).message);
+        }
+      }
+      return result;
+    }
+
     if (com === 'chat:send') {
       const sendOptions = args[2] && typeof args[2] === 'object'
         ? args[2]
@@ -458,7 +545,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'scripts:action') {
-      return this.chatService.scriptsAction(client.state, args[0]);
+      const result = await this.chatService.scriptsAction(client.state, args[0]);
+      if ((result as any)?.ok) {
+        await this.chatService.scriptableNotifyRoomEvent({
+          roomId: Number((result as any).roomId || 0),
+          eventType: 'script_action',
+          eventPayload: {
+            entityType: String((result as any).entityType || ''),
+            entityId: Number((result as any).entityId || 0),
+            actionType: String((args[0] as any)?.actionType || ''),
+            actorId: Number(client.state?.user?.id || 0),
+            actorNickname: String(client.state?.user?.nickname || ''),
+          },
+        });
+      }
+      return result;
     }
 
     if (com === 'scripts:room:get') {

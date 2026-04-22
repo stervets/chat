@@ -153,6 +153,21 @@ export const chatMethodsScriptableRuntime = {
       }
 
       this.scriptRuntimeManager?.pushSharedStateUpdate(payload);
+      if (entityType === 'message') {
+        this.emitScriptHostRoomEvent('message_script_state', {
+          entityId,
+          roomId,
+          scriptId: String(payload.scriptId || ''),
+          scriptRevision: Number(payload.scriptRevision || 0),
+        }, 'server', roomId);
+      } else if (entityType === 'room') {
+        this.emitScriptHostRoomEvent('room_script_state', {
+          entityId,
+          roomId,
+          scriptId: String(payload.scriptId || ''),
+          scriptRevision: Number(payload.scriptRevision || 0),
+        }, 'server', roomId);
+      }
       this.notifyMessagesChanged();
     },
 
@@ -196,16 +211,21 @@ export const chatMethodsScriptableRuntime = {
       this.scriptRuntimeManager?.emitRoomHostEvent(roomId, eventType, payload, sourceRaw);
     },
 
-    async createScriptableDemoMessage(this: any, payloadRaw: any) {
+    async createScriptableMessage(this: any, payloadRaw: any) {
       const roomId = Number(this.activeDialog?.id || 0);
-      if (!Number.isFinite(roomId) || roomId <= 0) return false;
+      if (!Number.isFinite(roomId) || roomId <= 0) return null;
 
       const result = await ws.request('scripts:create-message', roomId, payloadRaw);
       if (!(result as any)?.ok) {
         this.error = 'Не удалось создать scriptable message.';
-        return false;
+        return null;
       }
-      return true;
+      return this.normalizeMessage((result as any).message || null);
+    },
+
+    async createScriptableDemoMessage(this: any, payloadRaw: any) {
+      const message = await this.createScriptableMessage(payloadRaw);
+      return !!message;
     },
 
     async createDemoFartMessage(this: any) {
@@ -230,6 +250,136 @@ export const chatMethodsScriptableRuntime = {
           answer,
           hint: `Слово из ${answer.length} букв`,
         },
+      });
+      this.closeComposerTools();
+    },
+
+    normalizeAppTypeForSetup(this: any, appTypeRaw: unknown) {
+      const appType = String(appTypeRaw || '').trim().toLowerCase();
+      if (appType === 'llm' || appType === 'poll' || appType === 'dashboard' || appType === 'bot_control' || appType === 'custom') {
+        return appType;
+      }
+      return 'custom';
+    },
+
+    async configureActiveRoomApp(this: any, payloadRaw: any) {
+      const roomId = Number(this.activeDialog?.id || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return null;
+
+      const result = await ws.request('rooms:app:configure', roomId, payloadRaw);
+      if (!(result as any)?.ok) {
+        const code = String((result as any)?.error || '');
+        if (code === 'room_runtime_required') {
+          this.error = 'Для этой app room требуется room runtime, но он не настроен.';
+        } else if (code === 'app_surface_must_be_scriptable') {
+          this.error = 'App surface должен быть scriptable message.';
+        } else if (code === 'forbidden') {
+          this.error = 'Только админ комнаты может менять app room.';
+        } else {
+          this.error = 'Не удалось обновить app room.';
+        }
+        return null;
+      }
+
+      this.onChatRoomUpdated(result);
+      const pinnedMessageRaw = (result as any).pinnedMessage;
+      this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
+        ? this.normalizeMessage(pinnedMessageRaw)
+        : null;
+      this.setActiveRoomScript((result as any).roomScript || null);
+      return result;
+    },
+
+    async createAppRoom(this: any, appTypeRaw: unknown) {
+      const appType = this.normalizeAppTypeForSetup(appTypeRaw);
+      const defaultTitle = appType === 'poll'
+        ? 'Poll room'
+        : (appType === 'dashboard' ? 'Dashboard room' : 'Bot-control room');
+      const titleRaw = window.prompt('Название app room', defaultTitle);
+      if (titleRaw === null) return false;
+      const title = String(titleRaw || '').trim() || defaultTitle;
+
+      const result = await ws.request('rooms:create', {title});
+      if (!(result as any)?.ok) {
+        this.error = 'Не удалось создать комнату.';
+        return false;
+      }
+
+      const roomId = Number((result as any).roomId || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) {
+        this.error = 'Сервер вернул некорректный roomId.';
+        return false;
+      }
+
+      await this.selectDialog({
+        id: roomId,
+        kind: 'group',
+        title: String((result as any).title || title || 'Комната'),
+        createdById: Number((result as any).createdById || 0) || null,
+        pinnedMessageId: null,
+        roomApp: this.normalizeRoomApp((result as any).roomApp, null),
+      }, {routeMode: 'none'});
+
+      return this.setupCurrentRoomAsApp(appType);
+    },
+
+    async setupCurrentRoomAsApp(this: any, appTypeRaw: unknown) {
+      const roomId = Number(this.activeDialog?.id || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return false;
+      if (String(this.activeDialog?.kind || '') === 'direct') {
+        this.error = 'В direct app room не поддерживается.';
+        return false;
+      }
+
+      const appType = this.normalizeAppTypeForSetup(appTypeRaw);
+      const scriptPayload = appType === 'poll'
+        ? {
+          scriptId: 'demo:poll_surface',
+          config: {
+            title: 'Голосование',
+            question: 'Что берём в релиз в первую очередь?',
+            options: ['LLM room', 'Dashboard room', 'Bot-control room'],
+          },
+        }
+        : {
+          scriptId: 'demo:bot_control_surface',
+          config: {
+            title: appType === 'dashboard' ? 'Комнатная панель' : 'Bot control',
+            initialEnabled: true,
+          },
+        };
+      const createdMessage = await this.createScriptableMessage(scriptPayload);
+      if (!createdMessage?.id) return false;
+
+      await this.configureActiveRoomApp({
+        enabled: true,
+        appType,
+        surfaceMessageId: createdMessage.id,
+        config: {
+          title: scriptPayload.config.title,
+          requireRoomRuntime: false,
+        },
+      });
+
+      this.closeComposerTools();
+      return true;
+    },
+
+    async setupPollRoomDemo(this: any) {
+      await this.setupCurrentRoomAsApp('poll');
+    },
+
+    async setupBotControlRoomDemo(this: any) {
+      await this.setupCurrentRoomAsApp('bot_control');
+    },
+
+    async setupDashboardRoomDemo(this: any) {
+      await this.setupCurrentRoomAsApp('dashboard');
+    },
+
+    async disableCurrentRoomApp(this: any) {
+      await this.configureActiveRoomApp({
+        enabled: false,
       });
       this.closeComposerTools();
     },

@@ -67,6 +67,123 @@ function reduceGuessWordAction(input: ScriptActionInput): ScriptActionResult {
   };
 }
 
+function normalizePollOptions(raw: unknown) {
+  const options = Array.isArray(raw)
+    ? raw
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+      .slice(0, 8)
+    : [];
+  if (options.length >= 2) return options;
+  return ['Да', 'Нет'];
+}
+
+function buildPollState(stateRaw: unknown, optionsRaw: unknown) {
+  const options = normalizePollOptions(optionsRaw);
+  const previous = stateRaw && typeof stateRaw === 'object' ? cloneJson(stateRaw as Record<string, any>) : {};
+  const votesByUserRaw = previous.votesByUser && typeof previous.votesByUser === 'object'
+    ? previous.votesByUser as Record<string, number>
+    : {};
+
+  const normalizedVotesByUser: Record<string, number> = {};
+  Object.entries(votesByUserRaw).forEach(([userId, optionIndexRaw]) => {
+    const optionIndex = Number(optionIndexRaw);
+    if (!Number.isFinite(optionIndex) || optionIndex < 0 || optionIndex >= options.length) return;
+    normalizedVotesByUser[String(userId)] = optionIndex;
+  });
+
+  const totals = options.map((label, index) => ({
+    index,
+    label,
+    votes: 0,
+  }));
+  Object.values(normalizedVotesByUser).forEach((optionIndex) => {
+    if (!totals[optionIndex]) return;
+    totals[optionIndex].votes += 1;
+  });
+
+  return {
+    status: 'active',
+    options: totals,
+    votesByUser: normalizedVotesByUser,
+    totalVotes: Object.keys(normalizedVotesByUser).length,
+    updatedAt: String(previous.updatedAt || ''),
+  };
+}
+
+function reducePollAction(input: ScriptActionInput): ScriptActionResult {
+  const actionType = String(input.actionType || '').trim().toLowerCase();
+  const options = normalizePollOptions(input.config?.options);
+  const state = buildPollState(input.state, options);
+
+  if (actionType !== 'vote') {
+    return {nextState: state};
+  }
+
+  const optionIndex = Number(input.payload?.optionIndex);
+  if (!Number.isFinite(optionIndex) || optionIndex < 0 || optionIndex >= options.length) {
+    return {nextState: state};
+  }
+
+  const votesByUser = {
+    ...(state.votesByUser || {}),
+    [String(input.actor.userId)]: optionIndex,
+  };
+
+  return {
+    nextState: buildPollState(
+      {
+        ...state,
+        votesByUser,
+        updatedAt: new Date().toISOString(),
+      },
+      options,
+    ),
+  };
+}
+
+function clampBotLevel(raw: unknown) {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return 50;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function reduceBotControlAction(input: ScriptActionInput): ScriptActionResult {
+  const actionType = String(input.actionType || '').trim().toLowerCase();
+  const prevState = input.state && typeof input.state === 'object'
+    ? cloneJson(input.state as Record<string, any>)
+    : {};
+  const nextState = {
+    enabled: !!prevState.enabled,
+    level: clampBotLevel(prevState.level),
+    updatedAt: String(prevState.updatedAt || ''),
+    lastAction: prevState.lastAction && typeof prevState.lastAction === 'object'
+      ? cloneJson(prevState.lastAction)
+      : null,
+  };
+
+  if (actionType === 'toggle_enabled') {
+    const hasExplicitEnabled = typeof input.payload?.enabled === 'boolean';
+    nextState.enabled = hasExplicitEnabled ? !!input.payload.enabled : !nextState.enabled;
+  } else if (actionType === 'set_level') {
+    nextState.level = clampBotLevel(input.payload?.level);
+  } else {
+    return {nextState};
+  }
+
+  nextState.updatedAt = new Date().toISOString();
+  nextState.lastAction = {
+    type: actionType,
+    byUserId: input.actor.userId,
+    nickname: input.actor.nickname,
+    at: nextState.updatedAt,
+  };
+
+  return {
+    nextState,
+  };
+}
+
 const definitions: ScriptDefinition[] = [
   {
     scriptId: 'demo:fart_button',
@@ -110,6 +227,46 @@ const definitions: ScriptDefinition[] = [
       };
     },
     reduceAction: reduceGuessWordAction,
+  },
+  {
+    scriptId: 'demo:poll_surface',
+    revision: 1,
+    entityType: 'message',
+    mode: 'client_server',
+    title: 'Demo: poll surface',
+    makeInitialConfig(input) {
+      const options = normalizePollOptions(input?.options);
+      return {
+        title: String(input?.title || 'Голосование'),
+        question: String(input?.question || 'Выберите вариант'),
+        options,
+      };
+    },
+    makeInitialState(input) {
+      return buildPollState({}, input?.config?.options);
+    },
+    reduceAction: reducePollAction,
+  },
+  {
+    scriptId: 'demo:bot_control_surface',
+    revision: 1,
+    entityType: 'message',
+    mode: 'client_server',
+    title: 'Demo: bot control surface',
+    makeInitialConfig(input) {
+      return {
+        title: String(input?.title || 'Bot control'),
+      };
+    },
+    makeInitialState(input) {
+      return {
+        enabled: !!input?.config?.initialEnabled,
+        level: clampBotLevel(input?.config?.initialLevel),
+        updatedAt: null,
+        lastAction: null,
+      };
+    },
+    reduceAction: reduceBotControlAction,
   },
   // Временно отключено: скрипт "Счётчик комнаты" (demo:room_meter).
   // {

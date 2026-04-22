@@ -15,6 +15,23 @@ import type {SocketState} from '../protocol.js';
 export class ChatMessagesService {
   constructor(private readonly ctx: ChatContext) {}
 
+  private parseMessageId(raw: unknown) {
+    const messageId = Number.parseInt(String(raw ?? ''), 10);
+    if (!Number.isFinite(messageId) || messageId <= 0) return null;
+    return messageId;
+  }
+
+  private buildDiscussionRoomTitle(messageId: number, rawTextRaw: unknown) {
+    const base = `Комментарии к сообщению #${messageId}`;
+    const preview = String(rawTextRaw || '').replace(/\s+/g, ' ').trim();
+    if (!preview) return base;
+    const suffix = preview.length > 56
+      ? `${preview.slice(0, 53)}...`
+      : preview;
+    const title = `${base}: ${suffix}`;
+    return title.length > 120 ? title.slice(0, 120) : title;
+  }
+
   private parseChatSendOptions(raw: unknown) {
     const options = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
     return {
@@ -86,6 +103,7 @@ export class ChatMessagesService {
         scriptMode: null,
         scriptConfigJson: {},
         scriptStateJson: {},
+        discussionRoomId: null,
         createdAt: created.createdAt.toISOString(),
         reactions: [],
       },
@@ -109,6 +127,7 @@ export class ChatMessagesService {
         id: true,
         roomId: true,
         senderId: true,
+        discussionRoomId: true,
         kind: true,
         rawText: true,
         renderedHtml: true,
@@ -174,6 +193,7 @@ export class ChatMessagesService {
         scriptMode: null,
         scriptConfigJson: {},
         scriptStateJson: {},
+        discussionRoomId: Number(existing.discussionRoomId || 0) || null,
         createdAt: existing.createdAt.toISOString(),
         reactions: await this.ctx.loadMessageReactions(messageId),
       },
@@ -240,6 +260,194 @@ export class ChatMessagesService {
     };
   }
 
+  async messagesDiscussionGet(
+    state: SocketState,
+    messageIdRaw: unknown,
+  ): Promise<ApiError | ApiOk<{
+    messageId: number;
+    discussionRoomId: number | null;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const messageId = this.parseMessageId(messageIdRaw);
+    if (!messageId) {
+      return {ok: false, error: 'invalid_message'};
+    }
+
+    const message = await db.message.findUnique({
+      where: {
+        id: messageId,
+      },
+      select: {
+        id: true,
+        roomId: true,
+        discussionRoomId: true,
+      },
+    });
+
+    if (!message) {
+      return {ok: false, error: 'message_not_found'};
+    }
+
+    const room = await getRoomById(message.roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    return {
+      ok: true,
+      messageId: message.id,
+      discussionRoomId: Number(message.discussionRoomId || 0) || null,
+    };
+  }
+
+  async messagesDiscussionCreate(
+    state: SocketState,
+    messageIdRaw: unknown,
+  ): Promise<ApiError | ApiOk<{
+    created: boolean;
+    messageId: number;
+    sourceRoomId: number;
+    discussionRoomId: number;
+    message: ChatContextMessagePayload | null;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const messageId = this.parseMessageId(messageIdRaw);
+    if (!messageId) {
+      return {ok: false, error: 'invalid_message'};
+    }
+
+    const existingMessage = await db.message.findUnique({
+      where: {
+        id: messageId,
+      },
+      select: {
+        id: true,
+        roomId: true,
+        rawText: true,
+        discussionRoomId: true,
+      },
+    });
+
+    if (!existingMessage) {
+      return {ok: false, error: 'message_not_found'};
+    }
+
+    const sourceRoom = await getRoomById(existingMessage.roomId);
+    if (!sourceRoom || !userCanAccessRoom(state.user!.id, sourceRoom)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    if (Number(existingMessage.discussionRoomId || 0) > 0) {
+      return {
+        ok: true,
+        created: false,
+        messageId: existingMessage.id,
+        sourceRoomId: existingMessage.roomId,
+        discussionRoomId: Number(existingMessage.discussionRoomId || 0),
+        message: await this.ctx.loadMessagePayloadById(
+          existingMessage.roomId,
+          existingMessage.id,
+        ),
+      };
+    }
+
+    const created = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`select id from messages where id = ${messageId} for update`;
+
+      const locked = await tx.message.findUnique({
+        where: {
+          id: messageId,
+        },
+        select: {
+          id: true,
+          roomId: true,
+          rawText: true,
+          discussionRoomId: true,
+        },
+      });
+      if (!locked) {
+        return {ok: false, error: 'message_not_found'} as const;
+      }
+
+      const linkedDiscussionRoomId = Number(locked.discussionRoomId || 0);
+      if (linkedDiscussionRoomId > 0) {
+        return {
+          ok: true,
+          created: false,
+          messageId: locked.id,
+          sourceRoomId: locked.roomId,
+          discussionRoomId: linkedDiscussionRoomId,
+        } as const;
+      }
+
+      const createdRoom = await tx.room.create({
+        data: {
+          kind: 'group',
+          title: this.buildDiscussionRoomTitle(locked.id, locked.rawText),
+          createdById: state.user!.id,
+          appEnabled: false,
+          appType: null,
+          appConfigJson: {},
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      const sourceMembers = await tx.roomUser.findMany({
+        where: {
+          roomId: locked.roomId,
+        },
+        select: {
+          userId: true,
+        },
+      });
+
+      if (sourceMembers.length > 0) {
+        await tx.roomUser.createMany({
+          data: sourceMembers.map((item) => ({
+            roomId: createdRoom.id,
+            userId: item.userId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      await tx.message.update({
+        where: {
+          id: locked.id,
+        },
+        data: {
+          discussionRoomId: createdRoom.id,
+        },
+      });
+
+      return {
+        ok: true,
+        created: true,
+        messageId: locked.id,
+        sourceRoomId: locked.roomId,
+        discussionRoomId: createdRoom.id,
+      } as const;
+    });
+
+    if (!(created as any)?.ok) {
+      return created as any;
+    }
+
+    return {
+      ...(created as any),
+      message: await this.ctx.loadMessagePayloadById(
+        Number((created as any).sourceRoomId || 0),
+        Number((created as any).messageId || 0),
+      ),
+    };
+  }
+
   async chatPin(state: SocketState, roomIdRaw: unknown, messageIdRaw: unknown): Promise<ApiError | ApiOk<{
     changed: boolean;
     roomId: number;
@@ -278,6 +486,7 @@ export class ChatMessagesService {
       select: {
         id: true,
         roomId: true,
+        kind: true,
       },
     });
     if (!message) {
@@ -285,6 +494,9 @@ export class ChatMessagesService {
     }
     if (message.roomId !== roomId) {
       return {ok: false, error: 'message_not_in_room'};
+    }
+    if (room.app_enabled && message.kind !== 'scriptable') {
+      return {ok: false, error: 'app_surface_must_be_scriptable'};
     }
 
     const changed = Number(room.pinned_message_id || 0) !== messageId;

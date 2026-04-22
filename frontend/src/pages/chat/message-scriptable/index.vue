@@ -59,6 +59,72 @@
       </div>
     </div>
 
+    <div v-else-if="viewModel.kind === 'poll_surface'" class="scriptable-card scriptable-card-poll">
+      <div class="scriptable-title">{{ viewModel.title || 'Poll' }}</div>
+      <div class="scriptable-poll-question">{{ viewModel.question || 'Выберите вариант' }}</div>
+      <div class="scriptable-poll-options">
+        <button
+          v-for="option in (viewModel.options || [])"
+          :key="`poll-option-${option.index}`"
+          class="scriptable-btn scriptable-poll-option-btn"
+          :disabled="!!viewModel.pending"
+          @click="onPollVote(option.index)"
+        >
+          <span class="scriptable-poll-option-label">{{ option.label }}</span>
+          <span class="scriptable-poll-option-votes">{{ Number(option.votes || 0) }}</span>
+        </button>
+      </div>
+      <div class="scriptable-meta">Голосов: {{ Number(viewModel.totalVotes || 0) }}</div>
+      <div class="scriptable-meta">События комнаты: {{ Number(viewModel.chatEvents || 0) }}</div>
+    </div>
+
+    <div v-else-if="viewModel.kind === 'bot_control_surface'" class="scriptable-card scriptable-card-bot-control">
+      <div class="scriptable-title">{{ viewModel.title || 'Bot control' }}</div>
+      <div class="scriptable-bot-status-row">
+        <span class="scriptable-meta">Статус:</span>
+        <span :class="viewModel.enabled ? 'scriptable-status-on' : 'scriptable-status-off'">
+          {{ viewModel.enabled ? 'ON' : 'OFF' }}
+        </span>
+      </div>
+      <div class="scriptable-bot-controls">
+        <button
+          class="scriptable-btn scriptable-btn-compact"
+          :disabled="!!viewModel.pending"
+          @click="onBotToggle(true)"
+        >
+          ON
+        </button>
+        <button
+          class="scriptable-btn scriptable-btn-compact"
+          :disabled="!!viewModel.pending"
+          @click="onBotToggle(false)"
+        >
+          OFF
+        </button>
+      </div>
+      <div class="scriptable-bot-level-row">
+        <input
+          :value="botLevelDraft"
+          class="scriptable-bot-level-input"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          :disabled="!!viewModel.pending"
+          @input="onBotLevelInput"
+        />
+        <button
+          class="scriptable-btn scriptable-btn-compact"
+          :disabled="!!viewModel.pending"
+          @click="onBotLevelSubmit"
+        >
+          {{ Number(botLevelDraft || viewModel.level || 0) }}%
+        </button>
+      </div>
+      <div class="scriptable-meta">Room events: {{ Number(viewModel.chatEvents || 0) }}</div>
+      <div v-if="viewModel.updatedAt" class="scriptable-meta">Updated: {{ viewModel.updatedAt }}</div>
+    </div>
+
     <div v-else class="scriptable-fallback">
       <div class="scriptable-fallback-title">Unknown script view</div>
       <pre class="scriptable-json">{{ asJson(viewModel) }}</pre>

@@ -1,9 +1,12 @@
 import {db} from '../../db.js';
 import {
+  createPublicGroupRoom,
   ensureUserInRoom,
   getRoomById,
   getOrCreateDirectRoom,
   getOrCreateGroupRoom,
+  type RoomAppType,
+  type RoomRow,
   userCanAccessRoom,
   userIsRoomAdmin,
 } from '../../common/rooms.js';
@@ -16,8 +19,185 @@ import {
 } from './chat-context.js';
 import type {SocketState} from '../protocol.js';
 
+type RoomRuntimeRow = {
+  id: number;
+  pinnedMessageId: number | null;
+  scriptId: string | null;
+  scriptRevision: number;
+  scriptMode: 'client' | 'client_server' | 'client_runner' | null;
+  scriptConfigJson: any;
+  scriptStateJson: any;
+};
+
+type RoomAppPayload = {
+  enabled: boolean;
+  appType: RoomAppType | null;
+  config: Record<string, any>;
+  surfaceMessageId: number | null;
+  surfaceKind: 'text' | 'system' | 'scriptable' | null;
+  hasRoomRuntime: boolean;
+  requiresRoomRuntime: boolean;
+  canCollapseSurface: boolean;
+};
+
+type DiscussionPayload = {
+  sourceMessageId: number | null;
+  sourceRoomId: number | null;
+  sourceRoomKind: 'group' | 'direct' | 'game' | null;
+  sourceRoomTitle: string | null;
+  sourceMessagePreview: string;
+  sourceMessageDeleted: boolean;
+};
+
+function cloneJson<T>(value: T): T {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeAppType(raw: unknown): RoomAppType | null {
+  const appType = String(raw || '').trim().toLowerCase();
+  if (appType === 'llm' || appType === 'poll' || appType === 'dashboard' || appType === 'bot_control' || appType === 'custom') {
+    return appType;
+  }
+  return null;
+}
+
+function normalizeAppConfig(raw: unknown) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  return cloneJson(raw as Record<string, any>);
+}
+
 export class ChatDialogsService {
   constructor(private readonly ctx: ChatContext) {}
+
+  private buildDiscussionPreview(rawTextRaw: unknown) {
+    const preview = String(rawTextRaw || '').replace(/\s+/g, ' ').trim();
+    if (!preview) return '(пусто)';
+    if (preview.length <= 220) return preview;
+    return `${preview.slice(0, 217)}...`;
+  }
+
+  private parseDiscussionMessageIdFromTitle(titleRaw: unknown) {
+    const title = String(titleRaw || '');
+    const match = title.match(/#(\d+)/);
+    if (!match) return null;
+    const messageId = Number.parseInt(match[1], 10);
+    if (!Number.isFinite(messageId) || messageId <= 0) return null;
+    return messageId;
+  }
+
+  private async loadDiscussionPayload(room: RoomRow): Promise<DiscussionPayload | null> {
+    const sourceMessage = await db.message.findFirst({
+      where: {
+        discussionRoomId: room.id,
+      },
+      select: {
+        id: true,
+        roomId: true,
+        rawText: true,
+        room: {
+          select: {
+            kind: true,
+            title: true,
+          },
+        },
+      },
+    });
+
+    if (sourceMessage) {
+      return {
+        sourceMessageId: sourceMessage.id,
+        sourceRoomId: sourceMessage.roomId,
+        sourceRoomKind: sourceMessage.room?.kind || null,
+        sourceRoomTitle: sourceMessage.room?.title || null,
+        sourceMessagePreview: this.buildDiscussionPreview(sourceMessage.rawText),
+        sourceMessageDeleted: false,
+      };
+    }
+
+    const parsedMessageId = this.parseDiscussionMessageIdFromTitle(room.title);
+    if (!parsedMessageId) return null;
+
+    return {
+      sourceMessageId: parsedMessageId,
+      sourceRoomId: null,
+      sourceRoomKind: null,
+      sourceRoomTitle: null,
+      sourceMessagePreview: '',
+      sourceMessageDeleted: true,
+    };
+  }
+
+  private hasRoomRuntime(roomScript: RoomRuntimeRow | null) {
+    if (!roomScript) return false;
+    if (!roomScript.scriptId || !roomScript.scriptMode) return false;
+    return Number(roomScript.scriptRevision || 0) > 0;
+  }
+
+  private toRoomScriptPayload(roomId: number, roomScript: RoomRuntimeRow | null) {
+    if (!this.hasRoomRuntime(roomScript)) return null;
+    return {
+      entityType: 'room',
+      entityId: Number(roomScript!.id || roomId),
+      roomId,
+      scriptId: roomScript!.scriptId,
+      scriptRevision: Number(roomScript!.scriptRevision || 0),
+      scriptMode: roomScript!.scriptMode,
+      scriptConfigJson: roomScript!.scriptConfigJson || {},
+      scriptStateJson: roomScript!.scriptStateJson || {},
+    };
+  }
+
+  private toRoomAppPayload(
+    room: RoomRow,
+    roomScript: RoomRuntimeRow | null,
+    pinnedMessage: any | null,
+    pinnedMessageIdRaw?: unknown,
+  ): RoomAppPayload {
+    const enabled = room.kind !== 'direct' && !!room.app_enabled;
+    const appType = enabled
+      ? (normalizeAppType(room.app_type) || 'custom')
+      : null;
+    const config = normalizeAppConfig(room.app_config_json);
+    const pinnedMessageId = room.kind === 'direct'
+      ? null
+      : (Number(pinnedMessage?.id || pinnedMessageIdRaw || room.pinned_message_id || 0) || null);
+    const surfaceKindRaw = pinnedMessage && typeof pinnedMessage === 'object'
+      ? String(pinnedMessage.kind || '').trim().toLowerCase()
+      : '';
+    const surfaceKind = surfaceKindRaw === 'text' || surfaceKindRaw === 'system' || surfaceKindRaw === 'scriptable'
+      ? surfaceKindRaw
+      : null;
+
+    return {
+      enabled,
+      appType,
+      config,
+      surfaceMessageId: pinnedMessageId,
+      surfaceKind,
+      hasRoomRuntime: this.hasRoomRuntime(roomScript),
+      requiresRoomRuntime: enabled && !!config.requireRoomRuntime,
+      canCollapseSurface: true,
+    };
+  }
+
+  private async loadRoomRuntime(roomId: number) {
+    return db.room.findUnique({
+      where: {id: roomId},
+      select: {
+        id: true,
+        pinnedMessageId: true,
+        scriptId: true,
+        scriptRevision: true,
+        scriptMode: true,
+        scriptConfigJson: true,
+        scriptStateJson: true,
+      },
+    }) as Promise<RoomRuntimeRow | null>;
+  }
 
   async dialogsGeneral(state: SocketState): Promise<ApiError | {
     roomId: number;
@@ -26,12 +206,14 @@ export class ChatDialogsService {
     title: string;
     createdById: number | null;
     pinnedMessageId: number | null;
+    roomApp: RoomAppPayload;
   }> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
     const room = await getOrCreateGroupRoom(state.user!.id);
     await ensureUserInRoom(room.id, state.user!.id);
+    const roomRuntime = await this.loadRoomRuntime(room.id);
     return {
       roomId: room.id,
       dialogId: room.id,
@@ -39,6 +221,7 @@ export class ChatDialogsService {
       title: room.title || 'Общий чат',
       createdById: room.created_by || null,
       pinnedMessageId: room.pinned_message_id || null,
+      roomApp: this.toRoomAppPayload(room, roomRuntime, null, roomRuntime?.pinnedMessageId),
     };
   }
 
@@ -49,6 +232,7 @@ export class ChatDialogsService {
     targetUser: PublicUser;
     createdById: null;
     pinnedMessageId: number | null;
+    roomApp: RoomAppPayload;
   }> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -85,6 +269,7 @@ export class ChatDialogsService {
       targetUser: this.ctx.toPublicUser(targetUser),
       createdById: null,
       pinnedMessageId: null,
+      roomApp: this.toRoomAppPayload(room, null, null),
     };
   }
 
@@ -95,6 +280,7 @@ export class ChatDialogsService {
     lastMessageAt: string;
     createdById: null;
     pinnedMessageId: number | null;
+    roomApp: RoomAppPayload;
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -149,6 +335,17 @@ export class ChatDialogsService {
           targetUser: this.ctx.toPublicUser(targetUser),
           createdById: null,
           pinnedMessageId: null,
+          roomApp: this.toRoomAppPayload({
+            id: row.id,
+            kind: 'direct',
+            title: row.title || null,
+            created_by: null,
+            pinned_message_id: null,
+            app_enabled: false,
+            app_type: null,
+            app_config_json: {},
+            member_user_ids: [],
+          }, null, null),
         };
       })
       .filter(Boolean) as Array<{
@@ -158,6 +355,7 @@ export class ChatDialogsService {
       lastMessageAt: string;
       createdById: null;
       pinnedMessageId: number | null;
+      roomApp: RoomAppPayload;
     }>;
 
     const systemUser = await db.user.findUnique({
@@ -184,6 +382,7 @@ export class ChatDialogsService {
           lastMessageAt: new Date(0).toISOString(),
           createdById: null,
           pinnedMessageId: null,
+          roomApp: this.toRoomAppPayload(systemRoom, null, null),
         });
       }
     }
@@ -241,6 +440,7 @@ export class ChatDialogsService {
         scriptMode: true,
         scriptConfigJson: true,
         scriptStateJson: true,
+        discussionRoomId: true,
         sender: {
           select: {
             id: true,
@@ -294,6 +494,7 @@ export class ChatDialogsService {
         scriptMode: row.scriptMode || null,
         scriptConfigJson: row.scriptConfigJson || {},
         scriptStateJson: row.scriptStateJson || {},
+        discussionRoomId: Number(row.discussionRoomId || 0) || null,
         createdAt: row.createdAt.toISOString(),
       };
     });
@@ -307,6 +508,8 @@ export class ChatDialogsService {
     kind: 'group' | 'direct' | 'game';
     createdById: number | null;
     roomScript: any | null;
+    roomApp: RoomAppPayload;
+    discussion: DiscussionPayload | null;
     pinnedMessageId: number | null;
     pinnedMessage: any | null;
   }>> {
@@ -327,18 +530,7 @@ export class ChatDialogsService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const roomScript = await db.room.findUnique({
-      where: {id: roomId},
-      select: {
-        id: true,
-        pinnedMessageId: true,
-        scriptId: true,
-        scriptRevision: true,
-        scriptMode: true,
-        scriptConfigJson: true,
-        scriptStateJson: true,
-      },
-    });
+    const roomScript = await this.loadRoomRuntime(roomId);
 
     state.roomId = roomId;
     const pinnedAllowed = room.kind !== 'direct';
@@ -348,6 +540,7 @@ export class ChatDialogsService {
     const pinnedMessage = pinnedMessageId > 0
       ? await this.ctx.loadMessagePayloadById(roomId, pinnedMessageId)
       : null;
+    const discussion = await this.loadDiscussionPayload(room);
 
     return {
       ok: true,
@@ -355,22 +548,204 @@ export class ChatDialogsService {
       dialogId: roomId,
       kind: room.kind,
       createdById: room.created_by || null,
+      roomApp: this.toRoomAppPayload(
+        room,
+        roomScript,
+        pinnedAllowed ? pinnedMessage : null,
+        roomScript?.pinnedMessageId,
+      ),
+      discussion,
       pinnedMessageId: pinnedAllowed
         ? (pinnedMessage?.id || (roomScript?.pinnedMessageId || null))
         : null,
       pinnedMessage: pinnedAllowed ? pinnedMessage : null,
-      roomScript: roomScript?.scriptId && roomScript.scriptMode && Number(roomScript.scriptRevision || 0) > 0
-        ? {
-          entityType: 'room',
-          entityId: roomScript.id,
-          roomId,
-          scriptId: roomScript.scriptId,
-          scriptRevision: Number(roomScript.scriptRevision || 0),
-          scriptMode: roomScript.scriptMode,
-          scriptConfigJson: roomScript.scriptConfigJson || {},
-          scriptStateJson: roomScript.scriptStateJson || {},
+      roomScript: this.toRoomScriptPayload(roomId, roomScript),
+    };
+  }
+
+  async roomsCreate(state: SocketState, payloadRaw: any): Promise<ApiError | ApiOk<{
+    roomId: number;
+    dialogId: number;
+    kind: 'group';
+    title: string;
+    createdById: number;
+    pinnedMessageId: null;
+    roomApp: RoomAppPayload;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
+    const room = await createPublicGroupRoom(state.user!.id, payload?.title);
+
+    return {
+      ok: true,
+      roomId: room.id,
+      dialogId: room.id,
+      kind: 'group',
+      title: room.title || 'Комната',
+      createdById: Number(room.created_by || state.user!.id),
+      pinnedMessageId: null,
+      roomApp: this.toRoomAppPayload(room, null, null),
+    };
+  }
+
+  async roomsAppConfigure(
+    state: SocketState,
+    roomIdRaw: unknown,
+    payloadRaw: any,
+  ): Promise<ApiError | ApiOk<{
+    roomId: number;
+    dialogId: number;
+    kind: 'group' | 'game';
+    createdById: number | null;
+    roomApp: RoomAppPayload;
+    roomScript: any | null;
+    pinnedMessageId: number | null;
+    pinnedMessage: any | null;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
+    }
+
+    const room = await getRoomById(roomId);
+    if (!room) {
+      return {ok: false, error: 'room_not_found'};
+    }
+    if (!userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (room.kind === 'direct') {
+      return {ok: false, error: 'app_room_not_supported'};
+    }
+    if (!userIsRoomAdmin(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const payload = payloadRaw && typeof payloadRaw === 'object'
+      ? payloadRaw
+      : {};
+    const hasEnabled = Object.prototype.hasOwnProperty.call(payload, 'enabled');
+    const enabled = hasEnabled ? !!payload.enabled : true;
+
+    const hasAppType = Object.prototype.hasOwnProperty.call(payload, 'appType');
+    const parsedAppType = normalizeAppType(payload.appType);
+    if (hasAppType && !parsedAppType && enabled) {
+      return {ok: false, error: 'invalid_app_type'};
+    }
+
+    const hasConfig = Object.prototype.hasOwnProperty.call(payload, 'config');
+    const rawConfig = hasConfig
+      ? normalizeAppConfig(payload.config)
+      : normalizeAppConfig(room.app_config_json);
+    const nextConfig = enabled
+      ? {
+        ...rawConfig,
+      }
+      : {};
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'requireRoomRuntime')) {
+      if (enabled) {
+        nextConfig.requireRoomRuntime = !!payload.requireRoomRuntime;
+      } else {
+        delete nextConfig.requireRoomRuntime;
+      }
+    }
+
+    const hasSurfaceMessageId = Object.prototype.hasOwnProperty.call(payload, 'surfaceMessageId');
+    let nextPinnedMessageId = room.pinned_message_id;
+
+    if (hasSurfaceMessageId) {
+      const surfaceRaw = payload.surfaceMessageId;
+      if (surfaceRaw === null || surfaceRaw === undefined || surfaceRaw === '' || Number(surfaceRaw) === 0) {
+        nextPinnedMessageId = null;
+      } else {
+        const parsed = Number.parseInt(String(surfaceRaw), 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          return {ok: false, error: 'invalid_message'};
         }
-        : null,
+        nextPinnedMessageId = parsed;
+      }
+    }
+
+    let pinnedMessageForValidation: {
+      id: number;
+      roomId: number;
+      kind: 'text' | 'system' | 'scriptable';
+    } | null = null;
+    if (Number(nextPinnedMessageId || 0) > 0) {
+      pinnedMessageForValidation = await db.message.findUnique({
+        where: {
+          id: Number(nextPinnedMessageId || 0),
+        },
+        select: {
+          id: true,
+          roomId: true,
+          kind: true,
+        },
+      });
+      if (!pinnedMessageForValidation) {
+        return {ok: false, error: 'message_not_found'};
+      }
+      if (pinnedMessageForValidation.roomId !== roomId) {
+        return {ok: false, error: 'message_not_in_room'};
+      }
+      if (enabled && pinnedMessageForValidation.kind !== 'scriptable') {
+        return {ok: false, error: 'app_surface_must_be_scriptable'};
+      }
+    }
+
+    const nextAppType = enabled
+      ? (parsedAppType || normalizeAppType(room.app_type) || 'custom')
+      : null;
+    const roomRuntimeBefore = await this.loadRoomRuntime(roomId);
+    const requiresRoomRuntime = enabled && !!nextConfig.requireRoomRuntime;
+    if (requiresRoomRuntime && !this.hasRoomRuntime(roomRuntimeBefore)) {
+      return {ok: false, error: 'room_runtime_required'};
+    }
+
+    await db.room.update({
+      where: {
+        id: roomId,
+      },
+      data: {
+        appEnabled: enabled,
+        appType: nextAppType,
+        appConfigJson: enabled ? cloneJson(nextConfig) : {},
+        ...(hasSurfaceMessageId ? {pinnedMessageId: nextPinnedMessageId} : {}),
+      },
+    });
+
+    const updatedRoom = await getRoomById(roomId);
+    if (!updatedRoom) {
+      return {ok: false, error: 'room_not_found'};
+    }
+
+    const roomRuntime = await this.loadRoomRuntime(roomId);
+    const pinnedMessageId = Number(roomRuntime?.pinnedMessageId || 0);
+    const pinnedMessage = pinnedMessageId > 0
+      ? await this.ctx.loadMessagePayloadById(roomId, pinnedMessageId)
+      : null;
+
+    return {
+      ok: true,
+      roomId,
+      dialogId: roomId,
+      kind: updatedRoom.kind === 'game' ? 'game' : 'group',
+      createdById: updatedRoom.created_by || null,
+      roomApp: this.toRoomAppPayload(
+        updatedRoom,
+        roomRuntime,
+        pinnedMessage,
+        pinnedMessageId || null,
+      ),
+      roomScript: this.toRoomScriptPayload(roomId, roomRuntime),
+      pinnedMessageId: pinnedMessage?.id || (pinnedMessageId > 0 ? pinnedMessageId : null),
+      pinnedMessage,
     };
   }
 
@@ -418,6 +793,17 @@ export class ChatDialogsService {
       where: {id: roomId},
     });
     if (result.count > 0) {
+      await db.graphNode.updateMany({
+        where: {
+          targetType: 'room',
+          targetId: roomId,
+          archivedAt: null,
+        },
+        data: {
+          archivedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
       await this.ctx.cleanupUnusedUploads(uploadNames);
     }
     if (state.roomId === roomId) {

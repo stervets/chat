@@ -2,6 +2,7 @@ import {db} from '../db.js';
 import {getLatestScriptDefinition} from '../scriptable/registry.js';
 
 export type RoomKind = 'group' | 'direct' | 'game';
+export type RoomAppType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
 
 export type RoomRow = {
   id: number;
@@ -9,6 +10,9 @@ export type RoomRow = {
   title: string | null;
   created_by: number | null;
   pinned_message_id: number | null;
+  app_enabled: boolean;
+  app_type: RoomAppType | null;
+  app_config_json: Record<string, any>;
   member_user_ids: number[];
 };
 
@@ -18,8 +22,34 @@ type RoomWithUsers = {
   title: string | null;
   createdById: number | null;
   pinnedMessageId: number | null;
+  appEnabled: boolean;
+  appType: RoomAppType | null;
+  appConfigJson: any;
   roomUsers: Array<{userId: number}>;
 };
+
+function cloneJson<T>(value: T): T {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeRoomAppType(raw: unknown): RoomAppType | null {
+  const appType = String(raw || '').trim().toLowerCase();
+  if (appType === 'llm' || appType === 'poll' || appType === 'dashboard' || appType === 'bot_control' || appType === 'custom') {
+    return appType;
+  }
+  return null;
+}
+
+function normalizeRoomAppConfig(raw: unknown) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+  return cloneJson(raw as Record<string, any>);
+}
 
 function mapRoom(row: RoomWithUsers): RoomRow {
   return {
@@ -28,6 +58,9 @@ function mapRoom(row: RoomWithUsers): RoomRow {
     title: row.title || null,
     created_by: row.createdById,
     pinned_message_id: row.pinnedMessageId || null,
+    app_enabled: !!row.appEnabled,
+    app_type: normalizeRoomAppType(row.appType),
+    app_config_json: normalizeRoomAppConfig(row.appConfigJson),
     member_user_ids: row.roomUsers.map((item) => item.userId),
   };
 }
@@ -78,6 +111,9 @@ export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<Roo
       title: true,
       createdById: true,
       pinnedMessageId: true,
+      appEnabled: true,
+      appType: true,
+      appConfigJson: true,
       roomUsers: {
         select: {userId: true},
       },
@@ -115,6 +151,9 @@ export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<Roo
           title: true,
           createdById: true,
           pinnedMessageId: true,
+          appEnabled: true,
+          appType: true,
+          appConfigJson: true,
           roomUsers: {
             select: {userId: true},
           },
@@ -130,6 +169,9 @@ export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<Roo
           title: true,
           createdById: true,
           pinnedMessageId: true,
+          appEnabled: true,
+          appType: true,
+          appConfigJson: true,
           roomUsers: {
             select: {userId: true},
           },
@@ -154,6 +196,9 @@ export async function getRoomById(roomId: number): Promise<RoomRow | null> {
       title: true,
       createdById: true,
       pinnedMessageId: true,
+      appEnabled: true,
+      appType: true,
+      appConfigJson: true,
       roomUsers: {
         select: {userId: true},
       },
@@ -195,6 +240,9 @@ async function findExistingDirectRoom(firstUserId: number, secondUserId: number)
       title: true,
       createdById: true,
       pinnedMessageId: true,
+      appEnabled: true,
+      appType: true,
+      appConfigJson: true,
       roomUsers: {
         select: {userId: true},
       },
@@ -218,6 +266,9 @@ export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: n
             title: true,
             createdById: true,
             pinnedMessageId: true,
+            appEnabled: true,
+            appType: true,
+            appConfigJson: true,
           },
         });
 
@@ -237,6 +288,9 @@ export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: n
 
         return {
           ...created,
+          appEnabled: false,
+          appType: null,
+          appConfigJson: {},
           roomUsers: [{userId: firstUserId}, {userId: secondUserId}],
         };
       });
@@ -254,6 +308,55 @@ export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: n
 
 export async function ensureUserInRoom(roomId: number, userId: number) {
   await ensureRoomMembership(roomId, userId);
+}
+
+export async function createPublicGroupRoom(createdById: number, titleRaw?: unknown): Promise<RoomRow> {
+  const title = String(titleRaw || '').trim();
+  const normalizedTitle = title ? title.slice(0, 120) : null;
+
+  const room = await db.$transaction(async (tx) => {
+    const created = await tx.room.create({
+      data: {
+        kind: 'group',
+        title: normalizedTitle,
+        createdById,
+        appEnabled: false,
+        appType: null,
+        appConfigJson: {},
+      },
+      select: {
+        id: true,
+        kind: true,
+        title: true,
+        createdById: true,
+        pinnedMessageId: true,
+        appEnabled: true,
+        appType: true,
+        appConfigJson: true,
+      },
+    });
+
+    const users = await tx.user.findMany({
+      select: {id: true},
+    });
+
+    if (users.length > 0) {
+      await tx.roomUser.createMany({
+        data: users.map((user) => ({
+          roomId: created.id,
+          userId: user.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    return {
+      ...created,
+      roomUsers: users.map((user) => ({userId: user.id})),
+    };
+  });
+
+  return mapRoom(room);
 }
 
 export function userCanAccessRoom(userId: number, room: RoomRow) {
