@@ -279,10 +279,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
         ? this.normalizeMessage(pinnedMessageRaw)
         : null;
-      this.syncPinnedHiddenStateByPayload({
-        roomId,
-        pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
-      });
+      this.pinnedCollapsed = this.loadPinnedCollapsedState(roomId);
     },
 
     async selectDialog(this: any, dialog: Dialog, optionsRaw?: {routeMode?: RouteMode}) {
@@ -293,7 +290,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.setActiveRoomScript(null);
       this.messages = [];
       this.activePinnedMessage = null;
-      this.pinnedCollapsed = false;
+      this.pinnedCollapsed = this.loadPinnedCollapsedState(dialog.id);
       this.scriptMessageViewModels = {};
       this.historyHasMore = true;
       this.historyLoadingMore = false;

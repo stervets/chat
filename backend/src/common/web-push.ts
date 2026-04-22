@@ -401,6 +401,10 @@ export class WebPushService {
 
   private buildUrlForRecipient(room: RoomRow, message: ChatContextMessagePayload, recipientUserId: number) {
     if (room.kind === 'direct') {
+      if (Number(message.authorId || 0) <= 0) {
+        return '/chat';
+      }
+
       if (recipientUserId === message.authorId) {
         return '/chat';
       }

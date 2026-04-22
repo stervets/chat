@@ -524,6 +524,7 @@ export const chatMethodsComposerAndVirtual = {
     canOpenDirectFromMessage(this: any, message: Message) {
       if (!this.me) return false;
       if (this.activeDialog?.kind === 'direct') return false;
+      if (Number(message.authorId || 0) <= 0) return false;
       return this.me.id !== message.authorId;
     },
 
@@ -585,11 +586,6 @@ export const chatMethodsComposerAndVirtual = {
       }
       if (Number(this.activePinnedMessage?.id || 0) === Number(messageId || 0)) {
         this.activePinnedMessage = null;
-        this.pinnedCollapsed = false;
-        this.syncPinnedHiddenStateByPayload({
-          roomId,
-          pinnedMessageId: null,
-        });
       }
       if (this.reactionPickerMessageId === messageId) {
         this.reactionPickerMessageId = null;

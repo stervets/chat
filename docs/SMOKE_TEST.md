@@ -62,7 +62,15 @@ yarn run invite:create
 - pinned message:
   - в `group`: pin/unpin только админ комнаты;
   - в `direct`: pin/unpin недоступны;
-  - pinned panel: collapse/expand, hide (×), splitter, max-height 50%;
+  - pinned panel: collapse/expand, drag splitter, max-height 50%;
+  - после перезагрузки страницы сохраняются: состояние collapse/expand и высота pinned panel;
+- анонимная отправка:
+  - включить галку `Отправить анонимно` в composer tools;
+  - в ленте автор должен быть `Аноним`;
+  - backend хранит сообщение с `sender_id = NULL`;
+- поиск пользователей:
+  - по одинаковому `name` должны выводиться все совпадения;
+  - совпадение по `nickname` тоже должно попадать в результаты.
 - клик по timestamp/time-reference (без рывка scroll и с переходом к target message);
 - image preview открывается fullscreen overlay в том же окне;
 - mention по `@nickname` и `@Name`;

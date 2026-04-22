@@ -238,56 +238,6 @@
             {{ activeRoomScriptViewModel.extra }}
           </div>
         </div>
-        <div v-if="shouldShowPinnedPanel" class="pinned-panel">
-          <div class="pinned-head">
-            <span class="pinned-author" :style="getAuthorStyle(activePinnedMessage)">
-              {{ activePinnedMessage.authorName }}
-            </span>
-            <div class="pinned-actions">
-              <button
-                class="pinned-collapse-btn"
-                :title="pinnedCollapsed ? 'Развернуть закреп' : 'Свернуть закреп'"
-                @click="togglePinnedCollapsed"
-              >
-                {{ pinnedCollapsed ? '▸' : '▾' }}
-              </button>
-              <button
-                v-if="activeDialog?.kind === 'group'"
-                class="pinned-close-btn"
-                title="Скрыть закреп"
-                @click="dismissPinnedForRoom"
-              >
-                ×
-              </button>
-              <button
-                v-if="canManagePinnedMessages"
-                class="pinned-unpin-btn"
-                title="Удалить закреп"
-                @click="unpinActiveMessage"
-              >
-                откреп.
-              </button>
-            </div>
-          </div>
-          <div
-            v-if="!pinnedCollapsed && activePinnedMessage.kind !== 'scriptable'"
-            class="pinned-body"
-            @click="onPinnedBodyClick"
-            v-html="getRenderedMessageHtml(activePinnedMessage, -1)"
-          />
-          <div
-            v-else-if="!pinnedCollapsed && activePinnedMessage.kind === 'scriptable'"
-            class="pinned-body"
-            @click="onPinnedBodyClick"
-          >
-            <ScriptableMessage
-              :message="activePinnedMessage"
-              :view-model="getMessageScriptViewModel(activePinnedMessage)"
-              @action="onMessageScriptAction"
-            />
-          </div>
-        </div>
-        <div v-if="shouldShowPinnedPanel" class="pinned-splitter"/>
         <div v-if="toasts.length" class="toast-stack">
           <div
             v-for="toast in toasts"
@@ -303,71 +253,123 @@
             <div class="toast-body">{{ toast.body }}</div>
           </div>
         </div>
-
-        <div class="chat-body" ref="messagesEl" @scroll="onMessagesScroll">
-          <div class="chat-feed">
-            <div v-if="historyLoading" class="hint">Загрузка...</div>
-            <div v-else-if="!messages.length" class="hint">Нет сообщений</div>
-            <div v-if="historyLoadingMore && messages.length" class="hint">Загружаю ещё...</div>
+        <div ref="chatContentEl" class="chat-content">
+          <div
+            v-if="shouldShowPinnedPanel"
+            class="pinned-panel"
+            :class="{'pinned-panel-collapsed': pinnedCollapsed}"
+            :style="pinnedPanelStyle"
+          >
+            <div class="pinned-head">
+              <span class="pinned-author" :style="getAuthorStyle(activePinnedMessage)">
+                {{ activePinnedMessage.authorName }}
+              </span>
+              <div class="pinned-actions">
+                <button
+                  class="pinned-collapse-btn"
+                  :title="pinnedCollapsed ? 'Развернуть закреп' : 'Свернуть закреп'"
+                  @click="togglePinnedCollapsed"
+                >
+                  {{ pinnedCollapsed ? '▸' : '▾' }}
+                </button>
+                <button
+                  v-if="canManagePinnedMessages"
+                  class="pinned-unpin-btn"
+                  title="Удалить закреп"
+                  @click="unpinActiveMessage"
+                >
+                  откреп.
+                </button>
+              </div>
+            </div>
             <div
-              v-if="virtualTopSpacerHeight > 0"
-              class="chat-feed-spacer"
-              :style="{height: `${virtualTopSpacerHeight}px`}"
-            />
-            <ChatMessageItem
-              v-for="item in virtualMessages"
-              :key="item.message.id"
-              :message="item.message"
-              :message-index="item.sourceIndex"
-              :me-id="me?.id || null"
-              :is-mentioned-for-me="isMentionedForMe(item.message)"
-              :is-blink-target="blinkMessageId === item.message.id"
-              :is-editing="editingMessageId === item.message.id"
-              :editing-message-text="editingMessageText"
-              :message-action-pending-id="messageActionPendingId"
-              :can-pin-message="canManagePinnedMessages"
-              :is-pinned-message="activePinnedMessage?.id === item.message.id"
-              :can-open-direct="canOpenDirectFromMessage(item.message)"
-              :author-style="getAuthorStyle(item.message)"
-              :show-author-badge="hasMessageAuthorDonationBadge(item.message)"
-              :author-badge-opacity="getMessageAuthorDonationBadgeOpacity(item.message)"
-              :formatted-username="formatUsername(item.message.authorNickname)"
-              :formatted-time="formatMessageTime(item.message.createdAt)"
-              :is-fresh-message="isFreshMessage(item.message.id)"
-              :rendered-html="getRenderedMessageHtml(item.message, item.sourceIndex)"
-              :extra-previews="getMessageExtraPreviews(item.message)"
-              :script-view-model="getMessageScriptViewModel(item.message)"
-              :reaction-picker-open="reactionPickerMessageId === item.message.id"
-              :reaction-palette="reactionPalette()"
-              @update:editing-message-text="onEditingMessageTextUpdate"
-              @author-click="onAuthorClick"
-              @direct-jump-click="onDirectFromMessageClick"
-              @time-click="onMessageTimeClick"
-              @start-edit="startMessageEdit"
-              @delete-message="deleteOwnMessage"
-              @toggle-pinned-message="onTogglePinnedMessage"
-              @edit-input-keydown="onEditMessageKeydown"
-              @save-edit="saveMessageEdit"
-              @cancel-edit="cancelMessageEdit"
-              @message-body-click="onMessageBodyClick"
-              @image-preview-click="onMessageImageClick"
-              @message-body-mousemove="onMessageBodyMouseMove"
-              @message-body-mouseleave="onMessageBodyMouseLeave"
-              @toggle-reaction-picker="toggleReactionPicker"
-              @reaction-select="onReactionSelect"
-              @reaction-chip-click="onReactionChipClick"
-              @reaction-mouseenter="onReactionMouseEnter"
-              @reaction-mousemove="onReactionMouseMove"
-              @reaction-mouseleave="onReactionMouseLeave"
-              @script-action="onMessageScriptAction"
-              @height-change="onVirtualItemHeight"
+              v-if="!pinnedCollapsed && activePinnedMessage.kind !== 'scriptable'"
+              class="pinned-body"
+              @click="onPinnedBodyClick"
+              v-html="getRenderedMessageHtml(activePinnedMessage, -1)"
             />
             <div
-              v-if="virtualBottomSpacerHeight > 0"
-              class="chat-feed-spacer"
-              :style="{height: `${virtualBottomSpacerHeight}px`}"
-            />
-            <div v-if="error" class="error">{{ error }}</div>
+              v-else-if="!pinnedCollapsed && activePinnedMessage.kind === 'scriptable'"
+              class="pinned-body"
+              @click="onPinnedBodyClick"
+            >
+              <ScriptableMessage
+                :message="activePinnedMessage"
+                :view-model="getMessageScriptViewModel(activePinnedMessage)"
+                @action="onMessageScriptAction"
+              />
+            </div>
+          </div>
+          <ElDivider
+            v-if="shouldShowPinnedPanel && !pinnedCollapsed"
+            class="pinned-splitter"
+            @pointerdown.prevent="onPinnedSplitterPointerDown"
+          />
+          <div class="chat-body" ref="messagesEl" @scroll="onMessagesScroll">
+            <div class="chat-feed">
+              <div v-if="historyLoading" class="hint">Загрузка...</div>
+              <div v-else-if="!messages.length" class="hint">Нет сообщений</div>
+              <div v-if="historyLoadingMore && messages.length" class="hint">Загружаю ещё...</div>
+              <div
+                v-if="virtualTopSpacerHeight > 0"
+                class="chat-feed-spacer"
+                :style="{height: `${virtualTopSpacerHeight}px`}"
+              />
+              <ChatMessageItem
+                v-for="item in virtualMessages"
+                :key="item.message.id"
+                :message="item.message"
+                :message-index="item.sourceIndex"
+                :me-id="me?.id || null"
+                :is-mentioned-for-me="isMentionedForMe(item.message)"
+                :is-blink-target="blinkMessageId === item.message.id"
+                :is-editing="editingMessageId === item.message.id"
+                :editing-message-text="editingMessageText"
+                :message-action-pending-id="messageActionPendingId"
+                :can-pin-message="canManagePinnedMessages"
+                :is-pinned-message="activePinnedMessage?.id === item.message.id"
+                :can-open-direct="canOpenDirectFromMessage(item.message)"
+                :author-style="getAuthorStyle(item.message)"
+                :show-author-badge="hasMessageAuthorDonationBadge(item.message)"
+                :author-badge-opacity="getMessageAuthorDonationBadgeOpacity(item.message)"
+                :formatted-username="formatUsername(item.message.authorNickname)"
+                :formatted-time="formatMessageTime(item.message.createdAt)"
+                :is-fresh-message="isFreshMessage(item.message.id)"
+                :rendered-html="getRenderedMessageHtml(item.message, item.sourceIndex)"
+                :extra-previews="getMessageExtraPreviews(item.message)"
+                :script-view-model="getMessageScriptViewModel(item.message)"
+                :reaction-picker-open="reactionPickerMessageId === item.message.id"
+                :reaction-palette="reactionPalette()"
+                @update:editing-message-text="onEditingMessageTextUpdate"
+                @author-click="onAuthorClick"
+                @direct-jump-click="onDirectFromMessageClick"
+                @time-click="onMessageTimeClick"
+                @start-edit="startMessageEdit"
+                @delete-message="deleteOwnMessage"
+                @toggle-pinned-message="onTogglePinnedMessage"
+                @edit-input-keydown="onEditMessageKeydown"
+                @save-edit="saveMessageEdit"
+                @cancel-edit="cancelMessageEdit"
+                @message-body-click="onMessageBodyClick"
+                @image-preview-click="onMessageImageClick"
+                @message-body-mousemove="onMessageBodyMouseMove"
+                @message-body-mouseleave="onMessageBodyMouseLeave"
+                @toggle-reaction-picker="toggleReactionPicker"
+                @reaction-select="onReactionSelect"
+                @reaction-chip-click="onReactionChipClick"
+                @reaction-mouseenter="onReactionMouseEnter"
+                @reaction-mousemove="onReactionMouseMove"
+                @reaction-mouseleave="onReactionMouseLeave"
+                @script-action="onMessageScriptAction"
+                @height-change="onVirtualItemHeight"
+              />
+              <div
+                v-if="virtualBottomSpacerHeight > 0"
+                class="chat-feed-spacer"
+                :style="{height: `${virtualBottomSpacerHeight}px`}"
+              />
+              <div v-if="error" class="error">{{ error }}</div>
+            </div>
           </div>
         </div>
         <button
@@ -459,6 +461,16 @@
                     {{ emoji }}
                   </button>
                 </div>
+              </div>
+
+              <div class="composer-section">
+                <label class="composer-checkbox-row">
+                  <input
+                    v-model="sendAnonymous"
+                    type="checkbox"
+                  />
+                  <span>Отправить анонимно</span>
+                </label>
               </div>
 
               <!--div class="composer-section" v-if="activeDialog">

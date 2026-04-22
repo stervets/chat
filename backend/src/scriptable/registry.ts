@@ -111,27 +111,28 @@ const definitions: ScriptDefinition[] = [
     },
     reduceAction: reduceGuessWordAction,
   },
-  {
-    scriptId: 'demo:room_meter',
-    revision: 1,
-    entityType: 'room',
-    mode: 'client_runner',
-    title: 'Demo: room meter',
-    makeInitialConfig(input) {
-      const announceEvery = Number.parseInt(String(input?.announceEvery ?? '5'), 10);
-      return {
-        title: String(input?.title || 'Счётчик комнаты'),
-        announceEvery: Number.isFinite(announceEvery) && announceEvery > 0 ? announceEvery : 5,
-      };
-    },
-    makeInitialState() {
-      return {
-        totalMessages: 0,
-        lastAuthorNickname: '',
-        updatedAt: null,
-      };
-    },
-  },
+  // Временно отключено: скрипт "Счётчик комнаты" (demo:room_meter).
+  // {
+  //   scriptId: 'demo:room_meter',
+  //   revision: 1,
+  //   entityType: 'room',
+  //   mode: 'client_runner',
+  //   title: 'Demo: room meter',
+  //   makeInitialConfig(input) {
+  //     const announceEvery = Number.parseInt(String(input?.announceEvery ?? '5'), 10);
+  //     return {
+  //       title: String(input?.title || 'Счётчик комнаты'),
+  //       announceEvery: Number.isFinite(announceEvery) && announceEvery > 0 ? announceEvery : 5,
+  //     };
+  //   },
+  //   makeInitialState() {
+  //     return {
+  //       totalMessages: 0,
+  //       lastAuthorNickname: '',
+  //       updatedAt: null,
+  //     };
+  //   },
+  // },
 ];
 
 const definitionMap = new Map<string, ScriptDefinition>();

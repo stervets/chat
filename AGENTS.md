@@ -10,11 +10,14 @@
 - `backend` — NestJS HTTP + WebSocket + Prisma/PostgreSQL.
 - `frontend` — Nuxt 3 SPA (`ssr:false`), Vue 3, Element Plus, Tailwind, Less.
 - `scripts` — smoke/e2e/stress + telegram pipeline.
+  - `scripts/smoke-e2e.js`: отправка сообщения через кнопку `.send-btn` (чтобы не ловить конфликт с `Отправить тестовый push`).
 
 ## Ключевая модель данных
 - `rooms`, `rooms_users`, `messages`, `message_reactions`, `sessions`, `push_subscriptions`.
 - админ комнаты: `rooms.created_by` (только для non-direct, в direct админа нет).
 - `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`).
+- `messages.sender_id` может быть `NULL` для анонимной отправки.
+- `users.name` не уникален (поиск/выбор пользователя должен держать несколько совпадений).
 - `users.push_disable_all_mentions` — отключение push от `@all`.
 - scriptable поля:
   - `messages.script_*`, `rooms.script_*`;
@@ -36,6 +39,10 @@
 - `dialogs:general`, `dialogs:private`, `dialogs:directs`, `dialogs:messages`, `dialogs:delete`
 - `chat:join`, `chat:send`, `chat:edit`, `chat:delete`, `chat:react`, `chat:pin`, `chat:unpin`
 - `scripts:create-message`, `scripts:action`, `scripts:room:get`
+
+`chat:send` поддерживает опции в 3-м аргументе:
+- `anonymous?: boolean`
+- `silent?: boolean`
 
 Основные events:
 - `chat:message`, `chat:message-updated`, `chat:message-deleted`, `chat:pinned`
@@ -84,6 +91,12 @@ yarn run frontend:dev
 - Runtime backend использует `backend/config.json -> db.url`.
 - Prisma CLI использует `DATABASE_URL`.
 - Перед `prisma generate/push/migrate` убедись, что URL один и тот же.
+
+## Временные отключения
+- Скрипт комнаты `demo:room_meter` (`Счётчик комнаты`) временно отключён:
+  - `backend/src/scriptable/registry.ts`
+  - `backend/src/script-runner/registry.ts`
+  - `backend/src/db.ts` (автопривязка к первой `group`-комнате)
 
 ## Если трогаешь подсистему
 Auth/session:

@@ -11,6 +11,7 @@ export const db = new PrismaClient({
 
 let runtimeIndexesReady = false;
 let nicknameModelReady = false;
+let displayNameModelReady = false;
 let donationBadgeModelReady = false;
 let scriptableModelReady = false;
 let roomPinAndPushPrefsModelReady = false;
@@ -86,6 +87,66 @@ async function ensureNicknameModel() {
   );
 
   nicknameModelReady = true;
+}
+
+async function ensureDisplayNameModel() {
+  if (displayNameModelReady) return;
+
+  await db.$executeRawUnsafe(
+    `do $$
+     declare
+       con_name text;
+       users_rel oid;
+       name_attnum int2;
+     begin
+       select c.oid
+       into users_rel
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public'
+         and c.relname = 'users'
+       limit 1;
+
+       if users_rel is null then
+         return;
+       end if;
+
+       select attnum
+       into name_attnum
+       from pg_attribute
+       where attrelid = users_rel
+         and attname = 'name'
+         and not attisdropped
+       limit 1;
+
+       if name_attnum is null then
+         return;
+       end if;
+
+       for con_name in
+         select conname
+         from pg_constraint
+         where conrelid = users_rel
+           and contype = 'u'
+           and coalesce(array_length(conkey, 1), 0) = 1
+           and conkey[1] = name_attnum
+       loop
+         execute format('alter table users drop constraint %I', con_name);
+       end loop;
+     end
+     $$`
+  );
+
+  await db.$executeRawUnsafe(
+    `drop index if exists users_name_key`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists users_name_idx
+     on users(name)`
+  );
+
+  displayNameModelReady = true;
 }
 
 async function ensureRuntimeIndexes() {
@@ -169,25 +230,26 @@ async function ensureScriptableModel() {
      on rooms(script_id)`
   );
 
-  await db.$executeRawUnsafe(
-    `with target_room as (
-       select id
-       from rooms
-       where kind = 'group'
-       order by id asc
-       limit 1
-     )
-     update rooms as r
-     set
-       script_id = 'demo:room_meter',
-       script_revision = 1,
-       script_mode = 'client_runner',
-       script_config_json = jsonb_build_object('title', 'Счётчик комнаты', 'announceEvery', 5),
-       script_state_json = jsonb_build_object('totalMessages', 0, 'lastAuthorNickname', '', 'updatedAt', null)
-     from target_room t
-     where r.id = t.id
-       and (r.script_id is null or btrim(r.script_id) = '')`
-  );
+  // Временно отключено: автопривязка скрипта "Счётчик комнаты" (demo:room_meter) к первой group-комнате.
+  // await db.$executeRawUnsafe(
+  //   `with target_room as (
+  //      select id
+  //      from rooms
+  //      where kind = 'group'
+  //      order by id asc
+  //      limit 1
+  //    )
+  //    update rooms as r
+  //    set
+  //      script_id = 'demo:room_meter',
+  //      script_revision = 1,
+  //      script_mode = 'client_runner',
+  //      script_config_json = jsonb_build_object('title', 'Счётчик комнаты', 'announceEvery', 5),
+  //      script_state_json = jsonb_build_object('totalMessages', 0, 'lastAuthorNickname', '', 'updatedAt', null)
+  //    from target_room t
+  //    where r.id = t.id
+  //      and (r.script_id is null or btrim(r.script_id) = '')`
+  // );
 
   scriptableModelReady = true;
 }
@@ -232,6 +294,7 @@ async function ensureRoomPinAndPushPrefsModel() {
 export async function checkDb() {
   await db.$queryRawUnsafe('select 1 as ok');
   await ensureNicknameModel();
+  await ensureDisplayNameModel();
   await ensureDonationBadgeModel();
   await ensureScriptableModel();
   await ensureRoomPinAndPushPrefsModel();

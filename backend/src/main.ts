@@ -13,6 +13,25 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
+  let shutdownInProgress = false;
+
+  const closeApp = async (signalRaw?: string) => {
+    if (shutdownInProgress) return;
+    shutdownInProgress = true;
+    const signal = String(signalRaw || '').trim() || 'manual';
+
+    try {
+      logger.log(`Shutdown requested (${signal})`);
+      await app.close();
+      await closeDb();
+      logger.log('Shutdown completed');
+      process.exit(0);
+    } catch (err) {
+      logger.error(`Shutdown failed (${signal}) ${JSON.stringify({err})}`);
+      process.exit(1);
+    }
+  };
+
   app.useWebSocketAdapter(new WsAdapter(app));
   app.enableCors({
     origin: config.corsOrigins.includes('*') ? true : config.corsOrigins,
@@ -25,8 +44,7 @@ async function bootstrap() {
     logger.log('PostgreSQL connection OK');
   } catch (err) {
     logger.error('PostgreSQL connection failed');
-    await closeDb();
-    process.exit(1);
+    await closeApp('db-check-failed');
     return;
   }
 
@@ -40,16 +58,11 @@ async function bootstrap() {
     error: (obj, msg) => logger.error(`${msg} ${JSON.stringify(obj)}`),
   });
 
-  app.enableShutdownHooks();
   await app.listen(config.port, config.host);
   logger.log(`Nest WS server listening on ${config.host}:${config.port}${config.wsPath}`);
 
-  const close = async () => {
-    await app.close();
-    await closeDb();
-  };
-  process.on('SIGINT', () => void close());
-  process.on('SIGTERM', () => void close());
+  process.once('SIGINT', () => void closeApp('SIGINT'));
+  process.once('SIGTERM', () => void closeApp('SIGTERM'));
 }
 
 bootstrap();

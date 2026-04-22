@@ -59,6 +59,7 @@ export class ScriptRunnerClient {
       this.connectTimer = null;
       this.ensureConnected();
     }, RECONNECT_DELAY_MS);
+    this.connectTimer.unref();
   }
 
   private ensureConnected() {
@@ -127,6 +128,7 @@ export class ScriptRunnerClient {
           error: 'runner_timeout',
         });
       }, REQUEST_TIMEOUT_MS);
+      timer.unref();
 
       this.pending.set(id, {resolve, timer});
 

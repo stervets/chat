@@ -173,9 +173,17 @@
     flex-direction: column;
     gap: 6px;
     padding: 8px 10px;
-    max-height: 50%;
     overflow: auto;
     z-index: 7;
+    min-height: 56px;
+    max-height: 50%;
+  }
+
+  .pinned-panel-collapsed {
+    height: auto !important;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
   }
 
   .pinned-head {
@@ -234,7 +242,6 @@
   }
 
   .pinned-collapse-btn,
-  .pinned-close-btn,
   .pinned-unpin-btn {
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -247,7 +254,6 @@
   }
 
   .pinned-collapse-btn:hover,
-  .pinned-close-btn:hover,
   .pinned-unpin-btn:hover {
     border-color: var(--accent-strong);
     color: var(--text);
@@ -255,8 +261,24 @@
 
   .pinned-splitter {
     margin: 6px 12px 0;
-    height: 1px;
-    background: linear-gradient(90deg, rgba(122, 146, 176, 0.15) 0%, rgba(122, 146, 176, 0.45) 50%, rgba(122, 146, 176, 0.15) 100%);
+    cursor: row-resize;
+    user-select: none;
+    touch-action: none;
+    --el-border-color: rgba(122, 146, 176, 0.45);
+  }
+
+  .pinned-splitter :deep(.el-divider__text) {
+    display: none;
+  }
+
+  .pinned-splitter::after {
+    content: '';
+    display: block;
+    width: 54px;
+    height: 3px;
+    margin: 3px auto 0;
+    border-radius: 999px;
+    background: rgba(173, 198, 226, 0.52);
   }
 
   .header-center-btn {
@@ -592,6 +614,13 @@
     background: rgba(73, 35, 35, 0.45);
   }
 
+  .chat-content {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
   .chat-body {
     flex: 1;
     min-height: 0;
@@ -871,6 +900,20 @@
   .composer-emoji-btn:hover {
     border-color: var(--accent-strong);
     background: #253248;
+  }
+
+  .composer-checkbox-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #d8e3f4;
+    cursor: pointer;
+  }
+
+  .composer-checkbox-row input {
+    margin: 0;
+    accent-color: #79a9e0;
   }
 
   .upload-hint {

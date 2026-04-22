@@ -161,7 +161,7 @@ async function sendMessage(page, text) {
   await dismissSoundOverlayIfVisible(page);
   await page.getByPlaceholder('Сообщение...').fill(text);
   await dismissSoundOverlayIfVisible(page);
-  await page.getByRole('button', {name: /Отправить/i}).click();
+  await page.locator('.send-btn').click();
 }
 
 async function dismissSoundOverlayIfVisible(page) {

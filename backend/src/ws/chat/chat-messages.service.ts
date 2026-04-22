@@ -1,6 +1,9 @@
 import {db} from '../../db.js';
 import {getRoomById, userCanAccessRoom, userIsRoomAdmin} from '../../common/rooms.js';
 import {
+  ANONYMOUS_AUTHOR_ID,
+  ANONYMOUS_AUTHOR_NAME,
+  ANONYMOUS_AUTHOR_NICKNAME,
   ChatContext,
   MAX_MESSAGE_LENGTH,
   type ApiError,
@@ -12,11 +15,19 @@ import type {SocketState} from '../protocol.js';
 export class ChatMessagesService {
   constructor(private readonly ctx: ChatContext) {}
 
-  async chatSend(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown): Promise<ApiError | ApiOk<{
+  private parseChatSendOptions(raw: unknown) {
+    const options = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+    return {
+      anonymous: !!options.anonymous,
+    };
+  }
+
+  async chatSend(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown, optionsRaw?: unknown): Promise<ApiError | ApiOk<{
     message: ChatContextMessagePayload;
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
+    const options = this.parseChatSendOptions(optionsRaw);
 
     const roomId = this.ctx.parseRoomId(roomIdRaw);
     if (!roomId) {
@@ -37,11 +48,13 @@ export class ChatMessagesService {
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
     const compiled = await this.ctx.compileMessageForRoom(roomId, rawText);
+    const anonymous = options.anonymous;
+    const senderId = anonymous ? null : state.user!.id;
 
     const created = await db.message.create({
       data: {
         roomId,
-        senderId: state.user!.id,
+        senderId,
         kind: 'text',
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
@@ -60,11 +73,11 @@ export class ChatMessagesService {
         roomId,
         dialogId: roomId,
         kind: 'text',
-        authorId: state.user!.id,
-        authorNickname: state.user!.nickname,
-        authorName: state.user!.name,
-        authorNicknameColor: state.user!.nicknameColor,
-        authorDonationBadgeUntil: state.user!.donationBadgeUntil,
+        authorId: anonymous ? ANONYMOUS_AUTHOR_ID : state.user!.id,
+        authorNickname: anonymous ? ANONYMOUS_AUTHOR_NICKNAME : state.user!.nickname,
+        authorName: anonymous ? ANONYMOUS_AUTHOR_NAME : state.user!.name,
+        authorNicknameColor: anonymous ? null : state.user!.nicknameColor,
+        authorDonationBadgeUntil: anonymous ? null : state.user!.donationBadgeUntil,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,

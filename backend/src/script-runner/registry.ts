@@ -58,13 +58,14 @@ function createRoomMeterResult(request: RunnerRequest): RunnerScriptResult {
 }
 
 const scripts: RunnerScriptHandler[] = [
-  {
-    scriptId: 'demo:room_meter',
-    revision: 1,
-    entityType: 'room',
-    onRoomEvent: createRoomMeterResult,
-    onEntityAction: createRoomMeterResult,
-  },
+  // Временно отключено: скрипт "Счётчик комнаты" (demo:room_meter).
+  // {
+  //   scriptId: 'demo:room_meter',
+  //   revision: 1,
+  //   entityType: 'room',
+  //   onRoomEvent: createRoomMeterResult,
+  //   onEntityAction: createRoomMeterResult,
+  // },
 ];
 
 const scriptMap = new Map<string, RunnerScriptHandler>();

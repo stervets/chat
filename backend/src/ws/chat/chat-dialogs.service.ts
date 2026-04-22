@@ -7,7 +7,6 @@ import {
   userCanAccessRoom,
   userIsRoomAdmin,
 } from '../../common/rooms.js';
-import {DEFAULT_NICKNAME_COLOR} from '../../common/const.js';
 import {
   ChatContext,
   SYSTEM_NICKNAME,
@@ -272,17 +271,21 @@ export class ChatDialogsService {
           renderContext,
           row.id,
         );
+      const author = this.ctx.toMessageAuthor({
+        senderId: row.senderId,
+        sender: row.sender,
+      });
 
       return {
         id: row.id,
         roomId: row.roomId,
         dialogId: row.roomId,
         kind: row.kind || 'text',
-        authorId: row.sender?.id || row.senderId || 0,
-        authorNickname: row.sender?.nickname || 'deleted',
-        authorName: row.sender?.name || row.sender?.nickname || 'deleted',
-        authorNicknameColor: row.sender?.nicknameColor || DEFAULT_NICKNAME_COLOR,
-        authorDonationBadgeUntil: this.ctx.normalizeDonationBadgeUntil(row.sender?.donationBadgeUntil || null),
+        authorId: author.authorId,
+        authorNickname: author.authorNickname,
+        authorName: author.authorName,
+        authorNicknameColor: author.authorNicknameColor,
+        authorDonationBadgeUntil: author.authorDonationBadgeUntil,
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,

@@ -41,6 +41,7 @@ HTTP используется для upload и web-push.
 
 ### Users
 - `users:list([])` -> `User[]`
+- `users.name` не уникален: в выдаче могут быть несколько пользователей с одинаковым `name`.
 
 ### Invites / VPN
 - `invites:list([])` -> `Invite[]`
@@ -62,7 +63,7 @@ HTTP используется для upload и web-push.
 - `chat:join([roomId])` -> `{ok:true, roomId, dialogId, kind, createdById, roomScript, pinnedMessageId, pinnedMessage}`
 - `dialogs:delete([roomId, {confirm:true}])` -> `{ok:true, changed, roomId, dialogId, kind}`
 
-- `chat:send([roomId, body, {silent?}?])` -> `{ok:true, message}`
+- `chat:send([roomId, body, {anonymous?, silent?}?])` -> `{ok:true, message}`
 - `chat:edit([messageId, body])` -> `{ok:true, changed, message}`
 - `chat:delete([messageId])` -> `{ok:true, changed, roomId, dialogId, messageId, pinnedCleared}`
 - `chat:pin([roomId, messageId])` -> `{ok:true, changed, roomId, dialogId, pinnedMessageId, pinnedMessage}`
@@ -128,6 +129,10 @@ HTTP используется для upload и web-push.
 - `scriptId`, `scriptRevision`, `scriptMode`, `scriptConfigJson`, `scriptStateJson`
 - `createdAt`
 - `reactions[]`
+
+Особенность:
+- для анонимного сообщения `messages.sender_id = NULL`, а в payload приходит
+  `authorId = 0`, `authorNickname = 'anonymous'`, `authorName = 'Аноним'`, `authorNicknameColor = null`.
 
 Ошибки команд: `{ok:false, error:'...'}`.
 

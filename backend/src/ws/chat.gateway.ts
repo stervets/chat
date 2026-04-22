@@ -396,10 +396,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'chat:send') {
-      const result = await this.chatService.chatSend(client.state, args[0], args[1]);
+      const sendOptions = args[2] && typeof args[2] === 'object'
+        ? args[2]
+        : {};
+      const result = await this.chatService.chatSend(client.state, args[0], args[1], sendOptions);
       if ((result as any)?.ok && (result as any)?.message) {
         const room = await getRoomById((result as any).message.roomId);
-        const silentRequested = Boolean((args[2] as any)?.silent);
+        const silentRequested = Boolean((sendOptions as any)?.silent);
         const skipPush = silentRequested && client.state?.user?.nickname === SYSTEM_NICKNAME;
         if (room) {
           this.broadcastToRoomMembers(room, 'chat:message', (result as any).message);
@@ -407,7 +410,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             void this.webPushService.sendChatMessagePush({
               room,
               message: (result as any).message,
-              senderId: Number((result as any).message.authorId || 0),
+              senderId: Number(client.state?.user?.id || 0),
               excludeUserIds: this.getOnlineUserIds(),
             });
           }

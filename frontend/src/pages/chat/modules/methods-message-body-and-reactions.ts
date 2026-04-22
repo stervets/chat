@@ -1,5 +1,11 @@
 import {
+  PINNED_PANEL_HEIGHT_RATIO_STORAGE_KEY,
+  getPinnedCollapsedStorageKey,
+  loadBooleanSetting,
+  loadNumberSetting,
   nextTick,
+  persistBooleanSetting,
+  persistNumberSetting,
   ws,
   REACTION_EMOJIS,
   VIRTUAL_MAX_ITEMS,
@@ -11,6 +17,109 @@ import type {
   LinkPreview,
 } from './shared';
 export const chatMethodsMessageBodyAndReactions = {
+    clampPinnedPanelHeightRatio(this: any, valueRaw: unknown) {
+      const value = Number(valueRaw);
+      if (!Number.isFinite(value)) return 0.24;
+      return Math.min(0.5, Math.max(0.14, value));
+    },
+
+    loadPinnedCollapsedState(this: any, roomIdRaw: unknown) {
+      const key = getPinnedCollapsedStorageKey(roomIdRaw);
+      if (!key) return false;
+      return loadBooleanSetting(key, false);
+    },
+
+    persistPinnedCollapsedState(this: any, roomIdRaw: unknown, valueRaw: unknown) {
+      const key = getPinnedCollapsedStorageKey(roomIdRaw);
+      if (!key) return;
+      persistBooleanSetting(key, !!valueRaw);
+    },
+
+    loadPinnedPanelLayoutState(this: any) {
+      this.pinnedPanelHeightRatio = this.clampPinnedPanelHeightRatio(
+        loadNumberSetting(PINNED_PANEL_HEIGHT_RATIO_STORAGE_KEY, 0.24, 0.14, 0.5),
+      );
+      if (!this.activeDialog?.id) return;
+      this.pinnedCollapsed = this.loadPinnedCollapsedState(this.activeDialog.id);
+    },
+
+    persistPinnedPanelHeightRatio(this: any) {
+      persistNumberSetting(
+        PINNED_PANEL_HEIGHT_RATIO_STORAGE_KEY,
+        this.clampPinnedPanelHeightRatio(this.pinnedPanelHeightRatio),
+        0.14,
+        0.5,
+      );
+    },
+
+    bindPinnedSplitterDragHandlers(this: any) {
+      if (typeof window === 'undefined') return;
+      if (!this.pinnedSplitterPointerMoveHandler) {
+        this.pinnedSplitterPointerMoveHandler = (event: PointerEvent) => this.onPinnedSplitterPointerMove(event);
+      }
+      if (!this.pinnedSplitterPointerUpHandler) {
+        this.pinnedSplitterPointerUpHandler = () => this.onPinnedSplitterPointerUp();
+      }
+
+      window.addEventListener('pointermove', this.pinnedSplitterPointerMoveHandler);
+      window.addEventListener('pointerup', this.pinnedSplitterPointerUpHandler);
+      window.addEventListener('pointercancel', this.pinnedSplitterPointerUpHandler);
+
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+    },
+
+    unbindPinnedSplitterDragHandlers(this: any) {
+      if (typeof window === 'undefined') return;
+      if (this.pinnedSplitterPointerMoveHandler) {
+        window.removeEventListener('pointermove', this.pinnedSplitterPointerMoveHandler);
+      }
+      if (this.pinnedSplitterPointerUpHandler) {
+        window.removeEventListener('pointerup', this.pinnedSplitterPointerUpHandler);
+        window.removeEventListener('pointercancel', this.pinnedSplitterPointerUpHandler);
+      }
+
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    },
+
+    onPinnedSplitterPointerDown(this: any, event: PointerEvent) {
+      if (!this.shouldShowPinnedPanel || this.pinnedCollapsed) return;
+      if (typeof window === 'undefined') return;
+
+      const contentEl = this.chatContentEl as HTMLElement | null;
+      if (!contentEl) return;
+      const rect = contentEl.getBoundingClientRect();
+      const containerHeight = Number(rect.height || 0);
+      if (!Number.isFinite(containerHeight) || containerHeight <= 0) return;
+
+      this.pinnedSplitterDragState = {
+        startY: Number(event.clientY || 0),
+        startRatio: this.clampPinnedPanelHeightRatio(this.pinnedPanelHeightRatio),
+        containerHeight,
+      };
+      this.bindPinnedSplitterDragHandlers();
+    },
+
+    onPinnedSplitterPointerMove(this: any, event: PointerEvent) {
+      const state = this.pinnedSplitterDragState;
+      if (!state) return;
+      const deltaY = Number(event.clientY || 0) - Number(state.startY || 0);
+      const next = Number(state.startRatio || 0) + (deltaY / Number(state.containerHeight || 1));
+      this.pinnedPanelHeightRatio = this.clampPinnedPanelHeightRatio(next);
+    },
+
+    onPinnedSplitterPointerUp(this: any) {
+      if (!this.pinnedSplitterDragState) return;
+      this.persistPinnedPanelHeightRatio();
+      this.stopPinnedSplitterDrag();
+    },
+
+    stopPinnedSplitterDrag(this: any) {
+      this.pinnedSplitterDragState = null;
+      this.unbindPinnedSplitterDragHandlers();
+    },
+
     escapeHtml(this: any, valueRaw: unknown) {
       return String(valueRaw ?? '')
         .replace(/&/g, '&amp;')
@@ -234,11 +343,6 @@ export const chatMethodsMessageBodyAndReactions = {
         return false;
       }
       this.activePinnedMessage = null;
-      this.pinnedCollapsed = false;
-      this.syncPinnedHiddenStateByPayload({
-        roomId: this.activeDialog.id,
-        pinnedMessageId: null,
-      });
       return true;
     },
 
@@ -258,60 +362,24 @@ export const chatMethodsMessageBodyAndReactions = {
       if (Number(this.activeDialog?.id || 0) !== roomId) return;
       if (this.activeDialog?.kind === 'direct') {
         this.activePinnedMessage = null;
-        this.pinnedCollapsed = false;
-        this.syncPinnedHiddenStateByPayload({roomId, pinnedMessageId: null});
         return;
       }
 
       const pinnedMessageRaw = payloadRaw?.pinnedMessage;
       if (pinnedMessageRaw && typeof pinnedMessageRaw === 'object') {
         this.activePinnedMessage = this.normalizeMessage(pinnedMessageRaw);
-        this.pinnedCollapsed = false;
-        this.syncPinnedHiddenStateByPayload({
-          roomId,
-          pinnedMessageId: Number(this.activePinnedMessage?.id || 0) || null,
-        });
+        this.pinnedCollapsed = this.loadPinnedCollapsedState(roomId);
         return;
       }
       this.activePinnedMessage = null;
-      this.pinnedCollapsed = false;
-      this.syncPinnedHiddenStateByPayload({
-        roomId,
-        pinnedMessageId: null,
-      });
     },
 
     togglePinnedCollapsed(this: any) {
       if (!this.shouldShowPinnedPanel) return;
       this.hapticTap();
-      this.pinnedCollapsed = !this.pinnedCollapsed;
-    },
-
-    dismissPinnedForRoom(this: any) {
-      if (!this.activeDialog || this.activeDialog.kind !== 'group') return;
-      const roomId = Number(this.activeDialog.id || 0);
-      const pinnedId = Number(this.activePinnedMessage?.id || 0);
-      if (!Number.isFinite(roomId) || roomId <= 0 || !Number.isFinite(pinnedId) || pinnedId <= 0) return;
-      this.hapticTap();
-      this.pinnedHiddenByRoom = {
-        ...(this.pinnedHiddenByRoom || {}),
-        [roomId]: pinnedId,
-      };
-    },
-
-    syncPinnedHiddenStateByPayload(this: any, payloadRaw: any) {
-      const roomId = Number(payloadRaw?.roomId || 0);
-      if (!Number.isFinite(roomId) || roomId <= 0) return;
-
-      const pinnedId = Number(payloadRaw?.pinnedMessageId || 0);
-      const next = {...(this.pinnedHiddenByRoom || {})};
-      const hiddenPinnedId = Number(next[roomId] || 0);
-      if (pinnedId <= 0) {
-        delete next[roomId];
-      } else if (hiddenPinnedId > 0 && hiddenPinnedId !== pinnedId) {
-        delete next[roomId];
-      }
-      this.pinnedHiddenByRoom = next;
+      const next = !this.pinnedCollapsed;
+      this.pinnedCollapsed = next;
+      this.persistPinnedCollapsedState(this.activeDialog?.id, next);
     },
 
     onPinnedBodyClick(this: any, event: MouseEvent) {

@@ -15,7 +15,12 @@ export function createChatPageState() {
     messages: ref<Message[]>([]),
     activePinnedMessage: ref<Message | null>(null),
     pinnedCollapsed: ref(false),
-    pinnedHiddenByRoom: ref<Record<number, number>>({}),
+    pinnedPanelHeightRatio: ref(0.24),
+    pinnedSplitterDragState: ref<{
+      startY: number;
+      startRatio: number;
+      containerHeight: number;
+    } | null>(null),
     scriptRuntimeManager: ref<ScriptRuntimeManager | null>(null),
     scriptMessageViewModels: ref<Record<number, Record<string, any>>>({}),
     activeRoomScript: ref<any | null>(null),
@@ -40,10 +45,16 @@ export function createChatPageState() {
     virtualRangeEnd: ref(0),
     virtualSyncScheduled: ref(false),
     messagesEl: ref<HTMLDivElement | null>(null),
+    chatContentEl: ref<HTMLDivElement | null>(null),
     messageInputEl: ref<HTMLTextAreaElement | null>(null),
     galleryInputEl: ref<HTMLInputElement | null>(null),
     showScrollDown: ref(false),
     forceOwnScrollDown: ref(false),
+    pendingAnonymousOwnMessage: ref<{
+      roomId: number;
+      messageId: number;
+      createdAt: number;
+    } | null>(null),
     freshMessageIds: ref<Record<number, true>>({}),
     freshMessageTimers: ref<Record<number, number>>({}),
     blinkMessageId: ref<number | null>(null),
@@ -117,6 +128,7 @@ export function createChatPageState() {
 
     newPassword: ref(''),
     pasteUploading: ref(false),
+    sendAnonymous: ref(false),
 
     chatMessageHandler: ref<Function | null>(null),
     chatMessageUpdatedHandler: ref<Function | null>(null),
@@ -135,5 +147,7 @@ export function createChatPageState() {
     windowFocusHandler: ref<Function | null>(null),
     windowBlurHandler: ref<Function | null>(null),
     visibilityChangeHandler: ref<Function | null>(null),
+    pinnedSplitterPointerMoveHandler: ref<Function | null>(null),
+    pinnedSplitterPointerUpHandler: ref<Function | null>(null),
   };
 }

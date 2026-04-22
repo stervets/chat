@@ -19,9 +19,11 @@ export async function runMessagesCleanup(logger: CleanupLogger = console as Clea
         where id in (
           select id from (
             select
-              id,
-              row_number() over (partition by room_id order by created_at desc, id desc) as rn
-            from messages
+              m.id,
+              row_number() over (partition by m.room_id order by m.created_at desc, m.id desc) as rn
+            from messages m
+            left join rooms r on r.id = m.room_id
+            where r.pinned_message_id is null or r.pinned_message_id <> m.id
           ) ranked
           where rn > ${MAX_MESSAGES_PER_ROOM}
         )

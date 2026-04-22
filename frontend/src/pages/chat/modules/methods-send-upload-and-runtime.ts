@@ -292,11 +292,23 @@ export const chatMethodsSendUploadAndRuntime = {
 
       const text = String(textRaw || '').trim();
       if (!text) return false;
+      const anonymous = !!this.sendAnonymous;
 
-      const result = await ws.request('chat:send', this.activeDialog.id, text);
+      const result = await ws.request('chat:send', this.activeDialog.id, text, {anonymous});
       if (!(result as any)?.ok) {
         this.error = 'Не удалось отправить сообщение.';
         return false;
+      }
+      const createdMessageId = Number((result as any)?.message?.id || 0);
+
+      if (anonymous) {
+        this.pendingAnonymousOwnMessage = {
+          roomId: Number(this.activeDialog.id || 0),
+          messageId: Number.isFinite(createdMessageId) ? createdMessageId : 0,
+          createdAt: Date.now(),
+        };
+      } else {
+        this.pendingAnonymousOwnMessage = null;
       }
 
       this.hapticConfirm();
@@ -416,7 +428,9 @@ export const chatMethodsSendUploadAndRuntime = {
         return;
       }
 
-      const ownMessage = normalized.authorId === this.me?.id;
+      const ownByAuthor = normalized.authorId === this.me?.id;
+      const ownByAnonymousEcho = this.consumeAnonymousOwnMessageCandidate(normalized);
+      const ownMessage = ownByAuthor || ownByAnonymousEcho;
       const isCurrentDialogMessage = this.activeDialog?.id === normalized.roomId;
       const addressedToMe = this.isMessageAddressedToMe(normalized);
 
@@ -502,24 +516,17 @@ export const chatMethodsSendUploadAndRuntime = {
       this.updateFaviconBlinkByUnread();
 
       if (this.activeDialog?.id !== roomId) {
-        const nextHiddenPinnedByRoom = {...(this.pinnedHiddenByRoom || {})};
-        delete nextHiddenPinnedByRoom[roomId];
-        this.pinnedHiddenByRoom = nextHiddenPinnedByRoom;
         await this.fetchDirectDialogs();
         return;
       }
 
       this.messages = [];
       this.activePinnedMessage = null;
-      this.pinnedCollapsed = false;
       this.notifyMessagesChanged();
       this.cancelMessageEdit();
       this.reactionPickerMessageId = null;
       this.reactionTooltipVisible = false;
       this.resetMessagePreviewCache();
-      const nextHiddenPinnedByRoom = {...(this.pinnedHiddenByRoom || {})};
-      delete nextHiddenPinnedByRoom[roomId];
-      this.pinnedHiddenByRoom = nextHiddenPinnedByRoom;
 
       this.generalDialog = await this.fetchGeneralDialog();
       if (this.generalDialog) {
@@ -529,6 +536,32 @@ export const chatMethodsSendUploadAndRuntime = {
         this.setActiveRoomScript(null);
       }
       await this.fetchDirectDialogs();
+    },
+
+    consumeAnonymousOwnMessageCandidate(this: any, message: Message) {
+      const candidate = this.pendingAnonymousOwnMessage;
+      if (!candidate) return false;
+
+      const ageMs = Date.now() - Number(candidate.createdAt || 0);
+      if (ageMs > 8000) {
+        this.pendingAnonymousOwnMessage = null;
+        return false;
+      }
+
+      const messageAuthorId = Number(message.authorId || 0);
+      const roomId = Number(message.roomId || 0);
+      const candidateRoomId = Number(candidate.roomId || 0);
+      if (messageAuthorId > 0 || roomId !== candidateRoomId) {
+        return false;
+      }
+
+      const candidateMessageId = Number(candidate.messageId || 0);
+      if (!candidateMessageId || Number(message.id || 0) !== candidateMessageId) {
+        return false;
+      }
+
+      this.pendingAnonymousOwnMessage = null;
+      return true;
     },
 
     onDisconnected(this: any) {

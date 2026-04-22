@@ -69,6 +69,10 @@ export class ScriptableService {
     scriptRunnerClient.start();
   }
 
+  stopRunnerClient() {
+    scriptRunnerClient.stop();
+  }
+
   private toScriptStatePayload(input: {
     roomId: number;
     entityType: ScriptEntityType;

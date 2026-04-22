@@ -47,11 +47,31 @@ export default {
     filteredUsers(this: any) {
       const query = this.searchQuery.trim().toLowerCase().replace(/^@+/, '');
       if (!query) return [];
-      return this.users.filter((user: User) => {
-        const byName = user.name.toLowerCase().includes(query);
-        const byNickname = user.nickname.toLowerCase().includes(query);
-        return byName || byNickname;
+      const matched = this.users
+        .map((user: User) => {
+          const name = String(user.name || '').toLowerCase();
+          const nickname = String(user.nickname || '').toLowerCase();
+          const byName = name.includes(query);
+          const byNickname = nickname.includes(query);
+          if (!byName && !byNickname) return null;
+
+          let score = 0;
+          if (nickname === query) score += 120;
+          if (name === query) score += 100;
+          if (nickname.startsWith(query)) score += 60;
+          if (name.startsWith(query)) score += 50;
+          if (byNickname) score += 20;
+          if (byName) score += 10;
+
+          return {user, score};
+        })
+        .filter(Boolean) as Array<{user: User; score: number}>;
+
+      matched.sort((left, right) => {
+        if (left.score !== right.score) return right.score - left.score;
+        return Number(left.user.id || 0) - Number(right.user.id || 0);
       });
+      return matched.map((item) => item.user);
     },
 
     unreadNotificationsCount(this: any) {
@@ -168,17 +188,15 @@ export default {
     shouldShowPinnedPanel(this: any) {
       if (!this.activeDialog || !this.activePinnedMessage) return false;
       if (this.activeDialog.kind === 'direct') return false;
-
-      const roomId = Number(this.activeDialog.id || 0);
-      if (!Number.isFinite(roomId) || roomId <= 0) return false;
-
-      const pinnedId = Number(this.activePinnedMessage.id || 0);
-      const hiddenPinnedId = Number(this.pinnedHiddenByRoom?.[roomId] || 0);
-      if (this.activeDialog.kind === 'group' && hiddenPinnedId > 0 && hiddenPinnedId === pinnedId) {
-        return false;
-      }
-
       return true;
+    },
+
+    pinnedPanelStyle(this: any) {
+      if (!this.shouldShowPinnedPanel || this.pinnedCollapsed) return {};
+      const ratio = this.clampPinnedPanelHeightRatio(this.pinnedPanelHeightRatio);
+      return {
+        height: `${(ratio * 100).toFixed(2)}%`,
+      };
     },
   },
 
@@ -272,6 +290,7 @@ export default {
     document.addEventListener('visibilitychange', this.visibilityChangeHandler);
 
     this.initLayout();
+    this.loadPinnedPanelLayoutState();
     this.windowFocused = typeof document !== 'undefined' ? document.hasFocus() : true;
     this.documentVisible = typeof document !== 'undefined' ? !document.hidden : true;
     this.badgeNowTs = Date.now();
@@ -337,6 +356,7 @@ export default {
     }
     setWsReconnectDialogResolver(null);
     this.persistHandledMessageNotificationIds();
+    this.stopPinnedSplitterDrag();
     this.disposeScriptRuntimeManager();
   },
 };

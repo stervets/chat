@@ -1,4 +1,4 @@
-import {Injectable} from '@nestjs/common';
+import {Injectable, type OnApplicationShutdown} from '@nestjs/common';
 import type {SocketState} from '../protocol.js';
 import {ChatAuthService} from './chat-auth.service.js';
 import {ChatContext} from './chat-context.js';
@@ -11,7 +11,7 @@ import {ChatUsersService} from './chat-users.service.js';
 import {ScriptableService} from '../../scriptable/service.js';
 
 @Injectable()
-export class ChatService {
+export class ChatService implements OnApplicationShutdown {
   private readonly ctx = new ChatContext();
   private readonly authService = new ChatAuthService(this.ctx);
   private readonly usersService = new ChatUsersService(this.ctx);
@@ -24,6 +24,10 @@ export class ChatService {
 
   constructor() {
     this.scriptableService.startRunnerClient();
+  }
+
+  onApplicationShutdown() {
+    this.scriptableService.stopRunnerClient();
   }
 
   authLogin(state: SocketState, payload: any) {
@@ -118,8 +122,8 @@ export class ChatService {
     return this.dialogsService.dialogsDelete(state, roomIdRaw, optionsRaw);
   }
 
-  chatSend(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown) {
-    return this.messagesService.chatSend(state, roomIdRaw, bodyRaw);
+  chatSend(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown, optionsRaw?: any) {
+    return this.messagesService.chatSend(state, roomIdRaw, bodyRaw, optionsRaw);
   }
 
   chatEdit(state: SocketState, messageIdRaw: unknown, bodyRaw: unknown) {

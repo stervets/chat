@@ -73,8 +73,9 @@ cd /home/lisov/projects/chat/backend
 3. применить SQL;
 4. собрать backend и поднять обратно.
 
-Для King stage 1 актуален файл:
+Актуальные ручные SQL (если применяешь вручную, а не через `prisma migrate deploy`):
 - `backend/prisma/manual/20260421_king_stage1.sql`
+- `backend/prisma/manual/20260422_allow_non_unique_user_names.sql`
 
 После King stage 1 нужно засидить ботов:
 ```bash

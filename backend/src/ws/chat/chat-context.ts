@@ -21,6 +21,9 @@ export const DONATION_BADGE_TTL_DAYS = 30;
 export const MAX_MESSAGES_PAGE_LIMIT = 100;
 export const MAX_MESSAGES_PER_ROOM = 5000;
 export const SYSTEM_NICKNAME = 'marx';
+export const ANONYMOUS_AUTHOR_ID = 0;
+export const ANONYMOUS_AUTHOR_NICKNAME = 'anonymous';
+export const ANONYMOUS_AUTHOR_NAME = 'Аноним';
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const UPLOAD_LINK_RE = /\/uploads\/([a-zA-Z0-9._-]+)/gi;
@@ -88,6 +91,17 @@ type RoomMessageRenderContext = {
   timelineSize: number;
 };
 
+type MessageAuthorSource = {
+  senderId?: number | null;
+  sender?: {
+    id?: number;
+    nickname?: string | null;
+    name?: string | null;
+    nicknameColor?: string | null;
+    donationBadgeUntil?: Date | string | null;
+  } | null;
+};
+
 export class ChatContext {
   isUniqueError(err: unknown) {
     return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
@@ -127,10 +141,12 @@ export class ChatContext {
         where id in (
           select id from (
             select
-              id,
-              row_number() over (order by created_at desc, id desc) as rn
-            from messages
-            where room_id = ${roomId}
+              m.id,
+              row_number() over (order by m.created_at desc, m.id desc) as rn
+            from messages m
+            left join rooms r on r.id = m.room_id
+            where m.room_id = ${roomId}
+              and (r.pinned_message_id is null or r.pinned_message_id <> m.id)
           ) ranked
           where rn > ${MAX_MESSAGES_PER_ROOM}
         )
@@ -219,6 +235,38 @@ export class ChatContext {
       nicknameColor: user.nicknameColor || DEFAULT_NICKNAME_COLOR,
       donationBadgeUntil: this.normalizeDonationBadgeUntil(user.donationBadgeUntil),
       pushDisableAllMentions: !!user.pushDisableAllMentions,
+    };
+  }
+
+  toMessageAuthor(source: MessageAuthorSource) {
+    const sender = source?.sender;
+    if (sender?.id && sender.id > 0) {
+      return {
+        authorId: sender.id,
+        authorNickname: String(sender.nickname || '').trim() || 'deleted',
+        authorName: String(sender.name || sender.nickname || '').trim() || 'deleted',
+        authorNicknameColor: sender.nicknameColor || DEFAULT_NICKNAME_COLOR,
+        authorDonationBadgeUntil: this.normalizeDonationBadgeUntil(sender.donationBadgeUntil || null),
+      };
+    }
+
+    const senderId = Number(source?.senderId || 0);
+    if (!Number.isFinite(senderId) || senderId <= 0) {
+      return {
+        authorId: ANONYMOUS_AUTHOR_ID,
+        authorNickname: ANONYMOUS_AUTHOR_NICKNAME,
+        authorName: ANONYMOUS_AUTHOR_NAME,
+        authorNicknameColor: null,
+        authorDonationBadgeUntil: null,
+      };
+    }
+
+    return {
+      authorId: senderId,
+      authorNickname: 'deleted',
+      authorName: 'deleted',
+      authorNicknameColor: DEFAULT_NICKNAME_COLOR,
+      authorDonationBadgeUntil: null,
     };
   }
 
@@ -360,7 +408,10 @@ export class ChatContext {
         const timeLabel = this.formatMessageTime(row.createdAt);
         if (!timeLabels.has(timeLabel)) return;
 
-        const tooltip = this.buildTimeReferenceTooltip(row.rawText, row.sender?.nickname || 'deleted');
+        const tooltip = this.buildTimeReferenceTooltip(
+          row.rawText,
+          row.sender?.nickname || ANONYMOUS_AUTHOR_NICKNAME,
+        );
         const candidates = timeCandidatesByLabel.get(timeLabel) || [];
         candidates.push({
           id: row.id,
@@ -474,16 +525,21 @@ export class ChatContext {
       }
       : await this.compileMessageForRoom(roomId, String(messageRow.rawText || ''), messageRow.id);
 
+    const author = this.toMessageAuthor({
+      senderId: messageRow.senderId,
+      sender: messageRow.sender,
+    });
+
     return {
       id: messageRow.id,
       roomId: messageRow.roomId,
       dialogId: messageRow.roomId,
       kind: messageRow.kind || 'text',
-      authorId: messageRow.sender?.id || messageRow.senderId || 0,
-      authorNickname: messageRow.sender?.nickname || 'deleted',
-      authorName: messageRow.sender?.name || messageRow.sender?.nickname || 'deleted',
-      authorNicknameColor: messageRow.sender?.nicknameColor || DEFAULT_NICKNAME_COLOR,
-      authorDonationBadgeUntil: this.normalizeDonationBadgeUntil(messageRow.sender?.donationBadgeUntil || null),
+      authorId: author.authorId,
+      authorNickname: author.authorNickname,
+      authorName: author.authorName,
+      authorNicknameColor: author.authorNicknameColor,
+      authorDonationBadgeUntil: author.authorDonationBadgeUntil,
       rawText: compiled.rawText,
       renderedHtml: compiled.renderedHtml,
       renderedPreviews: compiled.renderedPreviews,

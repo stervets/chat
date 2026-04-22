@@ -5,6 +5,8 @@ export const SOUND_OVERLAY_SKIP_ONCE_KEY = 'chat:sound-overlay-skip-once:v1';
 export const BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY = 'chat:browser-notifications-enabled:v1';
 export const WEB_PUSH_ENABLED_STORAGE_KEY = 'chat:web-push-enabled:v1';
 export const VIBRATION_ENABLED_STORAGE_KEY = 'chat:vibration-enabled:v1';
+export const PINNED_PANEL_HEIGHT_RATIO_STORAGE_KEY = 'chat:pinned-panel-height-ratio:v1';
+export const PINNED_COLLAPSED_STORAGE_PREFIX = 'chat:pinned-collapsed:v1';
 
 function hasWindow() {
   return typeof window !== 'undefined';
@@ -89,6 +91,29 @@ export function loadBooleanSetting(storageKey: string, fallbackValue = true) {
 export function persistBooleanSetting(storageKey: string, value: boolean) {
   if (!hasWindow()) return;
   window.localStorage.setItem(storageKey, value ? '1' : '0');
+}
+
+export function getPinnedCollapsedStorageKey(roomIdRaw: unknown) {
+  const roomId = Number(roomIdRaw || 0);
+  if (!Number.isFinite(roomId) || roomId <= 0) return '';
+  return `${PINNED_COLLAPSED_STORAGE_PREFIX}:${roomId}`;
+}
+
+export function loadNumberSetting(storageKey: string, fallbackValue: number, min: number, max: number) {
+  if (!hasWindow()) return fallbackValue;
+  const raw = String(window.localStorage.getItem(storageKey) || '').trim();
+  if (!raw) return fallbackValue;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallbackValue;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+export function persistNumberSetting(storageKey: string, valueRaw: unknown, min: number, max: number) {
+  if (!hasWindow()) return;
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value)) return;
+  const clamped = Math.min(max, Math.max(min, value));
+  window.localStorage.setItem(storageKey, String(clamped));
 }
 
 export function consumeSessionFlagOnce(storageKey: string, expectedValue = '1') {

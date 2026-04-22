@@ -32,6 +32,7 @@
 - админ комнаты: `rooms.created_by` (только для non-direct; `direct` без админа)
 - закреп комнаты: `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`)
 - push-настройка пользователя: `users.push_disable_all_mentions`
+- `users.name` не уникален (поиск пользователей работает по `name` и `nickname` с несколькими совпадениями)
 
 Scriptable расширение:
 - `messages.kind = text | system | scriptable`
@@ -47,6 +48,7 @@ Scriptable расширение:
 В `src/db.ts` на старте:
 - проверяется подключение к PostgreSQL;
 - нормализуется `users.nickname` + constraints;
+- снимаются legacy unique-constraints/индексы с `users.name` и создаётся обычный индекс `users_name_idx`;
 - добавляется `users.donation_badge_until`, если нет;
 - добавляются `users.push_disable_all_mentions` и `rooms.pinned_message_id` (+ FK/index), если нет;
 - создаются runtime индексы `rooms_kind_idx`, `rooms_users_user_idx`.
@@ -55,6 +57,7 @@ Scriptable расширение:
 
 `src/jobs/cleanup.ts`:
 - хранит максимум `5000` сообщений на комнату;
+- закреплённое сообщение (`rooms.pinned_message_id`) не удаляется лимитом;
 - удаляет старые upload-файлы старше `30` дней.
 
 `messagesTtlDays` в рабочем backend больше не используется.
@@ -95,7 +98,9 @@ WS пакет:
 - room pinned message (пин/анпин, realtime event `chat:pinned`, отдельная pinned-панель над лентой);
   - закреп только для админа non-direct комнаты;
   - в direct закреп отключён;
-  - pinned-панель можно свернуть/скрыть локально, с лимитом высоты 50% чата;
+  - pinned-панель можно свернуть локально, состояние хранится в `localStorage`;
+  - размер pinned-панели регулируется drag-разделителем (`Element Plus ElDivider`) и сохраняется в `localStorage`;
+- анонимная отправка: `chat:send(..., {anonymous:true})` создаёт сообщение с `sender_id = NULL`.
 - mention-резолв: `@nickname` + fallback `@Name` (без NLP, с предсказуемым matching);
 - image preview открывается во fullscreen overlay в текущем окне (без новой вкладки);
 - PWA install card поддерживает Telegram in-app fallback hint;
