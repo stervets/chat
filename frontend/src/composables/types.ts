@@ -26,6 +26,7 @@ export type Dialog = {
   kind: DialogKind;
   title?: string;
   targetUser?: User;
+  createdById?: Id | null;
   pinnedMessageId?: Id | null;
 };
 

@@ -14,6 +14,8 @@ export function createChatPageState() {
 
     messages: ref<Message[]>([]),
     activePinnedMessage: ref<Message | null>(null),
+    pinnedCollapsed: ref(false),
+    pinnedHiddenByRoom: ref<Record<number, number>>({}),
     scriptRuntimeManager: ref<ScriptRuntimeManager | null>(null),
     scriptMessageViewModels: ref<Record<number, Record<string, any>>>({}),
     activeRoomScript: ref<any | null>(null),
@@ -87,7 +89,7 @@ export function createChatPageState() {
     profileColorPicker: ref('#61afef'),
     profileSaving: ref(false),
     profileError: ref(''),
-    directDeletePending: ref(false),
+    roomDeletePending: ref(false),
     soundEnabled: ref(true),
     vibrationEnabled: ref(true),
     soundOverlayVisible: ref(false),

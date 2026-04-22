@@ -13,6 +13,7 @@
 
 ## Ключевая модель данных
 - `rooms`, `rooms_users`, `messages`, `message_reactions`, `sessions`, `push_subscriptions`.
+- админ комнаты: `rooms.created_by` (только для non-direct, в direct админа нет).
 - `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`).
 - `users.push_disable_all_mentions` — отключение push от `@all`.
 - scriptable поля:

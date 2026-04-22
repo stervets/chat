@@ -211,7 +211,9 @@ export const chatMethodsMessageBodyAndReactions = {
       if (!this.activeDialog?.id) return false;
       const result = await ws.request('chat:pin', this.activeDialog.id, message.id);
       if (!(result as any)?.ok) {
-        this.error = 'Не удалось закрепить сообщение.';
+        this.error = (result as any)?.error === 'forbidden'
+          ? 'Только админ комнаты может закреплять.'
+          : 'Не удалось закрепить сообщение.';
         return false;
       }
 
@@ -226,15 +228,23 @@ export const chatMethodsMessageBodyAndReactions = {
       if (!this.activeDialog?.id) return false;
       const result = await ws.request('chat:unpin', this.activeDialog.id);
       if (!(result as any)?.ok) {
-        this.error = 'Не удалось открепить сообщение.';
+        this.error = (result as any)?.error === 'forbidden'
+          ? 'Только админ комнаты может удалять закреп.'
+          : 'Не удалось открепить сообщение.';
         return false;
       }
       this.activePinnedMessage = null;
+      this.pinnedCollapsed = false;
+      this.syncPinnedHiddenStateByPayload({
+        roomId: this.activeDialog.id,
+        pinnedMessageId: null,
+      });
       return true;
     },
 
     async onTogglePinnedMessage(this: any, message: Message) {
       this.hapticTap();
+      if (!this.canManagePinnedMessages) return;
       if (Number(this.activePinnedMessage?.id || 0) === Number(message.id || 0)) {
         await this.unpinActiveMessage();
         return;
@@ -246,22 +256,75 @@ export const chatMethodsMessageBodyAndReactions = {
       const roomId = Number(payloadRaw?.roomId || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return;
       if (Number(this.activeDialog?.id || 0) !== roomId) return;
+      if (this.activeDialog?.kind === 'direct') {
+        this.activePinnedMessage = null;
+        this.pinnedCollapsed = false;
+        this.syncPinnedHiddenStateByPayload({roomId, pinnedMessageId: null});
+        return;
+      }
 
       const pinnedMessageRaw = payloadRaw?.pinnedMessage;
       if (pinnedMessageRaw && typeof pinnedMessageRaw === 'object') {
         this.activePinnedMessage = this.normalizeMessage(pinnedMessageRaw);
+        this.pinnedCollapsed = false;
+        this.syncPinnedHiddenStateByPayload({
+          roomId,
+          pinnedMessageId: Number(this.activePinnedMessage?.id || 0) || null,
+        });
         return;
       }
       this.activePinnedMessage = null;
+      this.pinnedCollapsed = false;
+      this.syncPinnedHiddenStateByPayload({
+        roomId,
+        pinnedMessageId: null,
+      });
     },
 
-    async onPinnedMessageClick(this: any) {
-      const pinnedMessageId = Number(this.activePinnedMessage?.id || 0);
-      if (!Number.isFinite(pinnedMessageId) || pinnedMessageId <= 0) return;
+    togglePinnedCollapsed(this: any) {
+      if (!this.shouldShowPinnedPanel) return;
       this.hapticTap();
-      const loaded = await this.ensureMessageLoadedById(pinnedMessageId);
-      if (!loaded) return;
-      await this.scrollToMessageById(pinnedMessageId);
+      this.pinnedCollapsed = !this.pinnedCollapsed;
+    },
+
+    dismissPinnedForRoom(this: any) {
+      if (!this.activeDialog || this.activeDialog.kind !== 'group') return;
+      const roomId = Number(this.activeDialog.id || 0);
+      const pinnedId = Number(this.activePinnedMessage?.id || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0 || !Number.isFinite(pinnedId) || pinnedId <= 0) return;
+      this.hapticTap();
+      this.pinnedHiddenByRoom = {
+        ...(this.pinnedHiddenByRoom || {}),
+        [roomId]: pinnedId,
+      };
+    },
+
+    syncPinnedHiddenStateByPayload(this: any, payloadRaw: any) {
+      const roomId = Number(payloadRaw?.roomId || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+
+      const pinnedId = Number(payloadRaw?.pinnedMessageId || 0);
+      const next = {...(this.pinnedHiddenByRoom || {})};
+      const hiddenPinnedId = Number(next[roomId] || 0);
+      if (pinnedId <= 0) {
+        delete next[roomId];
+      } else if (hiddenPinnedId > 0 && hiddenPinnedId !== pinnedId) {
+        delete next[roomId];
+      }
+      this.pinnedHiddenByRoom = next;
+    },
+
+    onPinnedBodyClick(this: any, event: MouseEvent) {
+      if (this.pinnedCollapsed) return;
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+
+      const imageSrc = this.resolveImageSrcFromTarget(target);
+      if (!imageSrc) return;
+
+      event.preventDefault();
+      this.hapticTap();
+      this.openImageViewer(imageSrc);
     },
 
     getMessageExtraPreviews(this: any, message: Message) {

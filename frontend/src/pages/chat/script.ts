@@ -145,6 +145,41 @@ export default {
       if (!prefix.length || end >= prefix.length) return 0;
       return Math.max(0, total - Number(prefix[end] || 0));
     },
+
+    isActiveDialogAdmin(this: any) {
+      if (!this.activeDialog || !this.me?.id) return false;
+      if (this.activeDialog.kind === 'direct') return false;
+      return Number(this.activeDialog.createdById || 0) > 0
+        && Number(this.activeDialog.createdById) === Number(this.me.id);
+    },
+
+    canManagePinnedMessages(this: any) {
+      if (!this.activeDialog) return false;
+      if (this.activeDialog.kind === 'direct') return false;
+      return !!this.isActiveDialogAdmin;
+    },
+
+    canDeleteActiveRoom(this: any) {
+      if (!this.activeDialog) return false;
+      if (this.activeDialog.kind === 'direct') return true;
+      return !!this.isActiveDialogAdmin;
+    },
+
+    shouldShowPinnedPanel(this: any) {
+      if (!this.activeDialog || !this.activePinnedMessage) return false;
+      if (this.activeDialog.kind === 'direct') return false;
+
+      const roomId = Number(this.activeDialog.id || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return false;
+
+      const pinnedId = Number(this.activePinnedMessage.id || 0);
+      const hiddenPinnedId = Number(this.pinnedHiddenByRoom?.[roomId] || 0);
+      if (this.activeDialog.kind === 'group' && hiddenPinnedId > 0 && hiddenPinnedId === pinnedId) {
+        return false;
+      }
+
+      return true;
+    },
   },
 
   watch: {

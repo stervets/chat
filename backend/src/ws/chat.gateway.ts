@@ -373,7 +373,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const roomBeforeDelete = Number.isFinite(roomId) && roomId > 0
         ? await getRoomById(roomId)
         : null;
-      const result = await this.chatService.dialogsDelete(client.state, args[0]);
+      const result = await this.chatService.dialogsDelete(client.state, args[0], args[1]);
       if ((result as any)?.ok && (result as any)?.changed) {
         if (roomBeforeDelete) {
           this.broadcastToRoomMembers(roomBeforeDelete, 'dialogs:deleted', {

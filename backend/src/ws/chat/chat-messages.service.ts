@@ -1,5 +1,5 @@
 import {db} from '../../db.js';
-import {getRoomById, userCanAccessRoom} from '../../common/rooms.js';
+import {getRoomById, userCanAccessRoom, userIsRoomAdmin} from '../../common/rooms.js';
 import {
   ChatContext,
   MAX_MESSAGE_LENGTH,
@@ -251,6 +251,12 @@ export class ChatMessagesService {
     if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
+    if (room.kind === 'direct') {
+      return {ok: false, error: 'pin_not_supported'};
+    }
+    if (!userIsRoomAdmin(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
 
     const message = await db.message.findUnique({
       where: {
@@ -308,6 +314,12 @@ export class ChatMessagesService {
 
     const room = await getRoomById(roomId);
     if (!room || !userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (room.kind === 'direct') {
+      return {ok: false, error: 'pin_not_supported'};
+    }
+    if (!userIsRoomAdmin(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 

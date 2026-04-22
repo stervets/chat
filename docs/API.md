@@ -55,12 +55,12 @@ HTTP используется для upload и web-push.
 
 Важно: имена команд старые (`dialogs:*`), но объектная модель уже room-based.
 
-- `dialogs:general([])` -> `{roomId, dialogId, type:'group', title, pinnedMessageId}`
-- `dialogs:private([userId])` -> `{roomId, dialogId, type:'direct', targetUser, pinnedMessageId}`
-- `dialogs:directs([])` -> `[{roomId, dialogId, targetUser, lastMessageAt, pinnedMessageId}]`
+- `dialogs:general([])` -> `{roomId, dialogId, type:'group', title, createdById, pinnedMessageId}`
+- `dialogs:private([userId])` -> `{roomId, dialogId, type:'direct', targetUser, createdById:null, pinnedMessageId:null}`
+- `dialogs:directs([])` -> `[{roomId, dialogId, targetUser, lastMessageAt, createdById:null, pinnedMessageId:null}]`
 - `dialogs:messages([roomId, limit?, beforeMessageId?])` -> `Message[]` (старые -> новые)
-- `chat:join([roomId])` -> `{ok:true, roomId, dialogId, roomScript, pinnedMessageId, pinnedMessage}`
-- `dialogs:delete([roomId])` -> `{ok:true, changed, roomId, dialogId, kind:'direct'}`
+- `chat:join([roomId])` -> `{ok:true, roomId, dialogId, kind, createdById, roomScript, pinnedMessageId, pinnedMessage}`
+- `dialogs:delete([roomId, {confirm:true}])` -> `{ok:true, changed, roomId, dialogId, kind}`
 
 - `chat:send([roomId, body, {silent?}?])` -> `{ok:true, message}`
 - `chat:edit([messageId, body])` -> `{ok:true, changed, message}`
@@ -68,6 +68,13 @@ HTTP используется для upload и web-push.
 - `chat:pin([roomId, messageId])` -> `{ok:true, changed, roomId, dialogId, pinnedMessageId, pinnedMessage}`
 - `chat:unpin([roomId])` -> `{ok:true, changed, roomId, dialogId, pinnedMessageId:null, pinnedMessage:null}`
 - `chat:react([messageId, emoji|null])` -> `{ok:true, changed, roomId, dialogId, messageId, reactions, notify}`
+
+Ограничения:
+- `chat:pin/chat:unpin` работают только в не-direct комнатах и только для админа комнаты (`rooms.created_by`).
+- В direct закрепы отключены (`pinnedMessageId/pinnedMessage` всегда `null`).
+- `dialogs:delete` требует явный `confirm:true`.
+  - `direct` может удалить любой участник;
+  - `group/game` может удалить только админ комнаты.
 
 ### Scriptable
 - `scripts:create-message([roomId, payload])` -> `{ok:true, message}`

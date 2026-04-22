@@ -29,6 +29,7 @@
 - `rooms.kind = group | direct | game`
 - участники: `rooms_users`
 - сообщения: `messages.room_id`
+- админ комнаты: `rooms.created_by` (только для non-direct; `direct` без админа)
 - закреп комнаты: `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`)
 - push-настройка пользователя: `users.push_disable_all_mentions`
 
@@ -92,6 +93,9 @@ WS пакет:
 - session-token auth (не JWT, не cookie);
 - group/direct чат, реакции, upload, push;
 - room pinned message (пин/анпин, realtime event `chat:pinned`, отдельная pinned-панель над лентой);
+  - закреп только для админа non-direct комнаты;
+  - в direct закреп отключён;
+  - pinned-панель можно свернуть/скрыть локально, с лимитом высоты 50% чата;
 - mention-резолв: `@nickname` + fallback `@Name` (без NLP, с предсказуемым matching);
 - image preview открывается во fullscreen overlay в текущем окне (без новой вкладки);
 - PWA install card поддерживает Telegram in-app fallback hint;

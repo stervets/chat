@@ -80,7 +80,7 @@
             </div>
 
             <NuxtLink class="menu-link" to="/invites">Инвайты</NuxtLink>
-            <NuxtLink class="menu-link" to="/games">Игры</NuxtLink>
+            <!--NuxtLink class="menu-link" to="/games">Игры</NuxtLink-->
             <button class="menu-logout" @click="onLogout">Выйти из аккаунта</button>
           </div>
         </div>
@@ -123,11 +123,11 @@
             </div>
           </div>
           <button
-            v-if="activeDialog?.kind === 'direct'"
+            v-if="canDeleteActiveRoom"
             class="icon-btn delete-direct-btn"
-            :disabled="directDeletePending"
-            title="Удалить директ"
-            @click="onDeleteActiveDirect"
+            :disabled="roomDeletePending"
+            :title="activeDialog?.kind === 'direct' ? 'Удалить директ' : 'Удалить комнату'"
+            @click="onDeleteActiveRoom"
           >
             🗑
           </button>
@@ -238,29 +238,56 @@
             {{ activeRoomScriptViewModel.extra }}
           </div>
         </div>
-        <div v-if="activePinnedMessage" class="pinned-panel">
-          <button class="pinned-body" @click="onPinnedMessageClick">
-            <div class="pinned-head">
-              <span class="pinned-label">Закреп</span>
-              <span class="pinned-author" :style="getAuthorStyle(activePinnedMessage)">
-                {{ activePinnedMessage.authorName }}
-              </span>
-              <span class="pinned-time">{{ formatMessageTime(activePinnedMessage.createdAt) }}</span>
+        <div v-if="shouldShowPinnedPanel" class="pinned-panel">
+          <div class="pinned-head">
+            <span class="pinned-author" :style="getAuthorStyle(activePinnedMessage)">
+              {{ activePinnedMessage.authorName }}
+            </span>
+            <div class="pinned-actions">
+              <button
+                class="pinned-collapse-btn"
+                :title="pinnedCollapsed ? 'Развернуть закреп' : 'Свернуть закреп'"
+                @click="togglePinnedCollapsed"
+              >
+                {{ pinnedCollapsed ? '▸' : '▾' }}
+              </button>
+              <button
+                v-if="activeDialog?.kind === 'group'"
+                class="pinned-close-btn"
+                title="Скрыть закреп"
+                @click="dismissPinnedForRoom"
+              >
+                ×
+              </button>
+              <button
+                v-if="canManagePinnedMessages"
+                class="pinned-unpin-btn"
+                title="Удалить закреп"
+                @click="unpinActiveMessage"
+              >
+                откреп.
+              </button>
             </div>
-            <div
-              v-if="activePinnedMessage.kind !== 'scriptable'"
-              class="pinned-html"
-              v-html="getRenderedMessageHtml(activePinnedMessage, -1)"
-            />
+          </div>
+          <div
+            v-if="!pinnedCollapsed && activePinnedMessage.kind !== 'scriptable'"
+            class="pinned-body"
+            @click="onPinnedBodyClick"
+            v-html="getRenderedMessageHtml(activePinnedMessage, -1)"
+          />
+          <div
+            v-else-if="!pinnedCollapsed && activePinnedMessage.kind === 'scriptable'"
+            class="pinned-body"
+            @click="onPinnedBodyClick"
+          >
             <ScriptableMessage
-              v-else
               :message="activePinnedMessage"
               :view-model="getMessageScriptViewModel(activePinnedMessage)"
               @action="onMessageScriptAction"
             />
-          </button>
-          <button class="pinned-unpin-btn" title="Открепить сообщение" @click="unpinActiveMessage">×</button>
+          </div>
         </div>
+        <div v-if="shouldShowPinnedPanel" class="pinned-splitter"/>
         <div v-if="toasts.length" class="toast-stack">
           <div
             v-for="toast in toasts"
@@ -298,7 +325,7 @@
               :is-editing="editingMessageId === item.message.id"
               :editing-message-text="editingMessageText"
               :message-action-pending-id="messageActionPendingId"
-              :can-pin-message="!!activeDialog"
+              :can-pin-message="canManagePinnedMessages"
               :is-pinned-message="activePinnedMessage?.id === item.message.id"
               :can-open-direct="canOpenDirectFromMessage(item.message)"
               :author-style="getAuthorStyle(item.message)"
@@ -415,7 +442,7 @@
                 </div-->
                 <div class="composer-upload-row">
                   <button class="composer-format-btn composer-format-btn-upload" @click="openGalleryPicker">
-                    Upload img
+                    Загрузить картинку
                   </button>
                 </div>
               </div>
@@ -434,7 +461,7 @@
                 </div>
               </div>
 
-              <div class="composer-section" v-if="activeDialog">
+              <!--div class="composer-section" v-if="activeDialog">
                 <div class="composer-section-title">Scriptable demo</div>
                 <div class="composer-scriptable-row">
                   <button class="composer-format-btn" @click="createDemoFartMessage">
@@ -444,7 +471,7 @@
                     Guess word
                   </button>
                 </div>
-              </div>
+              </div-->
             </div>
           </div>
 

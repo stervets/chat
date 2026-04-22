@@ -65,7 +65,10 @@ export async function ensureUserInGroupRooms(userId: number) {
   });
 }
 
-export async function getOrCreateGroupRoom(): Promise<RoomRow> {
+export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<RoomRow> {
+  const createdById = Number(createdByIdRaw || 0);
+  const canAssignCreator = Number.isFinite(createdById) && createdById > 0;
+
   let room = await db.room.findFirst({
     where: {kind: 'group'},
     orderBy: {id: 'asc'},
@@ -95,6 +98,7 @@ export async function getOrCreateGroupRoom(): Promise<RoomRow> {
         data: {
           kind: 'group',
           title: 'Общий чат',
+          ...(canAssignCreator ? {createdById} : {}),
           ...(roomScriptDefinition
             ? {
               scriptId: roomScriptDefinition.scriptId,
@@ -254,4 +258,11 @@ export async function ensureUserInRoom(roomId: number, userId: number) {
 
 export function userCanAccessRoom(userId: number, room: RoomRow) {
   return room.member_user_ids.includes(userId);
+}
+
+export function userIsRoomAdmin(userIdRaw: unknown, room: RoomRow) {
+  const userId = Number(userIdRaw || 0);
+  if (!Number.isFinite(userId) || userId <= 0) return false;
+  if (room.kind === 'direct') return false;
+  return Number(room.created_by || 0) > 0 && Number(room.created_by) === userId;
 }

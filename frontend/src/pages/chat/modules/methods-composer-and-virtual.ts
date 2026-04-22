@@ -585,6 +585,11 @@ export const chatMethodsComposerAndVirtual = {
       }
       if (Number(this.activePinnedMessage?.id || 0) === Number(messageId || 0)) {
         this.activePinnedMessage = null;
+        this.pinnedCollapsed = false;
+        this.syncPinnedHiddenStateByPayload({
+          roomId,
+          pinnedMessageId: null,
+        });
       }
       if (this.reactionPickerMessageId === messageId) {
         this.reactionPickerMessageId = null;

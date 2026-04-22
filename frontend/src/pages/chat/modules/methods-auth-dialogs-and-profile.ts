@@ -162,6 +162,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         id: (result as any).roomId,
         kind: 'group',
         title: (result as any).title,
+        createdById: Number((result as any).createdById || 0) || null,
         pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
       } as Dialog;
     },
@@ -177,6 +178,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         kind: 'direct',
         targetUser: (result as any).targetUser,
         title: (result as any).targetUser.name,
+        createdById: null,
         pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
       } as Dialog;
     },
@@ -262,11 +264,25 @@ export const chatMethodsAuthDialogsAndProfile = {
         return;
       }
 
+      if (this.activeDialog && Number(this.activeDialog.id || 0) === roomId) {
+        this.activeDialog = {
+          ...this.activeDialog,
+          kind: String((result as any).kind || this.activeDialog.kind) === 'direct'
+            ? 'direct'
+            : this.activeDialog.kind,
+          createdById: Number((result as any).createdById || 0) || null,
+        };
+      }
+
       this.setActiveRoomScript((result as any).roomScript || null);
       const pinnedMessageRaw = (result as any).pinnedMessage;
       this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
         ? this.normalizeMessage(pinnedMessageRaw)
         : null;
+      this.syncPinnedHiddenStateByPayload({
+        roomId,
+        pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
+      });
     },
 
     async selectDialog(this: any, dialog: Dialog, optionsRaw?: {routeMode?: RouteMode}) {
@@ -277,6 +293,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.setActiveRoomScript(null);
       this.messages = [];
       this.activePinnedMessage = null;
+      this.pinnedCollapsed = false;
       this.scriptMessageViewModels = {};
       this.historyHasMore = true;
       this.historyLoadingMore = false;
@@ -352,28 +369,36 @@ export const chatMethodsAuthDialogsAndProfile = {
         kind: 'direct',
         targetUser: dialog.targetUser,
         title: dialog.targetUser.name,
+        createdById: null,
         pinnedMessageId: Number(dialog.pinnedMessageId || 0) || null,
       }, {routeMode: 'push'});
       this.closeLeftMenu();
     },
 
-    async onDeleteActiveDirect(this: any) {
-      if (this.activeDialog?.kind !== 'direct') return;
-      if (this.directDeletePending) return;
-      this.hapticTap();
-      if (!window.confirm('Удалить директ полностью? Это удалит всю переписку у обоих участников.')) return;
+    async onDeleteActiveRoom(this: any) {
+      if (!this.activeDialog?.id) return;
+      if (this.roomDeletePending) return;
+      if (this.activeDialog.kind !== 'direct' && !this.isActiveDialogAdmin) return;
 
-      this.directDeletePending = true;
+      this.hapticTap();
+      const confirmText = this.activeDialog.kind === 'direct'
+        ? 'Удалить директ полностью? Это удалит всю переписку у обоих участников.'
+        : 'Удалить комнату полностью? Это удалит всю переписку у всех участников.';
+      if (!window.confirm(confirmText)) return;
+
+      this.roomDeletePending = true;
       try {
         const roomId = this.activeDialog.id;
-        const result = await ws.request('dialogs:delete', roomId);
+        const result = await ws.request('dialogs:delete', roomId, {confirm: true});
         if (!(result as any)?.ok) {
-          this.error = 'Не удалось удалить директ.';
+          this.error = this.activeDialog.kind === 'direct'
+            ? 'Не удалось удалить директ.'
+            : 'Не удалось удалить комнату.';
           return;
         }
         await this.onDialogDeleted({roomId});
       } finally {
-        this.directDeletePending = false;
+        this.roomDeletePending = false;
       }
     },
 

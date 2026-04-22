@@ -5,6 +5,7 @@ import {
   getOrCreateDirectRoom,
   getOrCreateGroupRoom,
   userCanAccessRoom,
+  userIsRoomAdmin,
 } from '../../common/rooms.js';
 import {DEFAULT_NICKNAME_COLOR} from '../../common/const.js';
 import {
@@ -24,18 +25,20 @@ export class ChatDialogsService {
     dialogId: number;
     type: 'group';
     title: string;
+    createdById: number | null;
     pinnedMessageId: number | null;
   }> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    const room = await getOrCreateGroupRoom();
+    const room = await getOrCreateGroupRoom(state.user!.id);
     await ensureUserInRoom(room.id, state.user!.id);
     return {
       roomId: room.id,
       dialogId: room.id,
       type: 'group',
       title: room.title || 'Общий чат',
+      createdById: room.created_by || null,
       pinnedMessageId: room.pinned_message_id || null,
     };
   }
@@ -45,6 +48,7 @@ export class ChatDialogsService {
     dialogId: number;
     type: 'direct';
     targetUser: PublicUser;
+    createdById: null;
     pinnedMessageId: number | null;
   }> {
     const authError = this.ctx.requireAuth(state);
@@ -80,7 +84,8 @@ export class ChatDialogsService {
       dialogId: room.id,
       type: 'direct',
       targetUser: this.ctx.toPublicUser(targetUser),
-      pinnedMessageId: room.pinned_message_id || null,
+      createdById: null,
+      pinnedMessageId: null,
     };
   }
 
@@ -89,6 +94,7 @@ export class ChatDialogsService {
     dialogId: number;
     targetUser: PublicUser;
     lastMessageAt: string;
+    createdById: null;
     pinnedMessageId: number | null;
   }>> {
     const authError = this.ctx.requireAuth(state);
@@ -142,7 +148,8 @@ export class ChatDialogsService {
           dialogId: row.id,
           lastMessageAt: lastMessage.createdAt.toISOString(),
           targetUser: this.ctx.toPublicUser(targetUser),
-          pinnedMessageId: row.pinnedMessageId || null,
+          createdById: null,
+          pinnedMessageId: null,
         };
       })
       .filter(Boolean) as Array<{
@@ -150,6 +157,7 @@ export class ChatDialogsService {
       dialogId: number;
       targetUser: PublicUser;
       lastMessageAt: string;
+      createdById: null;
       pinnedMessageId: number | null;
     }>;
 
@@ -175,7 +183,8 @@ export class ChatDialogsService {
           dialogId: systemRoom.id,
           targetUser: this.ctx.toPublicUser(systemUser),
           lastMessageAt: new Date(0).toISOString(),
-          pinnedMessageId: systemRoom.pinned_message_id || null,
+          createdById: null,
+          pinnedMessageId: null,
         });
       }
     }
@@ -292,6 +301,8 @@ export class ChatDialogsService {
   async chatJoin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
     roomId: number;
     dialogId: number;
+    kind: 'group' | 'direct' | 'game';
+    createdById: number | null;
     roomScript: any | null;
     pinnedMessageId: number | null;
     pinnedMessage: any | null;
@@ -327,7 +338,10 @@ export class ChatDialogsService {
     });
 
     state.roomId = roomId;
-    const pinnedMessageId = Number(roomScript?.pinnedMessageId || 0);
+    const pinnedAllowed = room.kind !== 'direct';
+    const pinnedMessageId = pinnedAllowed
+      ? Number(roomScript?.pinnedMessageId || 0)
+      : 0;
     const pinnedMessage = pinnedMessageId > 0
       ? await this.ctx.loadMessagePayloadById(roomId, pinnedMessageId)
       : null;
@@ -336,8 +350,12 @@ export class ChatDialogsService {
       ok: true,
       roomId,
       dialogId: roomId,
-      pinnedMessageId: pinnedMessage?.id || (roomScript?.pinnedMessageId || null),
-      pinnedMessage,
+      kind: room.kind,
+      createdById: room.created_by || null,
+      pinnedMessageId: pinnedAllowed
+        ? (pinnedMessage?.id || (roomScript?.pinnedMessageId || null))
+        : null,
+      pinnedMessage: pinnedAllowed ? pinnedMessage : null,
       roomScript: roomScript?.scriptId && roomScript.scriptMode && Number(roomScript.scriptRevision || 0) > 0
         ? {
           entityType: 'room',
@@ -353,11 +371,11 @@ export class ChatDialogsService {
     };
   }
 
-  async dialogsDelete(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
+  async dialogsDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any): Promise<ApiError | ApiOk<{
     changed: boolean;
     roomId: number;
     dialogId: number;
-    kind: 'direct';
+    kind: 'group' | 'direct' | 'game';
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -372,17 +390,17 @@ export class ChatDialogsService {
       return {ok: false, error: 'room_not_found'};
     }
 
-    if (room.kind !== 'direct') {
-      return {ok: false, error: 'invalid_room'};
-    }
-
     if (!userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
-    const systemUserId = await this.ctx.findSystemUserId();
-    if (systemUserId && room.member_user_ids.includes(systemUserId)) {
-      return {ok: false, error: 'system_dialog_locked'};
+    const hasConfirm = optionsRaw === true || !!optionsRaw?.confirm;
+    if (!hasConfirm) {
+      return {ok: false, error: 'confirm_required'};
+    }
+
+    if (room.kind !== 'direct' && !userIsRoomAdmin(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
     }
 
     const uploadRows = await db.message.findMany({
@@ -408,7 +426,7 @@ export class ChatDialogsService {
       changed: result.count > 0,
       roomId,
       dialogId: roomId,
-      kind: 'direct',
+      kind: room.kind,
     };
   }
 }

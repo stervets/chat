@@ -114,8 +114,8 @@ export class ChatService {
     return this.dialogsService.chatJoin(state, roomIdRaw);
   }
 
-  dialogsDelete(state: SocketState, roomIdRaw: unknown) {
-    return this.dialogsService.dialogsDelete(state, roomIdRaw);
+  dialogsDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any) {
+    return this.dialogsService.dialogsDelete(state, roomIdRaw, optionsRaw);
   }
 
   chatSend(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown) {

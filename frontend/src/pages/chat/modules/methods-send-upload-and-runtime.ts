@@ -502,18 +502,26 @@ export const chatMethodsSendUploadAndRuntime = {
       this.updateFaviconBlinkByUnread();
 
       if (this.activeDialog?.id !== roomId) {
+        const nextHiddenPinnedByRoom = {...(this.pinnedHiddenByRoom || {})};
+        delete nextHiddenPinnedByRoom[roomId];
+        this.pinnedHiddenByRoom = nextHiddenPinnedByRoom;
         await this.fetchDirectDialogs();
         return;
       }
 
       this.messages = [];
       this.activePinnedMessage = null;
+      this.pinnedCollapsed = false;
       this.notifyMessagesChanged();
       this.cancelMessageEdit();
       this.reactionPickerMessageId = null;
       this.reactionTooltipVisible = false;
       this.resetMessagePreviewCache();
+      const nextHiddenPinnedByRoom = {...(this.pinnedHiddenByRoom || {})};
+      delete nextHiddenPinnedByRoom[roomId];
+      this.pinnedHiddenByRoom = nextHiddenPinnedByRoom;
 
+      this.generalDialog = await this.fetchGeneralDialog();
       if (this.generalDialog) {
         await this.selectDialog(this.generalDialog, {routeMode: 'replace'});
       } else {

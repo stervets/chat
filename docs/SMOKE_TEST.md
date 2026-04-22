@@ -59,7 +59,10 @@ yarn run invite:create
 - доставка сообщений в `group`;
 - direct-диалог между пользователями;
 - edit/delete/reactions;
-- pinned message: pin -> виден pinned block у обоих -> unpin;
+- pinned message:
+  - в `group`: pin/unpin только админ комнаты;
+  - в `direct`: pin/unpin недоступны;
+  - pinned panel: collapse/expand, hide (×), splitter, max-height 50%;
 - клик по timestamp/time-reference (без рывка scroll и с переходом к target message);
 - image preview открывается fullscreen overlay в том же окне;
 - mention по `@nickname` и `@Name`;
