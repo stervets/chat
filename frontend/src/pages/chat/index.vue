@@ -228,7 +228,8 @@
             </button>
           </div>
         </header>
-        <div
+        <!-- Временно отключено: плашка скрипта комнаты ("Счётчик комнаты"). -->
+        <!--div
           v-if="activeRoomScriptViewModel && activeRoomScriptViewModel.kind === 'room_banner'"
           class="room-script-banner"
         >
@@ -237,7 +238,7 @@
           <div v-if="activeRoomScriptViewModel.extra" class="room-script-extra">
             {{ activeRoomScriptViewModel.extra }}
           </div>
-        </div>
+        </div-->
         <div v-if="toasts.length" class="toast-stack">
           <div
             v-for="toast in toasts"

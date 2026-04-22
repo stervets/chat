@@ -97,6 +97,7 @@ yarn run frontend:dev
   - `backend/src/scriptable/registry.ts`
   - `backend/src/script-runner/registry.ts`
   - `backend/src/db.ts` (автопривязка к первой `group`-комнате)
+  - `frontend/src/pages/chat/index.vue` (скрыт баннер `room-script-banner`)
 
 ## Если трогаешь подсистему
 Auth/session:
