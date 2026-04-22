@@ -487,8 +487,64 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
         if (room) {
           this.broadcastToRoomMembers(room, 'chat:message-deleted', payload);
+          if ((result as any).pinnedCleared) {
+            this.broadcastToRoomMembers(room, 'chat:pinned', {
+              roomId: (result as any).roomId,
+              dialogId: (result as any).roomId,
+              pinnedMessageId: null,
+              pinnedMessage: null,
+            });
+          }
         } else {
           this.broadcast((result as any).roomId, 'chat:message-deleted', payload);
+          if ((result as any).pinnedCleared) {
+            this.broadcast((result as any).roomId, 'chat:pinned', {
+              roomId: (result as any).roomId,
+              dialogId: (result as any).roomId,
+              pinnedMessageId: null,
+              pinnedMessage: null,
+            });
+          }
+        }
+      }
+      return result;
+    }
+
+    if (com === 'chat:pin') {
+      const result = await this.chatService.chatPin(client.state, args[0], args[1]);
+      if ((result as any)?.ok && (result as any)?.changed) {
+        const room = await getRoomById((result as any).roomId);
+        const payload = {
+          roomId: (result as any).roomId,
+          dialogId: (result as any).roomId,
+          pinnedMessageId: (result as any).pinnedMessageId || null,
+          pinnedMessage: (result as any).pinnedMessage || null,
+        };
+
+        if (room) {
+          this.broadcastToRoomMembers(room, 'chat:pinned', payload);
+        } else {
+          this.broadcast((result as any).roomId, 'chat:pinned', payload);
+        }
+      }
+      return result;
+    }
+
+    if (com === 'chat:unpin') {
+      const result = await this.chatService.chatUnpin(client.state, args[0]);
+      if ((result as any)?.ok && (result as any)?.changed) {
+        const room = await getRoomById((result as any).roomId);
+        const payload = {
+          roomId: (result as any).roomId,
+          dialogId: (result as any).roomId,
+          pinnedMessageId: null,
+          pinnedMessage: null,
+        };
+
+        if (room) {
+          this.broadcastToRoomMembers(room, 'chat:pinned', payload);
+        } else {
+          this.broadcast((result as any).roomId, 'chat:pinned', payload);
         }
       }
       return result;

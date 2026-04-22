@@ -50,6 +50,7 @@ model User {
   isBot              Boolean           @default(false) @map("is_bot")
   info               String?           @db.Text
   nicknameColor      String?           @map("nickname_color") @db.VarChar(7)
+  pushDisableAllMentions Boolean       @default(false) @map("push_disable_all_mentions")
   donationBadgeUntil DateTime?         @map("donation_badge_until") @db.Timestamptz(3)
   passwordHash       String            @map("password_hash")
   createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -89,16 +90,19 @@ model Room {
   createdById     Int?                 @map("created_by")
   createdBy       User?                @relation("RoomCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  pinnedMessageId Int?                 @map("pinned_message_id")
+  pinnedMessage   Message?             @relation("RoomPinnedMessage", fields: [pinnedMessageId], references: [id], onDelete: SetNull)
   scriptId        String?              @map("script_id") @db.VarChar(128)
   scriptRevision  Int                  @default(0) @map("script_revision")
   scriptConfigJson Json                @default("{}") @map("script_config_json")
   scriptStateJson Json                 @default("{}") @map("script_state_json")
   scriptMode      ScriptExecutionMode? @map("script_mode")
   roomUsers       RoomUser[]
-  messages        Message[]
+  messages        Message[]            @relation("RoomMessages")
   gameSessions    GameSession[]
 
   @@index([kind], map: "rooms_kind_idx")
+  @@index([pinnedMessageId], map: "rooms_pinned_message_idx")
   @@index([scriptId], map: "rooms_script_id_idx")
   @@map("rooms")
 }
@@ -155,7 +159,7 @@ model GameSessionPlayer {
 model Message {
   id               Int                  @id @default(autoincrement())
   roomId           Int                  @map("room_id")
-  room             Room                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room             Room                 @relation("RoomMessages", fields: [roomId], references: [id], onDelete: Cascade)
   senderId         Int?                 @map("sender_id")
   sender           User?                @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
   kind             MessageKind          @default(text)
@@ -168,6 +172,7 @@ model Message {
   scriptMode       ScriptExecutionMode? @map("script_mode")
   createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   reactions        MessageReaction[]
+  pinnedInRooms    Room[]               @relation("RoomPinnedMessage")
 
   @@index([roomId, createdAt(sort: Desc)], map: "messages_room_created_idx")
   @@index([scriptId], map: "messages_script_id_idx")

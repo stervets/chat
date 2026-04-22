@@ -37,6 +37,7 @@ export class ChatAuthService {
         name: true,
         nicknameColor: true,
         donationBadgeUntil: true,
+        pushDisableAllMentions: true,
         passwordHash: true,
       },
     });
@@ -98,6 +99,7 @@ export class ChatAuthService {
       name: state.user.name,
       nicknameColor: state.user.nicknameColor,
       donationBadgeUntil: state.user.donationBadgeUntil,
+      pushDisableAllMentions: !!state.user.pushDisableAllMentions,
     };
   }
 
@@ -120,8 +122,9 @@ export class ChatAuthService {
 
     const hasName = Object.prototype.hasOwnProperty.call(payload || {}, 'name');
     const hasNicknameColor = Object.prototype.hasOwnProperty.call(payload || {}, 'nicknameColor');
+    const hasPushDisableAllMentions = Object.prototype.hasOwnProperty.call(payload || {}, 'pushDisableAllMentions');
 
-    if (!hasName && !hasNicknameColor) {
+    if (!hasName && !hasNicknameColor && !hasPushDisableAllMentions) {
       return {ok: false, error: 'invalid_input'};
     }
 
@@ -144,6 +147,10 @@ export class ChatAuthService {
       updateData.nicknameColor = color.value;
     }
 
+    if (hasPushDisableAllMentions) {
+      updateData.pushDisableAllMentions = !!payload?.pushDisableAllMentions;
+    }
+
     if (Object.keys(updateData).length === 0) {
       return {ok: false, error: 'invalid_input'};
     }
@@ -157,6 +164,7 @@ export class ChatAuthService {
         name: true,
         nicknameColor: true,
         donationBadgeUntil: true,
+        pushDisableAllMentions: true,
       },
     });
 

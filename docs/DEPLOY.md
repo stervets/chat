@@ -107,6 +107,16 @@ yarn run start
 - backend-роуты -> `127.0.0.1:8816`
 - SPA -> `frontend/.output/public` c fallback `/200.html`
 
+### Maintenance Mode (toggle)
+
+Для серверного переключения "техработ" через Caddy смотри:
+- `docs/OPS_MAINTENANCE_MODE.md`
+
+Там есть:
+- готовая статическая страница техработ;
+- один toggle-скрипт ON/OFF;
+- include-файлы для Caddy и пример подключения.
+
 ## 6) Чеклист релиза
 
 1. `git pull`

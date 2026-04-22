@@ -3,6 +3,7 @@ import {on, off} from '@/composables/event-bus';
 import {setWsReconnectDialogResolver} from '@/composables/ws-rpc';
 import {isStandaloneDisplayMode} from '@/composables/use-web-push';
 import ChatMessageItem from './message-item/index.vue';
+import ScriptableMessage from './message-scriptable/index.vue';
 import {
   VIRTUAL_MAX_ITEMS,
   type DirectDialog,
@@ -20,6 +21,7 @@ import {chatMethodsScriptableRuntime} from './modules/methods-scriptable-runtime
 export default {
   components: {
     ChatMessageItem,
+    ScriptableMessage,
   },
 
   async setup() {
@@ -183,6 +185,9 @@ export default {
     this.chatMessageDeletedHandler = (payload: any) => {
       void this.onChatMessageDeleted(payload);
     };
+    this.chatPinnedHandler = (payload: any) => {
+      this.onChatPinned(payload);
+    };
     this.chatReactionsHandler = (payload: any) => {
       this.onChatReactions(payload);
     };
@@ -215,6 +220,7 @@ export default {
     on('chat:message', this.chatMessageHandler);
     on('chat:message-updated', this.chatMessageUpdatedHandler);
     on('chat:message-deleted', this.chatMessageDeletedHandler);
+    on('chat:pinned', this.chatPinnedHandler);
     on('chat:reactions', this.chatReactionsHandler);
     on('dialogs:deleted', this.dialogsDeletedHandler);
     on('chat:reaction-notify', this.chatReactionNotifyHandler);
@@ -251,6 +257,7 @@ export default {
     this.chatMessageHandler && off('chat:message', this.chatMessageHandler);
     this.chatMessageUpdatedHandler && off('chat:message-updated', this.chatMessageUpdatedHandler);
     this.chatMessageDeletedHandler && off('chat:message-deleted', this.chatMessageDeletedHandler);
+    this.chatPinnedHandler && off('chat:pinned', this.chatPinnedHandler);
     this.chatReactionsHandler && off('chat:reactions', this.chatReactionsHandler);
     this.dialogsDeletedHandler && off('dialogs:deleted', this.dialogsDeletedHandler);
     this.chatReactionNotifyHandler && off('chat:reaction-notify', this.chatReactionNotifyHandler);
@@ -288,6 +295,7 @@ export default {
       this.badgeTickTimer = null;
     }
     this.clearFreshMessageMarks();
+    this.closeImageViewer();
     if (Array.isArray(this.activeBrowserNotifications) && this.activeBrowserNotifications.length) {
       this.activeBrowserNotifications.forEach((item: Notification) => item.close());
       this.activeBrowserNotifications = [];

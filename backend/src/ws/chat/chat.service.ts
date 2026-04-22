@@ -130,6 +130,14 @@ export class ChatService {
     return this.messagesService.chatDelete(state, messageIdRaw);
   }
 
+  chatPin(state: SocketState, roomIdRaw: unknown, messageIdRaw: unknown) {
+    return this.messagesService.chatPin(state, roomIdRaw, messageIdRaw);
+  }
+
+  chatUnpin(state: SocketState, roomIdRaw: unknown) {
+    return this.messagesService.chatUnpin(state, roomIdRaw);
+  }
+
   chatReact(state: SocketState, messageIdRaw: unknown, reactionRaw: unknown) {
     return this.reactionsService.chatReact(state, messageIdRaw, reactionRaw);
   }

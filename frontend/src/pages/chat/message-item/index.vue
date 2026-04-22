@@ -40,6 +40,14 @@
         {{ formattedTime }}
       </span>
       <button
+        v-if="canPinMessage && !isEditing"
+        class="message-inline-btn"
+        :class="{'message-inline-btn-active': isPinnedMessage}"
+        @click="onTogglePinnedMessage"
+      >
+        {{ isPinnedMessage ? 'откреп.' : 'закреп.' }}
+      </button>
+      <button
         v-if="isOwnMessage() && !isEditing && message.kind === 'text'"
         class="message-inline-btn"
         :disabled="messageActionPendingId === message.id"
@@ -97,8 +105,17 @@
     <div v-if="!isEditing && extraPreviews.length" class="message-previews">
       <template v-for="preview in extraPreviews" :key="preview.key">
         <div class="preview-item">
+          <img
+            v-if="preview.type === 'image'"
+            class="preview-media preview-image"
+            :src="preview.src"
+            alt="image preview"
+            loading="lazy"
+            decoding="async"
+            @click="onImagePreviewClick(preview)"
+          />
           <video
-            v-if="preview.type === 'video'"
+            v-else-if="preview.type === 'video'"
             class="preview-media preview-video"
             :src="preview.src"
             controls

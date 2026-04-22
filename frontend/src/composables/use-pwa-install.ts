@@ -16,6 +16,15 @@ function detectSafariBrowser(userAgent: string) {
   return !/crios|fxios|edgios|opr\/|opios|yaapp_ios|yabrowser|duckduckgo|fbav|fban|instagram/i.test(userAgent);
 }
 
+function detectMobileDevice(userAgent: string, maxTouchPoints: number) {
+  if (/android|iphone|ipad|ipod|mobile/i.test(userAgent)) return true;
+  return maxTouchPoints > 1;
+}
+
+function detectTelegramInAppBrowser(userAgent: string) {
+  return /telegram/i.test(userAgent);
+}
+
 function detectInstalledMode() {
   if (typeof window === 'undefined') return false;
 
@@ -29,13 +38,17 @@ export function usePwaInstall() {
   const isInstalled = useState<boolean>('pwa:is-installed', () => false);
   const isIos = useState<boolean>('pwa:is-ios', () => false);
   const isSafari = useState<boolean>('pwa:is-safari', () => false);
+  const isMobile = useState<boolean>('pwa:is-mobile', () => false);
+  const isTelegramInApp = useState<boolean>('pwa:is-telegram-in-app', () => false);
   const showIosInstructions = useState<boolean>('pwa:show-ios-instructions', () => false);
+  const showInstallFallback = useState<boolean>('pwa:show-install-fallback', () => false);
 
   const syncInstalledState = () => {
     isInstalled.value = detectInstalledMode();
     if (isInstalled.value) {
       isInstallAvailable.value = false;
       showIosInstructions.value = false;
+      showInstallFallback.value = false;
     }
   };
 
@@ -48,6 +61,8 @@ export function usePwaInstall() {
 
     isIos.value = detectIosDevice(userAgent, platform, maxTouchPoints);
     isSafari.value = detectSafariBrowser(userAgent);
+    isMobile.value = detectMobileDevice(userAgent, maxTouchPoints);
+    isTelegramInApp.value = detectTelegramInAppBrowser(userAgent);
   };
 
   const onBeforeInstallPrompt = (event: Event) => {
@@ -63,6 +78,7 @@ export function usePwaInstall() {
     isInstalled.value = true;
     isInstallAvailable.value = false;
     showIosInstructions.value = false;
+    showInstallFallback.value = false;
   };
 
   if (import.meta.client && !listenersAttached) {
@@ -98,6 +114,11 @@ export function usePwaInstall() {
 
     if (isIos.value && isSafari.value) {
       showIosInstructions.value = true;
+      return false;
+    }
+
+    if (isMobile.value) {
+      showInstallFallback.value = true;
     }
 
     return false;
@@ -108,7 +129,10 @@ export function usePwaInstall() {
     isInstalled,
     isIos,
     isSafari,
+    isMobile,
+    isTelegramInApp,
     showIosInstructions,
+    showInstallFallback,
     installApp,
   };
 }

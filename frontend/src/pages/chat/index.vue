@@ -238,6 +238,29 @@
             {{ activeRoomScriptViewModel.extra }}
           </div>
         </div>
+        <div v-if="activePinnedMessage" class="pinned-panel">
+          <button class="pinned-body" @click="onPinnedMessageClick">
+            <div class="pinned-head">
+              <span class="pinned-label">Закреп</span>
+              <span class="pinned-author" :style="getAuthorStyle(activePinnedMessage)">
+                {{ activePinnedMessage.authorName }}
+              </span>
+              <span class="pinned-time">{{ formatMessageTime(activePinnedMessage.createdAt) }}</span>
+            </div>
+            <div
+              v-if="activePinnedMessage.kind !== 'scriptable'"
+              class="pinned-html"
+              v-html="getRenderedMessageHtml(activePinnedMessage, -1)"
+            />
+            <ScriptableMessage
+              v-else
+              :message="activePinnedMessage"
+              :view-model="getMessageScriptViewModel(activePinnedMessage)"
+              @action="onMessageScriptAction"
+            />
+          </button>
+          <button class="pinned-unpin-btn" title="Открепить сообщение" @click="unpinActiveMessage">×</button>
+        </div>
         <div v-if="toasts.length" class="toast-stack">
           <div
             v-for="toast in toasts"
@@ -275,6 +298,8 @@
               :is-editing="editingMessageId === item.message.id"
               :editing-message-text="editingMessageText"
               :message-action-pending-id="messageActionPendingId"
+              :can-pin-message="!!activeDialog"
+              :is-pinned-message="activePinnedMessage?.id === item.message.id"
               :can-open-direct="canOpenDirectFromMessage(item.message)"
               :author-style="getAuthorStyle(item.message)"
               :show-author-badge="hasMessageAuthorDonationBadge(item.message)"
@@ -293,10 +318,12 @@
               @time-click="onMessageTimeClick"
               @start-edit="startMessageEdit"
               @delete-message="deleteOwnMessage"
+              @toggle-pinned-message="onTogglePinnedMessage"
               @edit-input-keydown="onEditMessageKeydown"
               @save-edit="saveMessageEdit"
               @cancel-edit="cancelMessageEdit"
               @message-body-click="onMessageBodyClick"
+              @image-preview-click="onMessageImageClick"
               @message-body-mousemove="onMessageBodyMouseMove"
               @message-body-mouseleave="onMessageBodyMouseLeave"
               @toggle-reaction-picker="toggleReactionPicker"
@@ -451,6 +478,20 @@
         <div v-if="pasteUploading" class="upload-hint">Загружаю картинку...</div>
       </main>
 
+      <div
+        v-if="imageViewerVisible"
+        class="image-viewer"
+        @click="onImageViewerBackdropClick"
+      >
+        <button class="image-viewer-close" aria-label="Закрыть" @click="closeImageViewer">×</button>
+        <img
+          class="image-viewer-media"
+          :src="imageViewerSrc"
+          :alt="imageViewerAlt || 'image preview'"
+          @click.stop
+        />
+      </div>
+
       <aside class="drawer drawer-right" :class="{open: rightMenuOpen}">
         <div class="drawer-head">
           <div class="drawer-title">Опции</div>
@@ -498,6 +539,13 @@
             @change="onVibrationEnabledChange"
           />
           <span>Вибрация</span>
+        </label>
+        <label class="sound-toggle">
+          <input
+            v-model="pushDisableAllMentions"
+            type="checkbox"
+          />
+          <span>Не слать push от @all</span>
         </label>
         <label v-if="!isStandaloneApp" class="sound-toggle">
           <input

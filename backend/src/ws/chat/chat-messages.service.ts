@@ -172,6 +172,7 @@ export class ChatMessagesService {
     roomId: number;
     dialogId: number;
     messageId: number;
+    pinnedCleared: boolean;
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -187,6 +188,11 @@ export class ChatMessagesService {
         roomId: true,
         senderId: true,
         rawText: true,
+        room: {
+          select: {
+            pinnedMessageId: true,
+          },
+        },
       },
     });
 
@@ -204,6 +210,7 @@ export class ChatMessagesService {
     }
 
     const uploadNames = this.ctx.extractUploadNamesFromRawText(existing.rawText || '');
+    const pinnedCleared = Number(existing.room?.pinnedMessageId || 0) === messageId;
     const result = await db.message.deleteMany({
       where: {id: messageId},
     });
@@ -216,6 +223,113 @@ export class ChatMessagesService {
       roomId: existing.roomId,
       dialogId: existing.roomId,
       messageId,
+      pinnedCleared: result.count > 0 && pinnedCleared,
+    };
+  }
+
+  async chatPin(state: SocketState, roomIdRaw: unknown, messageIdRaw: unknown): Promise<ApiError | ApiOk<{
+    changed: boolean;
+    roomId: number;
+    dialogId: number;
+    pinnedMessageId: number | null;
+    pinnedMessage: ChatContextMessagePayload | null;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
+    }
+
+    const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
+    if (!Number.isFinite(messageId) || messageId <= 0) {
+      return {ok: false, error: 'invalid_message'};
+    }
+
+    const room = await getRoomById(roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const message = await db.message.findUnique({
+      where: {
+        id: messageId,
+      },
+      select: {
+        id: true,
+        roomId: true,
+      },
+    });
+    if (!message) {
+      return {ok: false, error: 'message_not_found'};
+    }
+    if (message.roomId !== roomId) {
+      return {ok: false, error: 'message_not_in_room'};
+    }
+
+    const changed = Number(room.pinned_message_id || 0) !== messageId;
+    if (changed) {
+      await db.room.update({
+        where: {
+          id: roomId,
+        },
+        data: {
+          pinnedMessageId: messageId,
+        },
+      });
+    }
+
+    const pinnedMessage = await this.ctx.loadMessagePayloadById(roomId, messageId);
+    return {
+      ok: true,
+      changed,
+      roomId,
+      dialogId: roomId,
+      pinnedMessageId: pinnedMessage?.id || messageId,
+      pinnedMessage,
+    };
+  }
+
+  async chatUnpin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
+    changed: boolean;
+    roomId: number;
+    dialogId: number;
+    pinnedMessageId: null;
+    pinnedMessage: null;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
+    }
+
+    const room = await getRoomById(roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const changed = Number(room.pinned_message_id || 0) > 0;
+    if (changed) {
+      await db.room.update({
+        where: {
+          id: roomId,
+        },
+        data: {
+          pinnedMessageId: null,
+        },
+      });
+    }
+
+    return {
+      ok: true,
+      changed,
+      roomId,
+      dialogId: roomId,
+      pinnedMessageId: null,
+      pinnedMessage: null,
     };
   }
 }

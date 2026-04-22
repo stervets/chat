@@ -141,6 +141,7 @@ export class ChatReactionsService {
             name: state.user!.name,
             nicknameColor: state.user!.nicknameColor,
             donationBadgeUntil: state.user!.donationBadgeUntil,
+            pushDisableAllMentions: !!state.user!.pushDisableAllMentions,
           },
           messageBody: message.rawText || '',
           createdAt: now.toISOString(),

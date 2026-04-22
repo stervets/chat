@@ -24,6 +24,7 @@ export class ChatDialogsService {
     dialogId: number;
     type: 'group';
     title: string;
+    pinnedMessageId: number | null;
   }> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -35,6 +36,7 @@ export class ChatDialogsService {
       dialogId: room.id,
       type: 'group',
       title: room.title || 'Общий чат',
+      pinnedMessageId: room.pinned_message_id || null,
     };
   }
 
@@ -43,6 +45,7 @@ export class ChatDialogsService {
     dialogId: number;
     type: 'direct';
     targetUser: PublicUser;
+    pinnedMessageId: number | null;
   }> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -77,6 +80,7 @@ export class ChatDialogsService {
       dialogId: room.id,
       type: 'direct',
       targetUser: this.ctx.toPublicUser(targetUser),
+      pinnedMessageId: room.pinned_message_id || null,
     };
   }
 
@@ -85,6 +89,7 @@ export class ChatDialogsService {
     dialogId: number;
     targetUser: PublicUser;
     lastMessageAt: string;
+    pinnedMessageId: number | null;
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -137,6 +142,7 @@ export class ChatDialogsService {
           dialogId: row.id,
           lastMessageAt: lastMessage.createdAt.toISOString(),
           targetUser: this.ctx.toPublicUser(targetUser),
+          pinnedMessageId: row.pinnedMessageId || null,
         };
       })
       .filter(Boolean) as Array<{
@@ -144,6 +150,7 @@ export class ChatDialogsService {
       dialogId: number;
       targetUser: PublicUser;
       lastMessageAt: string;
+      pinnedMessageId: number | null;
     }>;
 
     const systemUser = await db.user.findUnique({
@@ -168,6 +175,7 @@ export class ChatDialogsService {
           dialogId: systemRoom.id,
           targetUser: this.ctx.toPublicUser(systemUser),
           lastMessageAt: new Date(0).toISOString(),
+          pinnedMessageId: systemRoom.pinned_message_id || null,
         });
       }
     }
@@ -281,7 +289,13 @@ export class ChatDialogsService {
     return this.ctx.attachMessageReactions(ordered);
   }
 
-  async chatJoin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{roomId: number; dialogId: number; roomScript: any | null}>> {
+  async chatJoin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
+    roomId: number;
+    dialogId: number;
+    roomScript: any | null;
+    pinnedMessageId: number | null;
+    pinnedMessage: any | null;
+  }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
@@ -303,6 +317,7 @@ export class ChatDialogsService {
       where: {id: roomId},
       select: {
         id: true,
+        pinnedMessageId: true,
         scriptId: true,
         scriptRevision: true,
         scriptMode: true,
@@ -312,10 +327,17 @@ export class ChatDialogsService {
     });
 
     state.roomId = roomId;
+    const pinnedMessageId = Number(roomScript?.pinnedMessageId || 0);
+    const pinnedMessage = pinnedMessageId > 0
+      ? await this.ctx.loadMessagePayloadById(roomId, pinnedMessageId)
+      : null;
+
     return {
       ok: true,
       roomId,
       dialogId: roomId,
+      pinnedMessageId: pinnedMessage?.id || (roomScript?.pinnedMessageId || null),
+      pinnedMessage,
       roomScript: roomScript?.scriptId && roomScript.scriptMode && Number(roomScript.scriptRevision || 0) > 0
         ? {
           entityType: 'room',

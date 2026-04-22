@@ -279,56 +279,124 @@ export class WebPushService {
   }
 
   private async resolveRecipientUserIds(room: RoomRow, senderId: number, messageRawText: unknown) {
+    const normalizedSenderId = Number(senderId || 0);
+    if (!Number.isFinite(normalizedSenderId) || normalizedSenderId <= 0) {
+      return [];
+    }
+
     if (room.kind === 'direct') {
       const ids = room.member_user_ids
         .map((value) => Number(value || 0))
-        .filter((value) => Number.isFinite(value) && value > 0 && value !== senderId);
+        .filter((value) => Number.isFinite(value) && value > 0 && value !== normalizedSenderId);
       return Array.from(new Set(ids));
     }
 
     if (room.kind === 'group') {
       const tokens = extractMessageFormatTokens(messageRawText);
-      const mentionNicknames = Array.from(new Set(
+      const mentionTokens = Array.from(new Set(
         (tokens.mentionNicknames || [])
           .map((value) => String(value || '').trim().toLowerCase())
           .filter(Boolean),
       ));
-      const hasMentionAll = mentionNicknames.includes('all');
-      const directMentionNicknames = mentionNicknames.filter((nickname) => nickname !== 'all');
+      const hasMentionAll = mentionTokens.includes('all');
+      const directMentionTokens = mentionTokens.filter((token) => token !== 'all');
+      const directMentionUserIds = directMentionTokens.length
+        ? await this.resolveMentionedUserIds(room.id, normalizedSenderId, directMentionTokens)
+        : [];
 
-      if (!hasMentionAll && !directMentionNicknames.length) {
+      if (!hasMentionAll && !directMentionTokens.length) {
         this.logger.log(`Web Push chat group mentions=0 mentionAll=false roomId=${room.id}`);
         return [];
       }
 
       if (hasMentionAll) {
-        const userIds = room.member_user_ids
-          .filter((userId) => Number.isFinite(userId) && userId > 0 && userId !== senderId);
-        this.logger.log(`Web Push chat group mentionAll=true recipients=${userIds.length} roomId=${room.id}`);
-        return Array.from(new Set(userIds));
-      }
-
-      const members = await db.roomUser.findMany({
-        where: {
-          roomId: room.id,
-          userId: {not: senderId},
-          user: {
-            nickname: {
-              in: directMentionNicknames,
+        const mentionAllRecipients = await db.roomUser.findMany({
+          where: {
+            roomId: room.id,
+            userId: {not: normalizedSenderId},
+            user: {
+              pushDisableAllMentions: false,
             },
           },
-        },
-        select: {
-          userId: true,
-        },
-      });
+          select: {
+            userId: true,
+          },
+        });
+        const userIds = Array.from(new Set([
+          ...mentionAllRecipients.map((item) => item.userId),
+          ...directMentionUserIds,
+        ]));
+        this.logger.log(`Web Push chat group mentionAll=true recipients=${userIds.length} roomId=${room.id}`);
+        return userIds;
+      }
+
+      const members = directMentionUserIds.map((userId) => ({userId}));
       this.logger.log(
-        `Web Push chat group mentionAll=false mentionNicknames=${directMentionNicknames.length} recipients=${members.length} roomId=${room.id}`
+        `Web Push chat group mentionAll=false mentionTokens=${directMentionTokens.length} recipients=${members.length} roomId=${room.id}`
       );
       return members.map((item) => item.userId);
     }
 
     return [];
+  }
+
+  private async resolveMentionedUserIds(roomId: number, senderId: number, mentionTokensRaw: string[]) {
+    const mentionTokens = Array.from(new Set(
+      mentionTokensRaw
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean),
+    ));
+    if (!mentionTokens.length) return [];
+
+    const roomMembers = await db.roomUser.findMany({
+      where: {
+        roomId,
+        userId: {
+          not: senderId,
+        },
+      },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            nickname: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    const byNickname = new Map<string, number>();
+    const byName = new Map<string, number[]>();
+
+    roomMembers.forEach((member) => {
+      const nicknameToken = String(member.user?.nickname || '').trim().toLowerCase();
+      if (nicknameToken) {
+        byNickname.set(nicknameToken, member.userId);
+      }
+
+      const nameToken = String(member.user?.name || '').trim().toLowerCase();
+      if (!nameToken) return;
+      const bucket = byName.get(nameToken) || [];
+      bucket.push(member.userId);
+      byName.set(nameToken, bucket);
+    });
+
+    const resolved = new Set<number>();
+    mentionTokens.forEach((token) => {
+      const byNick = Number(byNickname.get(token) || 0);
+      if (byNick > 0) {
+        resolved.add(byNick);
+        return;
+      }
+
+      const byExactName = byName.get(token) || [];
+      if (byExactName.length === 1 && Number(byExactName[0] || 0) > 0) {
+        resolved.add(byExactName[0]);
+      }
+    });
+
+    return Array.from(resolved);
   }
 
   private buildUrlForRecipient(room: RoomRow, message: ChatContextMessagePayload, recipientUserId: number) {

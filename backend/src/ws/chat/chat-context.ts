@@ -46,6 +46,7 @@ export type PublicUser = {
   name: string;
   nicknameColor: string | null;
   donationBadgeUntil: string | null;
+  pushDisableAllMentions: boolean;
 };
 
 export type UserRow = {
@@ -54,6 +55,7 @@ export type UserRow = {
   name: string | null;
   nicknameColor: string | null;
   donationBadgeUntil?: Date | null;
+  pushDisableAllMentions?: boolean;
 };
 
 export type MessageReactionUser = {
@@ -76,7 +78,7 @@ type TimeRefCandidate = {
 };
 
 type RoomMessageRenderContext = {
-  mentionsByNickname: Map<string, {
+  mentionsByToken: Map<string, {
     nickname: string;
     name: string;
     nicknameColor: string | null;
@@ -216,6 +218,7 @@ export class ChatContext {
       name: user.name?.trim() ? user.name.trim() : user.nickname,
       nicknameColor: user.nicknameColor || DEFAULT_NICKNAME_COLOR,
       donationBadgeUntil: this.normalizeDonationBadgeUntil(user.donationBadgeUntil),
+      pushDisableAllMentions: !!user.pushDisableAllMentions,
     };
   }
 
@@ -255,33 +258,73 @@ export class ChatContext {
       tokens.timeLabels.forEach((timeLabel) => timeLabels.add(timeLabel));
     });
 
-    const mentionsByNickname = new Map<string, {
+    const mentionsByToken = new Map<string, {
       nickname: string;
       name: string;
       nicknameColor: string | null;
     }>();
 
     if (mentionNicknames.size > 0) {
-      const mentionRows = await db.user.findMany({
-        where: {
-          nickname: {
-            in: Array.from(mentionNicknames),
-          },
-        },
-        select: {
-          nickname: true,
-          name: true,
-          nicknameColor: true,
-        },
-      });
+      const mentionTokens = Array.from(mentionNicknames)
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter((value) => !!value && value !== 'all');
+      const uniqueTokens = Array.from(new Set(mentionTokens));
 
-      mentionRows.forEach((row) => {
-        mentionsByNickname.set(row.nickname, {
-          nickname: row.nickname,
-          name: row.name?.trim() ? row.name.trim() : row.nickname,
-          nicknameColor: row.nicknameColor || DEFAULT_NICKNAME_COLOR,
+      if (uniqueTokens.length > 0) {
+        const roomMembers = await db.roomUser.findMany({
+          where: {
+            roomId,
+          },
+          select: {
+            user: {
+              select: {
+                nickname: true,
+                name: true,
+                nicknameColor: true,
+              },
+            },
+          },
         });
-      });
+
+        const members = roomMembers
+          .map((row) => row.user)
+          .filter(Boolean)
+          .map((user) => ({
+            nickname: String(user.nickname || '').trim(),
+            name: String(user.name || user.nickname || '').trim(),
+            nicknameColor: user.nicknameColor || DEFAULT_NICKNAME_COLOR,
+          }))
+          .filter((user) => !!user.nickname);
+
+        const membersByNickname = new Map<string, typeof members[number]>();
+        const membersByName = new Map<string, Array<typeof members[number]>>();
+
+        members.forEach((member) => {
+          const nicknameToken = member.nickname.toLowerCase();
+          if (nicknameToken) {
+            membersByNickname.set(nicknameToken, member);
+          }
+
+          const nameToken = member.name.toLowerCase();
+          if (!nameToken) return;
+          const bucket = membersByName.get(nameToken) || [];
+          bucket.push(member);
+          membersByName.set(nameToken, bucket);
+        });
+
+        uniqueTokens.forEach((token) => {
+          const byNickname = membersByNickname.get(token);
+          if (byNickname) {
+            mentionsByToken.set(token, byNickname);
+            return;
+          }
+
+          const byName = membersByName.get(token) || [];
+          if (byName.length === 1) {
+            mentionsByToken.set(token, byName[0]);
+          }
+        });
+      }
     }
 
     const timeCandidatesByLabel = new Map<string, TimeRefCandidate[]>();
@@ -329,7 +372,7 @@ export class ChatContext {
     }
 
     const context: RoomMessageRenderContext = {
-      mentionsByNickname,
+      mentionsByToken,
       timeCandidatesByLabel,
       messageIndexById,
       timelineSize,
@@ -347,7 +390,7 @@ export class ChatContext {
       resolveMention: (nicknameRaw: string) => {
         const nickname = String(nicknameRaw || '').trim().toLowerCase();
         if (!nickname) return null;
-        return context.mentionsByNickname.get(nickname) || null;
+        return context.mentionsByToken.get(nickname) || null;
       },
       resolveTimeReference: (timeLabelRaw: string) => {
         const timeLabel = String(timeLabelRaw || '').trim();
@@ -387,6 +430,71 @@ export class ChatContext {
   async compileMessageForRoom(roomId: number, rawText: string, sourceMessageId: number | null = null) {
     const context = await this.buildRoomMessageRenderContext(roomId, [rawText]);
     return this.compileMessageWithContext(rawText, context, sourceMessageId);
+  }
+
+  async loadMessagePayloadById(roomId: number, messageId: number): Promise<ChatContextMessagePayload | null> {
+    const messageRow = await db.message.findFirst({
+      where: {
+        id: messageId,
+        roomId,
+      },
+      select: {
+        id: true,
+        roomId: true,
+        senderId: true,
+        kind: true,
+        rawText: true,
+        renderedHtml: true,
+        createdAt: true,
+        scriptId: true,
+        scriptRevision: true,
+        scriptMode: true,
+        scriptConfigJson: true,
+        scriptStateJson: true,
+        sender: {
+          select: {
+            id: true,
+            nickname: true,
+            name: true,
+            nicknameColor: true,
+            donationBadgeUntil: true,
+          },
+        },
+      },
+    });
+
+    if (!messageRow) return null;
+
+    const isScriptable = messageRow.kind === 'scriptable';
+    const compiled = isScriptable
+      ? {
+        rawText: String(messageRow.rawText || ''),
+        renderedHtml: String(messageRow.renderedHtml || ''),
+        renderedPreviews: [],
+      }
+      : await this.compileMessageForRoom(roomId, String(messageRow.rawText || ''), messageRow.id);
+
+    return {
+      id: messageRow.id,
+      roomId: messageRow.roomId,
+      dialogId: messageRow.roomId,
+      kind: messageRow.kind || 'text',
+      authorId: messageRow.sender?.id || messageRow.senderId || 0,
+      authorNickname: messageRow.sender?.nickname || 'deleted',
+      authorName: messageRow.sender?.name || messageRow.sender?.nickname || 'deleted',
+      authorNicknameColor: messageRow.sender?.nicknameColor || DEFAULT_NICKNAME_COLOR,
+      authorDonationBadgeUntil: this.normalizeDonationBadgeUntil(messageRow.sender?.donationBadgeUntil || null),
+      rawText: compiled.rawText,
+      renderedHtml: compiled.renderedHtml,
+      renderedPreviews: compiled.renderedPreviews,
+      scriptId: messageRow.scriptId || null,
+      scriptRevision: Number(messageRow.scriptRevision || 0),
+      scriptMode: messageRow.scriptMode || null,
+      scriptConfigJson: messageRow.scriptConfigJson || {},
+      scriptStateJson: messageRow.scriptStateJson || {},
+      createdAt: messageRow.createdAt.toISOString(),
+      reactions: await this.loadMessageReactions(messageRow.id),
+    };
   }
 
   parseReactionEmoji(raw: unknown) {

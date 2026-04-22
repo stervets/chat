@@ -8,6 +8,7 @@ export type RoomRow = {
   kind: RoomKind;
   title: string | null;
   created_by: number | null;
+  pinned_message_id: number | null;
   member_user_ids: number[];
 };
 
@@ -16,6 +17,7 @@ type RoomWithUsers = {
   kind: RoomKind;
   title: string | null;
   createdById: number | null;
+  pinnedMessageId: number | null;
   roomUsers: Array<{userId: number}>;
 };
 
@@ -25,6 +27,7 @@ function mapRoom(row: RoomWithUsers): RoomRow {
     kind: row.kind,
     title: row.title || null,
     created_by: row.createdById,
+    pinned_message_id: row.pinnedMessageId || null,
     member_user_ids: row.roomUsers.map((item) => item.userId),
   };
 }
@@ -71,6 +74,7 @@ export async function getOrCreateGroupRoom(): Promise<RoomRow> {
       kind: true,
       title: true,
       createdById: true,
+      pinnedMessageId: true,
       roomUsers: {
         select: {userId: true},
       },
@@ -106,6 +110,7 @@ export async function getOrCreateGroupRoom(): Promise<RoomRow> {
           kind: true,
           title: true,
           createdById: true,
+          pinnedMessageId: true,
           roomUsers: {
             select: {userId: true},
           },
@@ -120,6 +125,7 @@ export async function getOrCreateGroupRoom(): Promise<RoomRow> {
           kind: true,
           title: true,
           createdById: true,
+          pinnedMessageId: true,
           roomUsers: {
             select: {userId: true},
           },
@@ -143,6 +149,7 @@ export async function getRoomById(roomId: number): Promise<RoomRow | null> {
       kind: true,
       title: true,
       createdById: true,
+      pinnedMessageId: true,
       roomUsers: {
         select: {userId: true},
       },
@@ -183,6 +190,7 @@ async function findExistingDirectRoom(firstUserId: number, secondUserId: number)
       kind: true,
       title: true,
       createdById: true,
+      pinnedMessageId: true,
       roomUsers: {
         select: {userId: true},
       },
@@ -205,6 +213,7 @@ export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: n
             kind: true,
             title: true,
             createdById: true,
+            pinnedMessageId: true,
           },
         });
 

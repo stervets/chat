@@ -466,6 +466,9 @@ export const chatMethodsSendUploadAndRuntime = {
         id: message.id,
         roomId: message.roomId,
       });
+      if (Number(this.activePinnedMessage?.id || 0) === Number(message.id || 0)) {
+        this.activePinnedMessage = message;
+      }
       if (this.activeDialog?.id !== message.roomId) return;
       this.applyMessageUpdate(message);
     },
@@ -504,6 +507,7 @@ export const chatMethodsSendUploadAndRuntime = {
       }
 
       this.messages = [];
+      this.activePinnedMessage = null;
       this.notifyMessagesChanged();
       this.cancelMessageEdit();
       this.reactionPickerMessageId = null;
@@ -549,6 +553,10 @@ export const chatMethodsSendUploadAndRuntime = {
 
     onWindowKeydown(this: any, event: KeyboardEvent) {
       if (event.key !== 'Escape') return;
+      if (this.imageViewerVisible) {
+        this.closeImageViewer();
+        return;
+      }
       if (this.leftMenuOpen) this.leftMenuOpen = false;
       if (this.rightMenuOpen) this.rightMenuOpen = false;
       if (this.notificationsMenuOpen) this.notificationsMenuOpen = false;

@@ -62,7 +62,16 @@ export const chatMethodsScriptableRuntime = {
       const manager = this.scriptRuntimeManager as ScriptRuntimeManager | null;
       if (!manager) return;
 
-      manager.syncMessageRuntimes(this.messages, this.activeDialog?.id || 0);
+      const messageSnapshots = Array.isArray(this.messages) ? [...this.messages] : [];
+      const pinnedMessageId = Number(this.activePinnedMessage?.id || 0);
+      if (pinnedMessageId > 0) {
+        const hasPinnedInTimeline = messageSnapshots.some((message) => Number(message?.id || 0) === pinnedMessageId);
+        if (!hasPinnedInTimeline) {
+          messageSnapshots.push(this.activePinnedMessage);
+        }
+      }
+
+      manager.syncMessageRuntimes(messageSnapshots, this.activeDialog?.id || 0);
       manager.syncRoomRuntime(this.activeRoomScript, this.activeDialog?.id || 0);
     },
 
@@ -115,6 +124,16 @@ export const chatMethodsScriptableRuntime = {
             scriptMode: payload.scriptMode || message.scriptMode || null,
           };
         });
+        if (Number(this.activePinnedMessage?.id || 0) === entityId) {
+          this.activePinnedMessage = {
+            ...(this.activePinnedMessage || {}),
+            scriptStateJson: payload.scriptStateJson && typeof payload.scriptStateJson === 'object'
+              ? payload.scriptStateJson
+              : {},
+            scriptRevision: Number(payload.scriptRevision || this.activePinnedMessage?.scriptRevision || 0),
+            scriptMode: payload.scriptMode || this.activePinnedMessage?.scriptMode || null,
+          };
+        }
       } else if (entityType === 'room') {
         if (Number(this.activeDialog?.id || 0) === roomId) {
           this.activeRoomScript = {

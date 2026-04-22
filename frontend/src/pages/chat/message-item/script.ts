@@ -51,6 +51,14 @@ export default {
       type: Number,
       default: null,
     },
+    canPinMessage: {
+      type: Boolean,
+      default: false,
+    },
+    isPinnedMessage: {
+      type: Boolean,
+      default: false,
+    },
     canOpenDirect: {
       type: Boolean,
       required: true,
@@ -118,6 +126,8 @@ export default {
     'reaction-mouseleave',
     'height-change',
     'script-action',
+    'toggle-pinned-message',
+    'image-preview-click',
   ],
 
   setup() {
@@ -202,6 +212,10 @@ export default {
       this.$emit('start-edit', this.message);
     },
 
+    onTogglePinnedMessage(this: any) {
+      this.$emit('toggle-pinned-message', this.message);
+    },
+
     onDeleteMessage(this: any) {
       this.$emit('delete-message', this.message);
     },
@@ -264,6 +278,10 @@ export default {
 
     onReactionMouseLeave(this: any) {
       this.$emit('reaction-mouseleave');
+    },
+
+    onImagePreviewClick(this: any, preview: LinkPreview) {
+      this.$emit('image-preview-click', preview?.src || '');
     },
 
     markReactionPop(this: any, emojiRaw: unknown) {

@@ -6,6 +6,7 @@ export type User = {
   name: string;
   nicknameColor: string | null;
   donationBadgeUntil?: string | null;
+  pushDisableAllMentions?: boolean;
 };
 
 export type Invite = {
@@ -25,6 +26,7 @@ export type Dialog = {
   kind: DialogKind;
   title?: string;
   targetUser?: User;
+  pinnedMessageId?: Id | null;
 };
 
 export type Message = {

@@ -13,6 +13,7 @@ let runtimeIndexesReady = false;
 let nicknameModelReady = false;
 let donationBadgeModelReady = false;
 let scriptableModelReady = false;
+let roomPinAndPushPrefsModelReady = false;
 
 async function ensureNicknameModel() {
   if (nicknameModelReady) return;
@@ -191,11 +192,49 @@ async function ensureScriptableModel() {
   scriptableModelReady = true;
 }
 
+async function ensureRoomPinAndPushPrefsModel() {
+  if (roomPinAndPushPrefsModelReady) return;
+
+  await db.$executeRawUnsafe(
+    `alter table users
+     add column if not exists push_disable_all_mentions boolean not null default false`
+  );
+
+  await db.$executeRawUnsafe(
+    `alter table rooms
+     add column if not exists pinned_message_id integer`
+  );
+
+  await db.$executeRawUnsafe(
+    `do $$
+     begin
+       if not exists (
+         select 1
+         from pg_constraint
+         where conname = 'rooms_pinned_message_id_fkey'
+       ) then
+         alter table rooms
+           add constraint rooms_pinned_message_id_fkey
+           foreign key (pinned_message_id) references messages(id) on delete set null on update cascade;
+       end if;
+     end
+     $$`
+  );
+
+  await db.$executeRawUnsafe(
+    `create index if not exists rooms_pinned_message_idx
+     on rooms(pinned_message_id)`
+  );
+
+  roomPinAndPushPrefsModelReady = true;
+}
+
 export async function checkDb() {
   await db.$queryRawUnsafe('select 1 as ok');
   await ensureNicknameModel();
   await ensureDonationBadgeModel();
   await ensureScriptableModel();
+  await ensureRoomPinAndPushPrefsModel();
   await ensureRuntimeIndexes();
 }
 

@@ -39,6 +39,14 @@ export const chatMethodsMessageBodyAndReactions = {
       const target = event.target as HTMLElement | null;
       if (!target) return;
 
+      const imageSrc = this.resolveImageSrcFromTarget(target);
+      if (imageSrc) {
+        event.preventDefault();
+        this.hapticTap();
+        this.openImageViewer(imageSrc);
+        return;
+      }
+
       const spoilerEl = target.closest('.message-spoiler') as HTMLElement | null;
       if (spoilerEl) {
         const bodyEl = target.closest('.message-body') as HTMLElement | null;
@@ -65,12 +73,70 @@ export const chatMethodsMessageBodyAndReactions = {
       const timeRefEl = target.closest('.time-reference') as HTMLElement | null;
       if (timeRefEl?.dataset?.targetMessageId) {
         this.timeTooltipVisible = false;
+        this.hapticTap();
         const targetMessageId = Number.parseInt(timeRefEl.dataset.targetMessageId, 10);
         if (Number.isFinite(targetMessageId) && targetMessageId > 0) {
           void this.scrollToMessageById(targetMessageId);
         }
         return;
       }
+    },
+
+    resolveImageSrcFromTarget(this: any, target: HTMLElement | null) {
+      if (!target) return '';
+
+      const imageEl = target.closest('img.preview-inline-image, img.preview-image') as HTMLImageElement | null;
+      if (imageEl?.src) {
+        return String(imageEl.currentSrc || imageEl.src || '').trim();
+      }
+
+      const imageLink = target.closest('a.inline-image-link') as HTMLAnchorElement | null;
+      if (imageLink?.href) {
+        return String(imageLink.href || '').trim();
+      }
+
+      return '';
+    },
+
+    onMessageImageClick(this: any, imageSrcRaw: unknown) {
+      const imageSrc = String(imageSrcRaw || '').trim();
+      if (!imageSrc) return;
+      this.hapticTap();
+      this.openImageViewer(imageSrc);
+    },
+
+    openImageViewer(this: any, imageSrcRaw: unknown, imageAltRaw?: unknown) {
+      const imageSrc = String(imageSrcRaw || '').trim();
+      if (!imageSrc) return;
+
+      this.imageViewerSrc = imageSrc;
+      this.imageViewerAlt = String(imageAltRaw || 'image preview').trim() || 'image preview';
+      this.imageViewerVisible = true;
+
+      if (typeof document === 'undefined') return;
+      if (this.imageViewerBodyOverflow === null) {
+        this.imageViewerBodyOverflow = document.body.style.overflow || '';
+      }
+      document.body.style.overflow = 'hidden';
+    },
+
+    closeImageViewer(this: any) {
+      if (typeof document !== 'undefined') {
+        if (this.imageViewerBodyOverflow !== null) {
+          document.body.style.overflow = this.imageViewerBodyOverflow;
+        }
+      }
+      this.imageViewerBodyOverflow = null;
+      this.imageViewerVisible = false;
+      this.imageViewerSrc = '';
+      this.imageViewerAlt = '';
+    },
+
+    onImageViewerBackdropClick(this: any, event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.image-viewer-media')) return;
+      if (target?.closest('.image-viewer-close')) return;
+      this.closeImageViewer();
     },
 
     onMessageBodyMouseMove(this: any, event: MouseEvent) {
@@ -104,32 +170,98 @@ export const chatMethodsMessageBodyAndReactions = {
       const targetIndex = this.messages.findIndex((message: Message) => message.id === messageId);
       if (targetIndex < 0) return false;
 
+      if (this.messages.length > VIRTUAL_MAX_ITEMS) {
+        const centerOffset = Math.floor(VIRTUAL_MAX_ITEMS / 2);
+        const start = Math.max(0, targetIndex - centerOffset);
+        this.virtualRangeStart = start;
+        this.virtualRangeEnd = Math.min(this.messages.length, start + VIRTUAL_MAX_ITEMS);
+        await nextTick();
+      }
+
       this.rebuildVirtualPrefix();
       const prefix = this.virtualPrefixHeights;
       const topOffset = Array.isArray(prefix) ? Number(prefix[targetIndex] || 0) : 0;
+      const estimatedHeight = this.estimateMessageHeight(this.messages[targetIndex]);
       const clientHeight = Number(this.messagesEl.clientHeight || 0);
       this.messagesEl.scrollTo({
-        top: Math.max(0, topOffset - Math.floor(clientHeight / 2)),
+        top: Math.max(0, topOffset - Math.floor((clientHeight - estimatedHeight) / 2)),
         behavior: 'auto',
       });
 
       this.syncVirtualWindowFromScroll();
       await nextTick();
 
-      let target = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
-      if (!target) {
-        const start = Math.max(0, targetIndex - Math.floor(VIRTUAL_MAX_ITEMS / 2));
-        this.virtualRangeStart = start;
-        this.virtualRangeEnd = Math.min(this.messages.length, start + VIRTUAL_MAX_ITEMS);
-        await nextTick();
-        target = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
-      }
+      const target = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
       if (!target) return false;
 
-      target.scrollIntoView({behavior: 'smooth', block: 'center'});
+      const hostRect = this.messagesEl.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const desiredTop = hostRect.top + Math.max(0, (hostRect.height - targetRect.height) / 2);
+      const delta = targetRect.top - desiredTop;
+      if (Math.abs(delta) > 1) {
+        this.messagesEl.scrollTop = Math.max(0, this.messagesEl.scrollTop + delta);
+      }
+
       this.scheduleVirtualSync();
       this.triggerMessageBlink(messageId);
       return true;
+    },
+
+    async pinMessage(this: any, message: Message) {
+      if (!this.activeDialog?.id) return false;
+      const result = await ws.request('chat:pin', this.activeDialog.id, message.id);
+      if (!(result as any)?.ok) {
+        this.error = 'Не удалось закрепить сообщение.';
+        return false;
+      }
+
+      const pinnedMessageRaw = (result as any).pinnedMessage;
+      this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
+        ? this.normalizeMessage(pinnedMessageRaw)
+        : this.normalizeMessage(message);
+      return true;
+    },
+
+    async unpinActiveMessage(this: any) {
+      if (!this.activeDialog?.id) return false;
+      const result = await ws.request('chat:unpin', this.activeDialog.id);
+      if (!(result as any)?.ok) {
+        this.error = 'Не удалось открепить сообщение.';
+        return false;
+      }
+      this.activePinnedMessage = null;
+      return true;
+    },
+
+    async onTogglePinnedMessage(this: any, message: Message) {
+      this.hapticTap();
+      if (Number(this.activePinnedMessage?.id || 0) === Number(message.id || 0)) {
+        await this.unpinActiveMessage();
+        return;
+      }
+      await this.pinMessage(message);
+    },
+
+    onChatPinned(this: any, payloadRaw: any) {
+      const roomId = Number(payloadRaw?.roomId || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      if (Number(this.activeDialog?.id || 0) !== roomId) return;
+
+      const pinnedMessageRaw = payloadRaw?.pinnedMessage;
+      if (pinnedMessageRaw && typeof pinnedMessageRaw === 'object') {
+        this.activePinnedMessage = this.normalizeMessage(pinnedMessageRaw);
+        return;
+      }
+      this.activePinnedMessage = null;
+    },
+
+    async onPinnedMessageClick(this: any) {
+      const pinnedMessageId = Number(this.activePinnedMessage?.id || 0);
+      if (!Number.isFinite(pinnedMessageId) || pinnedMessageId <= 0) return;
+      this.hapticTap();
+      const loaded = await this.ensureMessageLoadedById(pinnedMessageId);
+      if (!loaded) return;
+      await this.scrollToMessageById(pinnedMessageId);
     },
 
     getMessageExtraPreviews(this: any, message: Message) {

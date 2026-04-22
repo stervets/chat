@@ -583,6 +583,9 @@ export const chatMethodsComposerAndVirtual = {
       if (this.editingMessageId === messageId) {
         this.cancelMessageEdit();
       }
+      if (Number(this.activePinnedMessage?.id || 0) === Number(messageId || 0)) {
+        this.activePinnedMessage = null;
+      }
       if (this.reactionPickerMessageId === messageId) {
         this.reactionPickerMessageId = null;
       }
@@ -663,20 +666,36 @@ export const chatMethodsComposerAndVirtual = {
     },
 
     hasMentionToken(this: any, bodyRaw: unknown, nicknameRaw: unknown) {
-      const nickname = String(nicknameRaw || '').trim().toLowerCase();
-      if (!nickname) return false;
-      return this.extractMentionTokens(bodyRaw).includes(nickname);
+      const mentionToken = String(nicknameRaw || '').trim().toLowerCase();
+      if (!mentionToken) return false;
+      return this.extractMentionTokens(bodyRaw).includes(mentionToken);
     },
 
     containsAllKeyword(this: any, body: string) {
       return this.hasMentionToken(body, 'all');
     },
 
+    isMyNameMentionTokenUnique(this: any) {
+      const myNameToken = String(this.me?.name || '').trim().toLowerCase();
+      if (!myNameToken) return false;
+      const duplicates = (this.users || []).some((user: User) => {
+        if (Number(user.id || 0) === Number(this.me?.id || 0)) return false;
+        return String(user.name || '').trim().toLowerCase() === myNameToken;
+      });
+      return !duplicates;
+    },
+
     isMentionedForMe(this: any, message: Message) {
       const meNickname = String(this.me?.nickname || '').toLowerCase();
       if (message.authorId === this.me?.id) return false;
-      if (this.containsAllKeyword(this.getMessageRawText(message))) return true;
+      const rawText = this.getMessageRawText(message);
+      if (this.containsAllKeyword(rawText)) return true;
       if (!meNickname) return false;
-      return this.hasMentionToken(this.getMessageRawText(message), meNickname);
+      if (this.hasMentionToken(rawText, meNickname)) return true;
+
+      if (!this.isMyNameMentionTokenUnique()) return false;
+      const myNameToken = String(this.me?.name || '').trim().toLowerCase();
+      if (!myNameToken) return false;
+      return this.hasMentionToken(rawText, myNameToken);
     },
 };

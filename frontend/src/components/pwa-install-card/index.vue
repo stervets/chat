@@ -19,6 +19,15 @@
       </p>
     </div>
 
+    <div v-else-if="showTelegramHelperButton" class="pwa-ios-wrap">
+      <button class="pwa-action pwa-action-secondary" type="button" @click="toggleInstallFallback">
+        {{ showInstallFallback ? 'Скрыть инструкцию' : 'Как установить из Telegram' }}
+      </button>
+      <p v-if="showInstallFallback" class="pwa-note">
+        Встроенный браузер Telegram не устанавливает PWA. Открой страницу во внешнем браузере и выбери «Добавить на экран Домой».
+      </p>
+    </div>
+
     <p v-else-if="showIosNonSafariHint" class="pwa-note">
       Для установки открой MARX в Safari, потом «Поделиться» → «На экран Домой».
     </p>

@@ -29,6 +29,8 @@
 - `rooms.kind = group | direct | game`
 - участники: `rooms_users`
 - сообщения: `messages.room_id`
+- закреп комнаты: `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`)
+- push-настройка пользователя: `users.push_disable_all_mentions`
 
 Scriptable расширение:
 - `messages.kind = text | system | scriptable`
@@ -45,6 +47,7 @@ Scriptable расширение:
 - проверяется подключение к PostgreSQL;
 - нормализуется `users.nickname` + constraints;
 - добавляется `users.donation_badge_until`, если нет;
+- добавляются `users.push_disable_all_mentions` и `rooms.pinned_message_id` (+ FK/index), если нет;
 - создаются runtime индексы `rooms_kind_idx`, `rooms_users_user_idx`.
 
 ### Cleanup
@@ -62,6 +65,7 @@ Scriptable расширение:
 - `src/composables/classes/ws.ts` — WS клиент с request/response по пакетам.
 - `src/composables/ws-rpc.ts` — reconnect + session restore + RPC-helpers.
 - `src/pages/chat/*` — чат UI.
+- `src/pages/chat/modules/methods-message-body-and-reactions.ts` — time-reference jump, pinned state, image overlay.
 - `src/pages/direct/[username]/index.vue` — direct маршрут.
 - `src/pages/games/*` — King lobby/session UI.
 - `src/pages/vpn/*` — VPN UI.
@@ -87,6 +91,10 @@ WS пакет:
 - invite-only регистрация;
 - session-token auth (не JWT, не cookie);
 - group/direct чат, реакции, upload, push;
+- room pinned message (пин/анпин, realtime event `chat:pinned`, отдельная pinned-панель над лентой);
+- mention-резолв: `@nickname` + fallback `@Name` (без NLP, с предсказуемым matching);
+- image preview открывается во fullscreen overlay в текущем окне (без новой вкладки);
+- PWA install card поддерживает Telegram in-app fallback hint;
 - King solo mode (1 человек + 3 бота) в `room(kind='game')`;
 - Scriptable runtime:
   - message-level mini-apps,

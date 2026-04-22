@@ -1,0 +1,14 @@
+@backend {
+    path /ws /ws/* /push /push/* /upload/image /uploads /uploads/*
+}
+
+handle @backend {
+    respond "Maintenance mode" 503
+}
+
+handle {
+    root * /opt/chat/ops/maintenance
+    header Cache-Control "no-store, no-cache, must-revalidate"
+    rewrite * /index.html
+    file_server
+}

@@ -25,8 +25,11 @@ yarn run smoke
 6. Регистрирует второго пользователя.
 7. Проверяет обмен сообщениями в общем чате.
 8. Проверяет подсветку сообщения с `@all`.
-9. Проверяет приватный диалог между пользователями.
-10. Глушит процессы backend/frontend.
+9. Проверяет image preview в сообщении.
+10. Проверяет форматирование и реакции.
+11. Проверяет edit/delete сообщений.
+12. Проверяет приватный диалог между пользователями.
+13. Глушит процессы backend/frontend.
 
 ## Отдельный login smoke
 
@@ -56,6 +59,11 @@ yarn run invite:create
 - доставка сообщений в `group`;
 - direct-диалог между пользователями;
 - edit/delete/reactions;
+- pinned message: pin -> виден pinned block у обоих -> unpin;
+- клик по timestamp/time-reference (без рывка scroll и с переходом к target message);
+- image preview открывается fullscreen overlay в том же окне;
+- mention по `@nickname` и `@Name`;
+- PWA install card на mobile UA, включая Telegram in-app UA fallback;
 - logout -> редирект на `/login`.
 
 5. Проверка доступа к чужой комнате:

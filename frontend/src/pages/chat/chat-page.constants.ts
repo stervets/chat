@@ -4,6 +4,7 @@ export type DirectDialog = {
   roomId: number;
   targetUser: User;
   lastMessageAt: string;
+  pinnedMessageId?: number | null;
 };
 
 export type LinkPreview = {

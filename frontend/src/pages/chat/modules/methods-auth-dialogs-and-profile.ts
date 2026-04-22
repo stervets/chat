@@ -22,6 +22,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.profileName = me.name || me.nickname;
       this.profileNicknameColor = me.nicknameColor || '';
       this.profileColorPicker = me.nicknameColor || '#61afef';
+      this.pushDisableAllMentions = !!me.pushDisableAllMentions;
     },
 
     normalizeUser(this: any, raw: any): User | null {
@@ -33,6 +34,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         name: String(raw?.name || raw?.nickname || '').trim(),
         nicknameColor: raw?.nicknameColor ? String(raw.nicknameColor) : null,
         donationBadgeUntil: raw?.donationBadgeUntil ? String(raw.donationBadgeUntil) : null,
+        pushDisableAllMentions: !!raw?.pushDisableAllMentions,
       };
     },
 
@@ -160,6 +162,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         id: (result as any).roomId,
         kind: 'group',
         title: (result as any).title,
+        pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
       } as Dialog;
     },
 
@@ -174,6 +177,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         kind: 'direct',
         targetUser: (result as any).targetUser,
         title: (result as any).targetUser.name,
+        pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
       } as Dialog;
     },
 
@@ -254,10 +258,15 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (!(result as any)?.ok) {
         this.error = 'Не удалось подключиться к диалогу.';
         this.setActiveRoomScript(null);
+        this.activePinnedMessage = null;
         return;
       }
 
       this.setActiveRoomScript((result as any).roomScript || null);
+      const pinnedMessageRaw = (result as any).pinnedMessage;
+      this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
+        ? this.normalizeMessage(pinnedMessageRaw)
+        : null;
     },
 
     async selectDialog(this: any, dialog: Dialog, optionsRaw?: {routeMode?: RouteMode}) {
@@ -267,6 +276,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.activeDialog = dialog;
       this.setActiveRoomScript(null);
       this.messages = [];
+      this.activePinnedMessage = null;
       this.scriptMessageViewModels = {};
       this.historyHasMore = true;
       this.historyLoadingMore = false;
@@ -342,6 +352,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         kind: 'direct',
         targetUser: dialog.targetUser,
         title: dialog.targetUser.name,
+        pinnedMessageId: Number(dialog.pinnedMessageId || 0) || null,
       }, {routeMode: 'push'});
       this.closeLeftMenu();
     },
@@ -435,6 +446,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         const profileResult = await wsUpdateProfile({
           name,
           nicknameColor: normalizedColor || null,
+          pushDisableAllMentions: !!this.pushDisableAllMentions,
         });
 
         if (!(profileResult as any)?.ok) {

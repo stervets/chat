@@ -263,7 +263,7 @@ export async function wsLogout() {
   ws.disconnect();
 }
 
-export async function wsUpdateProfile(payload: {name?: string; nicknameColor?: string | null}) {
+export async function wsUpdateProfile(payload: {name?: string; nicknameColor?: string | null; pushDisableAllMentions?: boolean}) {
   const connected = await ensureWsConnected();
   if (!(connected as any).ok) return connected;
   return ws.request('auth:updateProfile', payload);

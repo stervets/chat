@@ -34,9 +34,9 @@ HTTP используется для upload и web-push.
 ### Auth
 - `auth:login([{nickname, password}])` -> `{ok:true, token, expiresAt, user}`
 - `auth:session([token])` -> `{ok:true, token, expiresAt, user}`
-- `auth:me([])` -> `{id, nickname, name, nicknameColor, donationBadgeUntil}`
+- `auth:me([])` -> `{id, nickname, name, nicknameColor, donationBadgeUntil, pushDisableAllMentions}`
 - `auth:logout([])` -> `{ok:true}`
-- `auth:updateProfile([{name?, nicknameColor?}])` -> `{ok:true, user}`
+- `auth:updateProfile([{name?, nicknameColor?, pushDisableAllMentions?}])` -> `{ok:true, user}`
 - `auth:changePassword([{newPassword}])` -> `{ok:true}`
 
 ### Users
@@ -55,16 +55,18 @@ HTTP используется для upload и web-push.
 
 Важно: имена команд старые (`dialogs:*`), но объектная модель уже room-based.
 
-- `dialogs:general([])` -> `{roomId, dialogId, type:'group', title}`
-- `dialogs:private([userId])` -> `{roomId, dialogId, type:'direct', targetUser}`
-- `dialogs:directs([])` -> `[{roomId, dialogId, targetUser, lastMessageAt}]`
+- `dialogs:general([])` -> `{roomId, dialogId, type:'group', title, pinnedMessageId}`
+- `dialogs:private([userId])` -> `{roomId, dialogId, type:'direct', targetUser, pinnedMessageId}`
+- `dialogs:directs([])` -> `[{roomId, dialogId, targetUser, lastMessageAt, pinnedMessageId}]`
 - `dialogs:messages([roomId, limit?, beforeMessageId?])` -> `Message[]` (старые -> новые)
-- `chat:join([roomId])` -> `{ok:true, roomId, dialogId, roomScript}`
+- `chat:join([roomId])` -> `{ok:true, roomId, dialogId, roomScript, pinnedMessageId, pinnedMessage}`
 - `dialogs:delete([roomId])` -> `{ok:true, changed, roomId, dialogId, kind:'direct'}`
 
 - `chat:send([roomId, body, {silent?}?])` -> `{ok:true, message}`
 - `chat:edit([messageId, body])` -> `{ok:true, changed, message}`
-- `chat:delete([messageId])` -> `{ok:true, changed, roomId, dialogId, messageId}`
+- `chat:delete([messageId])` -> `{ok:true, changed, roomId, dialogId, messageId, pinnedCleared}`
+- `chat:pin([roomId, messageId])` -> `{ok:true, changed, roomId, dialogId, pinnedMessageId, pinnedMessage}`
+- `chat:unpin([roomId])` -> `{ok:true, changed, roomId, dialogId, pinnedMessageId:null, pinnedMessage:null}`
 - `chat:react([messageId, emoji|null])` -> `{ok:true, changed, roomId, dialogId, messageId, reactions, notify}`
 
 ### Scriptable
@@ -88,6 +90,7 @@ HTTP используется для upload и web-push.
 - `chat:message` -> `[message]`
 - `chat:message-updated` -> `[message]`
 - `chat:message-deleted` -> `[{roomId, dialogId, messageId}]`
+- `chat:pinned` -> `[{roomId, dialogId, pinnedMessageId, pinnedMessage}]`
 - `chat:reactions` -> `[{roomId, dialogId, messageId, reactions}]`
 - `chat:reaction-notify` -> `[payload]`
 - `dialogs:deleted` -> `[{roomId, dialogId, kind}]`
@@ -120,6 +123,13 @@ HTTP используется для upload и web-push.
 - `reactions[]`
 
 Ошибки команд: `{ok:false, error:'...'}`.
+
+## Push правила
+
+- Для `room.kind='direct'` push отправляется только собеседнику, не отправителю.
+- Для `room.kind='group'` push идёт только по mention (`@nickname`/`@Name`) или `@all`.
+- Флаг пользователя `pushDisableAllMentions=true` отключает только push от `@all`.
+- Прямой mention (`@nickname`/`@Name`) продолжает работать даже при отключенном `@all`.
 
 ## HTTP API
 

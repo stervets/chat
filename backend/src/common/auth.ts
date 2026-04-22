@@ -10,6 +10,7 @@ export type ResolvedSession = {
     name: string;
     nicknameColor: string | null;
     donationBadgeUntil: string | null;
+    pushDisableAllMentions: boolean;
   };
   token: string;
   expiresAt: string;
@@ -61,6 +62,7 @@ export async function resolveSession(token: string): Promise<ResolvedSession | n
           name: true,
           nicknameColor: true,
           donationBadgeUntil: true,
+          pushDisableAllMentions: true,
         },
       },
     },
@@ -77,6 +79,7 @@ export async function resolveSession(token: string): Promise<ResolvedSession | n
       name: row.user.name || row.user.nickname,
       nicknameColor: row.user.nicknameColor || DEFAULT_NICKNAME_COLOR,
       donationBadgeUntil: row.user.donationBadgeUntil ? row.user.donationBadgeUntil.toISOString() : null,
+      pushDisableAllMentions: !!row.user.pushDisableAllMentions,
     },
   };
 }
