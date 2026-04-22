@@ -179,6 +179,11 @@
     max-height: 50%;
   }
 
+  .pinned-panel-scriptable {
+    border-color: #205a88;
+    background: linear-gradient(180deg, #1a2c3a 0%, #0b1b29 100%);
+  }
+
   .pinned-panel-collapsed {
     height: auto !important;
     min-height: 0;
@@ -221,8 +226,11 @@
     word-break: break-word;
   }
 
-  .pinned-body :deep(.message-scriptable-card) {
+  .pinned-body :deep(.scriptable-card),
+  .pinned-body :deep(.scriptable-fallback) {
     margin: 0;
+    border-color: rgba(84, 123, 160, 0.56);
+    background: rgba(16, 27, 39, 0.8);
   }
 
   .pinned-body :deep(.message-scriptable-host) {

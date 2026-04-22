@@ -162,6 +162,12 @@ export const chatMethodsScriptableRuntime = {
       this.scriptRuntimeManager?.sendUserAction('message', Number(message.id || 0), actionType, payload);
     },
 
+    isPinnedScriptPassive(this: any, messageRaw: Message | null) {
+      const messageId = Number(messageRaw?.id || 0);
+      if (!Number.isFinite(messageId) || messageId <= 0) return false;
+      return this.messages.some((message: Message) => Number(message?.id || 0) === messageId);
+    },
+
     getMessageScriptViewModel(this: any, message: Message) {
       const messageId = Number(message?.id || 0);
       if (!Number.isFinite(messageId) || messageId <= 0) return null;

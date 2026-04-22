@@ -258,7 +258,10 @@
           <div
             v-if="shouldShowPinnedPanel"
             class="pinned-panel"
-            :class="{'pinned-panel-collapsed': pinnedCollapsed}"
+            :class="{
+              'pinned-panel-collapsed': pinnedCollapsed,
+              'pinned-panel-scriptable': activePinnedMessage?.kind === 'scriptable',
+            }"
             :style="pinnedPanelStyle"
           >
             <div class="pinned-head">
@@ -297,6 +300,7 @@
               <ScriptableMessage
                 :message="activePinnedMessage"
                 :view-model="getMessageScriptViewModel(activePinnedMessage)"
+                :passive-effects="isPinnedScriptPassive(activePinnedMessage)"
                 @action="onMessageScriptAction"
               />
             </div>

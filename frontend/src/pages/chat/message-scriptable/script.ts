@@ -11,6 +11,10 @@ export default {
       type: Object as PropType<Record<string, any> | null>,
       default: null,
     },
+    passiveEffects: {
+      type: Boolean,
+      default: false,
+    },
   },
 
   emits: [
@@ -28,9 +32,14 @@ export default {
   watch: {
     viewModel: {
       handler(this: any) {
+        if (this.passiveEffects) return;
         this.tryPlaySoundByTick();
       },
       deep: true,
+    },
+    passiveEffects(this: any, value: boolean) {
+      if (value) return;
+      this.tryPlaySoundByTick();
     },
   },
 
@@ -74,6 +83,8 @@ export default {
     },
 
     tryPlaySoundByTick(this: any) {
+      if (this.passiveEffects) return;
+
       const viewModel = this.viewModel && typeof this.viewModel === 'object'
         ? this.viewModel
         : null;

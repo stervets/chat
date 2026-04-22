@@ -98,6 +98,7 @@ WS пакет:
 - room pinned message (пин/анпин, realtime event `chat:pinned`, отдельная pinned-панель над лентой);
   - закреп только для админа non-direct комнаты;
   - в direct закреп отключён;
+  - можно закреплять `text | system | scriptable` сообщения (только из той же комнаты);
   - pinned-панель можно свернуть локально, состояние хранится в `localStorage`;
   - размер pinned-панели регулируется drag-разделителем (`Element Plus ElDivider`) и сохраняется в `localStorage`;
 - анонимная отправка: `chat:send(..., {anonymous:true})` создаёт сообщение с `sender_id = NULL`.
@@ -110,6 +111,7 @@ WS пакет:
   - room-level script behavior,
   - worker runtime на клиенте,
   - shared-state и runner режимы;
+  - при одновременном показе message в ленте и в pinned используется один runtime instance на `message.id` (без второго worker и без дубля локальных side-effects).
 - VPN provisioning через `wg-admin` unix socket;
 - Telegram news pipeline в `scripts/telegram-news`.
 

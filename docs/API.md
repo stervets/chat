@@ -73,6 +73,8 @@ HTTP используется для upload и web-push.
 Ограничения:
 - `chat:pin/chat:unpin` работают только в не-direct комнатах и только для админа комнаты (`rooms.created_by`).
 - В direct закрепы отключены (`pinnedMessageId/pinnedMessage` всегда `null`).
+- `chat:pin` принимает message любого `kind` (`text | system | scriptable`), но message обязан принадлежать той же комнате.
+- если pinned message удалён, `rooms.pinned_message_id` сбрасывается (`ON DELETE SET NULL`), а клиенты получают `chat:pinned` c `null`.
 - `dialogs:delete` требует явный `confirm:true`.
   - `direct` может удалить любой участник;
   - `group/game` может удалить только админ комнаты.
@@ -157,6 +159,7 @@ HTTP используется для upload и web-push.
 ### Push
 - `GET /push/public-key`
   - response: `{ok:true, enabled, vapidPublicKey}`
+  - локальный fallback: если push backend не инициализирован, endpoint возвращает disabled-конфиг вместо exception (`{ok:true, enabled:false, vapidPublicKey:''}`)
 - `POST /push/subscribe`
   - auth required
   - body: PushSubscription

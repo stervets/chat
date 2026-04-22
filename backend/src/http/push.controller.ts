@@ -15,8 +15,29 @@ import {WebPushService} from '../common/web-push.js';
 @Controller('push')
 export class PushController {
   private readonly logger = new Logger(PushController.name);
+  private readonly webPushService: WebPushService | null;
 
-  constructor(private readonly webPushService: WebPushService) {}
+  constructor(webPushService?: WebPushService) {
+    this.webPushService = webPushService || null;
+  }
+
+  private getPushDisabledResponse() {
+    return {
+      ok: false,
+      error: 'push_disabled',
+    } as const;
+  }
+
+  private getPublicPushConfig() {
+    if (!this.webPushService || typeof this.webPushService.getPublicConfig !== 'function') {
+      return {
+        ok: true,
+        enabled: false,
+        vapidPublicKey: '',
+      };
+    }
+    return this.webPushService.getPublicConfig();
+  }
 
   private resolveToken(req: any) {
     const header = String(req?.headers?.authorization || '').trim();
@@ -70,7 +91,7 @@ export class PushController {
   @Get('public-key')
   @HttpCode(200)
   getPublicKey() {
-    return this.webPushService.getPublicConfig();
+    return this.getPublicPushConfig();
   }
 
   @Post('subscribe')
@@ -79,6 +100,10 @@ export class PushController {
     @Req() req: any,
     @Body() body: any,
   ) {
+    if (!this.webPushService) {
+      return this.getPushDisabledResponse();
+    }
+
     const session = await this.resolveSessionOrThrow(req);
     const subscription = this.parseSubscription(body);
     this.logger.log(`Push subscribe request userId=${session.user.id} endpoint=${this.shortEndpoint(subscription.endpoint)}`);
@@ -105,6 +130,10 @@ export class PushController {
     @Req() req: any,
     @Body() body: any,
   ) {
+    if (!this.webPushService) {
+      return this.getPushDisabledResponse();
+    }
+
     const session = await this.resolveSessionOrThrow(req);
     const endpoint = String(body?.endpoint || '').trim();
     if (!endpoint) {
@@ -119,6 +148,10 @@ export class PushController {
   async test(
     @Req() req: any,
   ) {
+    if (!this.webPushService) {
+      return this.getPushDisabledResponse();
+    }
+
     const session = await this.resolveSessionOrThrow(req);
     return this.webPushService.sendTestPushToUser(session.user.id);
   }

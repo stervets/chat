@@ -16,12 +16,14 @@
 - `rooms`, `rooms_users`, `messages`, `message_reactions`, `sessions`, `push_subscriptions`.
 - админ комнаты: `rooms.created_by` (только для non-direct, в direct админа нет).
 - `rooms.pinned_message_id -> messages.id` (`ON DELETE SET NULL`).
+- pinned message может быть `text | system | scriptable` (ограничение только по принадлежности к той же комнате).
 - `messages.sender_id` может быть `NULL` для анонимной отправки.
 - `users.name` не уникален (поиск/выбор пользователя должен держать несколько совпадений).
 - `users.push_disable_all_mentions` — отключение push от `@all`.
 - scriptable поля:
   - `messages.script_*`, `rooms.script_*`;
   - `messages.kind = text | system | scriptable`.
+  - для scriptable pinned действует правило `один runtime на message` (pinned может быть вторым view без второго worker).
 
 ## Важное про WS
 Пакет:
@@ -69,7 +71,6 @@ Frontend:
 - `backend/config.json`
 - `frontend/config.json`
 - `scripts/config.json`
-- `Caddyfile`
 - `ops/caddy/*` (maintenance toggle include/скрипт)
 
 `backend/config.json` обязателен. Без него backend не стартует.
@@ -122,7 +123,6 @@ Push/PWA:
 - `frontend/src/components/pwa-install-card/*`, `frontend/src/public/sw.js`
 
 Deploy/Maintenance:
-- `Caddyfile`
 - `ops/caddy/*`
 - `ops/maintenance/*`
 - `docs/OPS_MAINTENANCE_MODE.md`
@@ -131,7 +131,6 @@ Deploy/Maintenance:
 - После **каждого изменения кода** обязательно актуализировать `AGENTS.md`.
 - После **каждого выполнения задачи** обязательно визуально проверить результат через headless Chromium.
 - Любая существенная правка поведения -> обновить docs (`docs/API.md`, `docs/ARCHITECTURE.md`, `docs/SMOKE_TEST.md`) в той же задаче.
-- Если меняешь `/ws`, `/push`, `/upload/image`, `/uploads/*` — проверить `Caddyfile`.
 - Если меняешь auth/session — проверить WS auth и HTTP bearer endpoints.
 - Если меняешь формат сообщений — проверить backend compile и frontend message-item.
 - После фронтовых/WS правок прогонять минимум `yarn run test:login` или `yarn run smoke`.
