@@ -2,6 +2,14 @@
 
 Текущая рабочая схема: Caddy + backend + PostgreSQL.
 
+## Актуальный прод (celesta)
+
+- проект: `/home/lisov/projects/chat`
+- PostgreSQL: rootless `podman` контейнер `marx-postgres` (`127.0.0.1:5432->5432/tcp`)
+- backend: user-level systemd unit `~/.config/systemd/user/marx-backend.service`
+- backend unit `WorkingDirectory`: `/home/lisov/projects/chat/backend`
+- backend unit `ExecStart`: `/home/lisov/.nvm/versions/node/v24.15.0/bin/yarn start`
+
 ## Топология
 
 - `caddy` — HTTPS reverse proxy + раздача статики фронта.
@@ -20,14 +28,15 @@
 
 - Node.js 22+
 - Yarn
+- Podman (rootless)
 - PostgreSQL 16+
 - Caddy 2
 
 ## 1) Подготовка
 
 ```bash
-git clone <repo_url> /opt/chat
-cd /opt/chat
+git clone <repo_url> /home/lisov/projects/chat
+cd /home/lisov/projects/chat
 
 yarn install
 cd backend && yarn install
@@ -50,7 +59,7 @@ cp frontend/config.example.json frontend/config.json
 ### Обновление существующей БД
 
 ```bash
-cd /opt/chat/backend
+cd /home/lisov/projects/chat/backend
 ./update-db.sh
 ```
 
@@ -69,14 +78,14 @@ cd /opt/chat/backend
 
 После King stage 1 нужно засидить ботов:
 ```bash
-cd /opt/chat/backend
+cd /home/lisov/projects/chat/backend
 yarn bots:seed
 ```
 
 ### Новый стенд
 
 ```bash
-cd /opt/chat
+cd /home/lisov/projects/chat
 yarn run db:init
 ```
 
@@ -85,19 +94,54 @@ yarn run db:init
 ## 3) Сборка frontend
 
 ```bash
-cd /opt/chat/frontend
+cd /home/lisov/projects/chat/frontend
 yarn run generate
 ```
 
 ## 4) Сборка/запуск backend
 
 ```bash
-cd /opt/chat/backend
+cd /home/lisov/projects/chat/backend
 yarn run build
 yarn run start
 ```
 
-Обычно backend лучше держать как systemd service.
+В проде backend запускается как user-level systemd service:
+
+```ini
+[Unit]
+Description=MARX backend
+After=network.target marx-postgres.service
+Wants=marx-postgres.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/lisov/projects/chat/backend
+ExecStart=/home/lisov/.nvm/versions/node/v24.15.0/bin/yarn start
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=default.target
+```
+
+Файл: `~/.config/systemd/user/marx-backend.service`
+
+Базовые команды:
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now marx-backend.service
+systemctl --user restart marx-backend.service
+systemctl --user status marx-backend.service
+journalctl --user -u marx-backend.service -f
+```
+
+Проверка PostgreSQL контейнера:
+```bash
+podman ps --filter name=marx-postgres
+podman logs marx-postgres --tail=100
+```
 
 ## 5) Caddy
 
@@ -124,7 +168,7 @@ yarn run start
 3. применить ручные SQL миграции (если есть)
 4. `backend/update-db.sh` (если нужен `db push`)
 5. пересобрать frontend (`generate`)
-6. пересобрать/перезапустить backend
+6. пересобрать backend и перезапустить `systemctl --user restart marx-backend.service`
 7. при King stage 1: `yarn bots:seed`
 8. reload Caddy, если менялся `Caddyfile`
 

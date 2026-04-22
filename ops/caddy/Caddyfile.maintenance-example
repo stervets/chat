@@ -5,5 +5,5 @@ marx.core5.ru {
     encode zstd gzip
 
     # Точка переключения: этот import должен смотреть на активный include.
-    import /opt/chat/ops/caddy/marx-active.routes.caddy
+    import /home/lisov/projects/chat/ops/caddy/marx-active.routes.caddy
 }

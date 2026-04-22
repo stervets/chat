@@ -74,35 +74,35 @@ yarn dev
 
 1. Backup БД:
 ```bash
-cd /opt/chat
+cd /home/lisov/projects/chat
 mkdir -p backups
 TS=$(date +%F_%H%M%S)
-podman exec -i trade-pg pg_dump -U postgres -d marx -Fc > backups/marx_${TS}.dump
+podman exec -i marx-postgres pg_dump -U postgres -d marx -Fc > backups/marx_${TS}.dump
 ls -lh backups/marx_${TS}.dump
 ```
 
 2. Остановить backend:
 ```bash
-systemctl stop marx-backend
+systemctl --user stop marx-backend.service
 ```
 
 3. Применить SQL-миграцию:
 ```bash
-podman exec -i trade-pg psql -U postgres -d marx -v ON_ERROR_STOP=1 \
-  < /opt/chat/backend/prisma/manual/20260421_king_stage1.sql
+podman exec -i marx-postgres psql -U postgres -d marx -v ON_ERROR_STOP=1 \
+  < /home/lisov/projects/chat/backend/prisma/manual/20260421_king_stage1.sql
 ```
 
 4. Обновить Prisma/client, собрать и поднять backend:
 ```bash
-cd /opt/chat/backend
+cd /home/lisov/projects/chat/backend
 yarn prisma:generate
 yarn build
-systemctl start marx-backend
+systemctl --user start marx-backend.service
 ```
 
 5. Засидить ботов:
 ```bash
-cd /opt/chat/backend
+cd /home/lisov/projects/chat/backend
 yarn bots:seed
 ```
 

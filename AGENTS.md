@@ -67,6 +67,12 @@ Frontend:
 
 `backend/config.json` обязателен. Без него backend не стартует.
 
+## Прод (celesta)
+- проект на сервере: `/home/lisov/projects/chat`
+- PostgreSQL: rootless `podman` контейнер `marx-postgres` (`127.0.0.1:5432->5432/tcp`)
+- backend service: `~/.config/systemd/user/marx-backend.service`
+- backend service управление: `systemctl --user <start|stop|restart|status> marx-backend.service`
+
 ## Локальный запуск
 ```bash
 yarn run backend:runner:dev

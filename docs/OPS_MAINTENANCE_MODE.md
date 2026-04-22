@@ -50,13 +50,13 @@
 ```caddy
 marx.core5.ru {
     encode zstd gzip
-    import /opt/chat/ops/caddy/marx-active.routes.caddy
+    import /home/lisov/projects/chat/ops/caddy/marx-active.routes.caddy
 }
 ```
 
 3. Убедиться, что пути в include-файлах соответствуют серверу:
-- normal root: `/opt/chat/frontend/.output/public`
-- maintenance root: `/opt/chat/ops/maintenance`
+- normal root: `/home/lisov/projects/chat/frontend/.output/public`
+- maintenance root: `/home/lisov/projects/chat/ops/maintenance`
 - backend upstream: `127.0.0.1:8816`
 
 4. После toggle:

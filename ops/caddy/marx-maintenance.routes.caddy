@@ -7,7 +7,7 @@ handle @backend {
 }
 
 handle {
-    root * /opt/chat/ops/maintenance
+    root * /home/lisov/projects/chat/ops/maintenance
     header Cache-Control "no-store, no-cache, must-revalidate"
     rewrite * /index.html
     file_server

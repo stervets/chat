@@ -55,8 +55,8 @@ cd /home/lisov/projects/chat
 mkdir -p backups
 TS=$(date +%F_%H%M%S)
 
-# пример для контейнера "trade-pg"
-podman exec -i trade-pg pg_dump -U postgres -d marx -Fc > backups/marx_${TS}.dump
+# пример для контейнера "marx-postgres"
+podman exec -i marx-postgres pg_dump -U postgres -d marx -Fc > backups/marx_${TS}.dump
 ls -lh backups/marx_${TS}.dump
 ```
 
@@ -64,7 +64,7 @@ ls -lh backups/marx_${TS}.dump
 
 ```bash
 # пример
-systemctl stop marx-backend
+systemctl --user stop marx-backend.service
 # или ваш процесс-менеджер (pm2/supervisor/manual)
 ```
 
@@ -72,7 +72,7 @@ systemctl stop marx-backend
 
 ```bash
 cd /home/lisov/projects/chat
-podman exec -i trade-pg psql -U postgres -d marx -v ON_ERROR_STOP=1 \
+podman exec -i marx-postgres psql -U postgres -d marx -v ON_ERROR_STOP=1 \
   < backend/prisma/manual/20260420_rooms_migration.sql
 ```
 
@@ -84,7 +84,7 @@ yarn prisma:generate
 yarn build
 
 # пример
-systemctl start marx-backend
+systemctl --user start marx-backend.service
 ```
 
 Если фронт собираете на сервере отдельно:
