@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "nuxt dev --host 0.0.0.0 --port 8815",
-    "build": "nuxt build",
+    "build": "nuxt generate",
     "generate": "nuxt generate",
     "preview": "nuxt preview"
   },
