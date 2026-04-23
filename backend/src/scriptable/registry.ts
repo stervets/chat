@@ -2,7 +2,7 @@ import type {
   ScriptActionInput,
   ScriptActionResult,
   ScriptDefinition,
-  ScriptEntityType,
+  ScriptNodeType,
 } from './types.js';
 
 function normalizeScriptId(scriptIdRaw: unknown) {
@@ -188,7 +188,7 @@ const definitions: ScriptDefinition[] = [
   {
     scriptId: 'demo:fart_button',
     revision: 1,
-    entityType: 'message',
+    nodeType: 'message',
     mode: 'client',
     title: 'Demo: local fart button',
     makeInitialConfig(input) {
@@ -205,7 +205,7 @@ const definitions: ScriptDefinition[] = [
   {
     scriptId: 'demo:guess_word',
     revision: 1,
-    entityType: 'message',
+    nodeType: 'message',
     mode: 'client_server',
     title: 'Demo: guess word',
     makeInitialConfig(input) {
@@ -231,7 +231,7 @@ const definitions: ScriptDefinition[] = [
   {
     scriptId: 'demo:poll_surface',
     revision: 1,
-    entityType: 'message',
+    nodeType: 'message',
     mode: 'client_server',
     title: 'Demo: poll surface',
     makeInitialConfig(input) {
@@ -250,7 +250,7 @@ const definitions: ScriptDefinition[] = [
   {
     scriptId: 'demo:bot_control_surface',
     revision: 1,
-    entityType: 'message',
+    nodeType: 'message',
     mode: 'client_server',
     title: 'Demo: bot control surface',
     makeInitialConfig(input) {
@@ -272,7 +272,7 @@ const definitions: ScriptDefinition[] = [
   // {
   //   scriptId: 'demo:room_meter',
   //   revision: 1,
-  //   entityType: 'room',
+  //   nodeType: 'room',
   //   mode: 'client_runner',
   //   title: 'Demo: room meter',
   //   makeInitialConfig(input) {
@@ -294,30 +294,30 @@ const definitions: ScriptDefinition[] = [
 
 const definitionMap = new Map<string, ScriptDefinition>();
 definitions.forEach((item) => {
-  definitionMap.set(`${item.entityType}:${item.scriptId}:${item.revision}`, item);
+  definitionMap.set(`${item.nodeType}:${item.scriptId}:${item.revision}`, item);
 });
 
 export function listScriptDefinitions() {
   return [...definitions];
 }
 
-export function getScriptDefinition(entityTypeRaw: unknown, scriptIdRaw: unknown, revisionRaw?: unknown) {
-  const entityType = String(entityTypeRaw || '').trim().toLowerCase() as ScriptEntityType;
-  if (entityType !== 'message' && entityType !== 'room') return null;
+export function getScriptDefinition(nodeTypeRaw: unknown, scriptIdRaw: unknown, revisionRaw?: unknown) {
+  const nodeType = String(nodeTypeRaw || '').trim().toLowerCase() as ScriptNodeType;
+  if (nodeType !== 'message' && nodeType !== 'room') return null;
   const scriptId = normalizeScriptId(scriptIdRaw);
   if (!scriptId) return null;
   const revision = normalizeRevision(revisionRaw, 1);
-  return definitionMap.get(`${entityType}:${scriptId}:${revision}`) || null;
+  return definitionMap.get(`${nodeType}:${scriptId}:${revision}`) || null;
 }
 
-export function getLatestScriptDefinition(entityTypeRaw: unknown, scriptIdRaw: unknown) {
-  const entityType = String(entityTypeRaw || '').trim().toLowerCase() as ScriptEntityType;
-  if (entityType !== 'message' && entityType !== 'room') return null;
+export function getLatestScriptDefinition(nodeTypeRaw: unknown, scriptIdRaw: unknown) {
+  const nodeType = String(nodeTypeRaw || '').trim().toLowerCase() as ScriptNodeType;
+  if (nodeType !== 'message' && nodeType !== 'room') return null;
   const scriptId = normalizeScriptId(scriptIdRaw);
   if (!scriptId) return null;
 
   const matched = definitions
-    .filter((item) => item.entityType === entityType && item.scriptId === scriptId)
+    .filter((item) => item.nodeType === nodeType && item.scriptId === scriptId)
     .sort((left, right) => right.revision - left.revision);
   return matched[0] || null;
 }

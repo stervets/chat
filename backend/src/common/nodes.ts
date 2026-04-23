@@ -3,8 +3,13 @@ import {db} from '../db.js';
 
 export type NodeType = 'room' | 'message';
 export type RoomKind = 'group' | 'direct' | 'game' | 'comment';
-export type RoomAppType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
+export type RoomSurfaceType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
 export type ScriptExecutionMode = 'client' | 'client_server' | 'client_runner';
+export type NodeRuntimeSnapshot = {
+  clientScript: string | null;
+  serverScript: string | null;
+  data: NodeDataRecord;
+};
 
 export type NodeDataRecord = Record<string, any>;
 export type NodeSnapshot = {
@@ -40,7 +45,7 @@ export function normalizeRoomKind(raw: unknown): RoomKind {
   return 'group';
 }
 
-export function normalizeRoomAppType(raw: unknown): RoomAppType | null {
+export function normalizeRoomSurfaceType(raw: unknown): RoomSurfaceType | null {
   const value = String(raw || '').trim().toLowerCase();
   if (value === 'llm' || value === 'poll' || value === 'dashboard' || value === 'bot_control' || value === 'custom') {
     return value;
@@ -62,73 +67,67 @@ export function normalizeNodeSnapshot(raw: any): NodeSnapshot {
   };
 }
 
-export function readNodeScriptMode(nodeRaw: {clientScript?: unknown; serverScript?: unknown; data?: unknown}): ScriptExecutionMode | null {
-  const node = {
-    clientScript: nodeRaw.clientScript || null,
-    serverScript: nodeRaw.serverScript || null,
-    data: asRecord(nodeRaw.data),
+export function readNodeRuntime(nodeRaw: {clientScript?: unknown; serverScript?: unknown; data?: unknown}): NodeRuntimeSnapshot {
+  return {
+    clientScript: nodeRaw?.clientScript ? String(nodeRaw.clientScript) : null,
+    serverScript: nodeRaw?.serverScript ? String(nodeRaw.serverScript) : null,
+    data: asRecord(nodeRaw?.data),
   };
-  const explicit = String(node.data?.scriptMode || '').trim().toLowerCase();
-  if (explicit === 'client' || explicit === 'client_server' || explicit === 'client_runner') {
-    return explicit;
-  }
-  if (node.clientScript && node.serverScript) return 'client_server';
-  if (node.serverScript && !node.clientScript) return 'client_runner';
-  if (node.clientScript) return 'client';
-  return null;
 }
 
 export function readNodeScriptId(nodeRaw: {clientScript?: unknown; serverScript?: unknown}) {
   return String(nodeRaw.clientScript || nodeRaw.serverScript || '').trim().toLowerCase() || null;
 }
 
-export function readNodeScriptRevision(nodeRaw: {data?: unknown; clientScript?: unknown; serverScript?: unknown}) {
-  const data = asRecord(nodeRaw.data);
-  const revision = Number.parseInt(String(data.scriptRevision ?? ''), 10);
-  if (Number.isFinite(revision) && revision > 0) return revision;
-  return readNodeScriptId(nodeRaw) ? 1 : 0;
+export function hasNodeClientRuntime(nodeRaw: {clientScript?: unknown}) {
+  return !!String(nodeRaw?.clientScript || '').trim();
 }
 
-export function readNodeScriptConfig(nodeRaw: {data?: unknown}) {
+export function hasNodeServerRuntime(nodeRaw: {serverScript?: unknown}) {
+  return !!String(nodeRaw?.serverScript || '').trim();
+}
+
+export function resolveNodeRuntimeMode(nodeRaw: {clientScript?: unknown; serverScript?: unknown}): ScriptExecutionMode | null {
+  const hasClient = hasNodeClientRuntime(nodeRaw);
+  const hasServer = hasNodeServerRuntime(nodeRaw);
+  if (hasClient && hasServer) return 'client_server';
+  if (!hasClient && hasServer) return 'client_runner';
+  if (hasClient) return 'client';
+  return null;
+}
+
+export function readNodeScriptConfigData(nodeRaw: {data?: unknown}) {
   return asRecord(asRecord(nodeRaw.data).scriptConfig);
 }
 
-export function readNodeScriptState(nodeRaw: {data?: unknown}) {
+export function readNodeScriptStateData(nodeRaw: {data?: unknown}) {
   return asRecord(asRecord(nodeRaw.data).scriptState);
 }
 
-export function readRoomApp(nodeRaw: {data?: unknown}) {
-  const roomApp = asRecord(asRecord(nodeRaw.data).roomApp);
+export function readRoomSurface(nodeRaw: {data?: unknown}) {
+  const roomSurface = asRecord(asRecord(nodeRaw.data).roomSurface);
   return {
-    enabled: !!roomApp.enabled,
-    type: normalizeRoomAppType(roomApp.type),
-    config: asRecord(roomApp.config),
+    enabled: !!roomSurface.enabled,
+    type: normalizeRoomSurfaceType(roomSurface.type),
+    config: asRecord(roomSurface.config),
   };
 }
 
 export function mergeNodeData(input: {
   current?: unknown;
-  scriptMode?: ScriptExecutionMode | null;
-  scriptRevision?: number;
+  patch?: unknown;
   scriptConfig?: unknown;
   scriptState?: unknown;
-  roomApp?: {
+  roomSurface?: {
     enabled: boolean;
-    type: RoomAppType | null;
+    type: RoomSurfaceType | null;
     config: Record<string, any>;
   } | null;
 }) {
   const next = asRecord(input.current);
 
-  if (input.scriptMode !== undefined) {
-    if (input.scriptMode) next.scriptMode = input.scriptMode;
-    else delete next.scriptMode;
-  }
-
-  if (input.scriptRevision !== undefined) {
-    const revision = Number(input.scriptRevision || 0);
-    if (Number.isFinite(revision) && revision > 0) next.scriptRevision = Math.round(revision);
-    else delete next.scriptRevision;
+  if (input.patch !== undefined) {
+    Object.assign(next, asRecord(input.patch));
   }
 
   if (input.scriptConfig !== undefined) {
@@ -139,15 +138,15 @@ export function mergeNodeData(input: {
     next.scriptState = asRecord(input.scriptState);
   }
 
-  if (input.roomApp !== undefined) {
-    if (input.roomApp) {
-      next.roomApp = {
-        enabled: !!input.roomApp.enabled,
-        type: normalizeRoomAppType(input.roomApp.type),
-        config: asRecord(input.roomApp.config),
+  if (input.roomSurface !== undefined) {
+    if (input.roomSurface) {
+      next.roomSurface = {
+        enabled: !!input.roomSurface.enabled,
+        type: normalizeRoomSurfaceType(input.roomSurface.type),
+        config: asRecord(input.roomSurface.config),
       };
     } else {
-      delete next.roomApp;
+      delete next.roomSurface;
     }
   }
 

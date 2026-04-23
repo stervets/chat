@@ -27,10 +27,26 @@ function cloneJson<T>(value: T): T {
   }
 }
 
+function runtimeScriptId(snapshotRaw: ScriptEntitySnapshot | null) {
+  return String(snapshotRaw?.clientScript || '').trim().toLowerCase();
+}
+
+function runtimeConfig(snapshotRaw: ScriptEntitySnapshot | null) {
+  const configRaw = snapshotRaw?.data?.scriptConfig;
+  if (!configRaw || typeof configRaw !== 'object' || Array.isArray(configRaw)) return {};
+  return cloneJson(configRaw);
+}
+
+function runtimeState(snapshotRaw: ScriptEntitySnapshot | null) {
+  const stateRaw = snapshotRaw?.data?.scriptState;
+  if (!stateRaw || typeof stateRaw !== 'object' || Array.isArray(stateRaw)) return {};
+  return cloneJson(stateRaw);
+}
+
 function buildApi(): ScriptWorkerApi {
   return {
     getSnapshot: () => cloneJson(snapshot as ScriptEntitySnapshot),
-    getConfig: () => cloneJson(snapshot?.scriptConfigJson || {}),
+    getConfig: () => runtimeConfig(snapshot),
     getSharedState: () => cloneJson(sharedState || {}),
     getLocalState: () => cloneJson(localState || {}),
     setLocalState(next) {
@@ -90,18 +106,25 @@ function disposeRuntime() {
 function initRuntime(payload: {snapshot: ScriptEntitySnapshot; localState?: Record<string, any>}) {
   disposeRuntime();
   snapshot = cloneJson(payload.snapshot);
-  sharedState = cloneJson(payload.snapshot?.scriptStateJson || {});
+  sharedState = runtimeState(snapshot);
   localState = cloneJson(payload.localState || {});
   viewModel = {};
 
+  const scriptId = runtimeScriptId(snapshot);
+  if (!scriptId) {
+    send('runtime_error', {
+      message: `client_script_not_found:${snapshot.nodeType}:missing_script_id`,
+    });
+    return;
+  }
+
   const factory = getClientScriptFactory(
-    snapshot.entityType,
-    snapshot.scriptId,
-    snapshot.scriptRevision,
+    snapshot.nodeType,
+    scriptId,
   );
   if (!factory) {
     send('runtime_error', {
-      message: `client_script_not_found:${snapshot.entityType}:${snapshot.scriptId}@${snapshot.scriptRevision}`,
+      message: `client_script_not_found:${snapshot.nodeType}:${scriptId}`,
     });
     return;
   }
@@ -114,12 +137,11 @@ function initRuntime(payload: {snapshot: ScriptEntitySnapshot; localState?: Reco
     source: 'system',
     type: 'runtime:init',
     payload: {
-      entityType: snapshot.entityType,
-      entityId: snapshot.entityId,
+      nodeType: snapshot.nodeType,
+      nodeId: snapshot.nodeId,
       roomId: snapshot.roomId,
-      scriptId: snapshot.scriptId,
-      scriptRevision: snapshot.scriptRevision,
-      scriptMode: snapshot.scriptMode,
+      clientScript: snapshot.clientScript,
+      serverScript: snapshot.serverScript,
     },
   });
 }

@@ -1,17 +1,17 @@
-import type {ScriptEntityType, ScriptExecutionMode, ScriptSideEffect} from './types.js';
+import type {ScriptNodeType, ScriptExecutionMode, ScriptSideEffect} from './types.js';
 
 export type RunnerRequest = {
   id: string;
   type: 'room_event' | 'entity_action';
   payload: {
-    entityType: ScriptEntityType;
-    entityId: number;
+    nodeType: ScriptNodeType;
+    nodeId: number;
     roomId: number;
     scriptId: string;
-    scriptRevision: number;
-    scriptMode: ScriptExecutionMode;
-    scriptConfigJson: any;
-    scriptStateJson: any;
+    runtimeRevision: number;
+    runtimeMode: ScriptExecutionMode;
+    config: any;
+    state: any;
     actionType?: string;
     actionPayload?: any;
     actor?: {

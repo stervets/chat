@@ -1,83 +1,80 @@
 # Scriptable API
 
-## 1. Scriptable entity
+## Модель
 
-Поддерживаются:
-
-- `message`
-- `room`
-
-## 2. Хранение
-
-Scriptable runtime больше не хранится в отдельных `script_*` колонках таблиц `rooms/messages`.
-
-Каноническое хранение теперь такое:
+Scriptable runtime работает только через node:
 
 - `nodes.client_script`
 - `nodes.server_script`
 - `nodes.data`
 
-В `nodes.data` лежат:
-
-- `scriptMode`
-- `scriptRevision`
-- `scriptConfig`
-- `scriptState`
-
-Для app room туда же живёт `nodes.data.roomApp`.
-
-## 3. WS команды
+## WS команды
 
 ### `scripts:create-message`
 
-Создаёт scriptable message-node в комнате.
+Создаёт scriptable message-node.
 
 ```json
 ["scripts:create-message", [roomId, {
   "scriptId": "demo:guess_word",
-  "scriptRevision": 1,
   "config": {}
 }], "frontend", "backend", "rid"]
 ```
 
 ### `scripts:action`
 
-Shared-action для runtime:
+Shared action для message/room runtime.
 
 ```json
 ["scripts:action", [{
-  "entityType": "message",
-  "entityId": 123,
+  "nodeType": "message",
+  "nodeId": 123,
   "actionType": "submit_guess",
   "payload": {"guess": "marx"}
 }], "frontend", "backend", "rid"]
 ```
 
+Ответ:
+
+```json
+{"ok": true, "roomId": 1, "nodeType": "message", "nodeId": 123, "state": {}}
+```
+
 ### `scripts:room:get`
 
-Возвращает room runtime snapshot.
+Возвращает runtime snapshot комнаты:
 
-## 4. `scripts:state`
+```json
+{"ok": true, "roomId": 1, "roomRuntime": {
+  "nodeType": "room",
+  "nodeId": 1,
+  "roomId": 1,
+  "clientScript": null,
+  "serverScript": null,
+  "data": {}
+}}
+```
+
+## Event `scripts:state`
 
 ```json
 {
   "roomId": 1,
-  "entityType": "message",
-  "entityId": 123,
-  "scriptId": "demo:guess_word",
-  "scriptRevision": 1,
-  "scriptMode": "client_server",
-  "scriptStateJson": {}
+  "nodeType": "message",
+  "nodeId": 123,
+  "clientScript": "demo:guess_word",
+  "serverScript": "demo:guess_word",
+  "data": {}
 }
 ```
 
-## 5. Runtime contract
+## Runtime contract
 
 - identity: `message:<id>` / `room:<id>`
 - lifecycle: `init -> mount -> update -> unmount`
-- второй runtime для pinned message не создаётся
+- pinned view не создаёт второй runtime instance
 
-Unified runtime event:
+Unified event envelope:
 
 ```ts
 type ScriptRuntimeEvent = {
@@ -87,9 +84,9 @@ type ScriptRuntimeEvent = {
 }
 ```
 
-## 6. Rules
+## Правила
 
-- shared state хранится только в `nodes.data.scriptState`;
+- shared state хранится в `nodes.data.scriptState`;
+- config хранится в `nodes.data.scriptConfig`;
 - local state живёт только в worker;
-- эффекты не хранятся в shared state;
-- legacy hooks не поддерживаются.
+- side-effects не дублируются между timeline/pinned views.

@@ -20,17 +20,16 @@ export type Invite = {
 
 export type DialogKind = 'group' | 'direct' | 'game' | 'comment';
 export type ScriptExecutionMode = 'client' | 'client_server' | 'client_runner';
-export type RoomAppType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
+export type RoomSurfaceType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
 
-export type RoomApp = {
+export type RoomSurface = {
   enabled: boolean;
-  appType: RoomAppType | null;
+  type: RoomSurfaceType | null;
   config: Record<string, any>;
-  surfaceMessageId: Id | null;
-  surfaceKind: 'text' | 'system' | 'scriptable' | null;
+  pinnedNodeId: Id | null;
+  pinnedKind: 'text' | 'system' | 'scriptable' | null;
   hasRoomRuntime: boolean;
   requiresRoomRuntime: boolean;
-  canCollapseSurface: boolean;
 };
 
 export type DiscussionMeta = {
@@ -48,8 +47,8 @@ export type Dialog = {
   title?: string;
   targetUser?: User;
   createdById?: Id | null;
-  pinnedMessageId?: Id | null;
-  roomApp?: RoomApp | null;
+  pinnedNodeId?: Id | null;
+  roomSurface?: RoomSurface | null;
   discussion?: DiscussionMeta | null;
 };
 
@@ -70,26 +69,24 @@ export type Message = {
     src: string;
     href?: string;
   }>;
-  scriptId: string | null;
-  scriptRevision: number;
-  scriptMode: ScriptExecutionMode | null;
-  scriptConfigJson: Record<string, any>;
-  scriptStateJson: Record<string, any>;
-  discussionRoomId: Id | null;
+  runtime: {
+    clientScript: string | null;
+    serverScript: string | null;
+    data: Record<string, any>;
+  };
+  commentRoomId: Id | null;
   body?: string;
   createdAt: string;
   reactions: MessageReaction[];
 };
 
 export type ScriptEntitySnapshot = {
-  entityType: 'message' | 'room';
-  entityId: number;
+  nodeType: 'message' | 'room';
+  nodeId: number;
   roomId: number;
-  scriptId: string;
-  scriptRevision: number;
-  scriptMode: ScriptExecutionMode;
-  scriptConfigJson: Record<string, any>;
-  scriptStateJson: Record<string, any>;
+  clientScript: string | null;
+  serverScript: string | null;
+  data: Record<string, any>;
 };
 
 export type MessageReactionUser = {

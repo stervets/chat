@@ -15,14 +15,15 @@ const scripts: ScriptWorkerFactory[] = [
 
 const scriptMap = new Map<string, ScriptWorkerFactory>();
 scripts.forEach((script) => {
-  scriptMap.set(`${script.entityType}:${script.scriptId}:${script.revision}`, script);
+  scriptMap.set(`${script.nodeType}:${script.scriptId}:${script.revision}`, script);
 });
 
-export function getClientScriptFactory(entityTypeRaw: unknown, scriptIdRaw: unknown, revisionRaw: unknown) {
-  const entityType = String(entityTypeRaw || '').trim().toLowerCase();
-  if (entityType !== 'message' && entityType !== 'room') return null;
+export function getClientScriptFactory(nodeTypeRaw: unknown, scriptIdRaw: unknown, revisionRaw?: unknown) {
+  const nodeType = String(nodeTypeRaw || '').trim().toLowerCase();
+  if (nodeType !== 'message' && nodeType !== 'room') return null;
   const scriptId = String(scriptIdRaw || '').trim().toLowerCase();
-  const revision = Number.parseInt(String(revisionRaw ?? ''), 10);
-  if (!scriptId || !Number.isFinite(revision) || revision <= 0) return null;
-  return scriptMap.get(`${entityType}:${scriptId}:${revision}`) || null;
+  const revisionParsed = Number.parseInt(String(revisionRaw ?? ''), 10);
+  const revision = Number.isFinite(revisionParsed) && revisionParsed > 0 ? revisionParsed : 1;
+  if (!scriptId) return null;
+  return scriptMap.get(`${nodeType}:${scriptId}:${revision}`) || null;
 }

@@ -21,7 +21,7 @@ function buildView(config: Record<string, any>, shared: Record<string, any>, loc
 export const messageGuessWordV1: ScriptWorkerFactory = {
   scriptId: 'demo:guess_word',
   revision: 1,
-  entityType: 'message',
+  nodeType: 'message',
 
   create(api) {
     return {

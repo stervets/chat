@@ -360,13 +360,13 @@ export const chatMethodsMessageBodyAndReactions = {
       const roomId = Number(payloadRaw?.roomId || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return;
       if (Number(this.activeDialog?.id || 0) !== roomId) return;
-      const pinnedMessageId = Number(payloadRaw?.pinnedMessageId || 0) || null;
+      const pinnedNodeId = Number(payloadRaw?.pinnedNodeId || 0) || null;
       if (this.activeDialog?.kind === 'direct') {
         this.activePinnedMessage = null;
         this.activeDialog = {
           ...this.activeDialog,
-          pinnedMessageId: null,
-          roomApp: this.normalizeRoomApp(this.activeDialog?.roomApp, null),
+          pinnedNodeId: null,
+          roomSurface: this.normalizeRoomSurface(this.activeDialog?.roomSurface, null),
         };
         return;
       }
@@ -376,12 +376,12 @@ export const chatMethodsMessageBodyAndReactions = {
         this.activePinnedMessage = this.normalizeMessage(pinnedMessageRaw);
         this.activeDialog = {
           ...this.activeDialog,
-          pinnedMessageId: Number(this.activePinnedMessage?.id || 0) || pinnedMessageId,
-          roomApp: this.normalizeRoomApp({
-            ...(this.activeDialog?.roomApp || {}),
-            surfaceMessageId: Number(this.activePinnedMessage?.id || 0) || pinnedMessageId,
-            surfaceKind: this.activePinnedMessage?.kind || null,
-          }, this.activePinnedMessage?.id || pinnedMessageId),
+          pinnedNodeId: Number(this.activePinnedMessage?.id || 0) || pinnedNodeId,
+          roomSurface: this.normalizeRoomSurface({
+            ...(this.activeDialog?.roomSurface || {}),
+            pinnedNodeId: Number(this.activePinnedMessage?.id || 0) || pinnedNodeId,
+            pinnedKind: this.activePinnedMessage?.kind || null,
+          }, this.activePinnedMessage?.id || pinnedNodeId),
         };
         this.pinnedCollapsed = this.loadPinnedCollapsedState(roomId);
         return;
@@ -389,11 +389,11 @@ export const chatMethodsMessageBodyAndReactions = {
       this.activePinnedMessage = null;
       this.activeDialog = {
         ...this.activeDialog,
-        pinnedMessageId: null,
-        roomApp: this.normalizeRoomApp({
-          ...(this.activeDialog?.roomApp || {}),
-          surfaceMessageId: null,
-          surfaceKind: null,
+        pinnedNodeId: null,
+        roomSurface: this.normalizeRoomSurface({
+          ...(this.activeDialog?.roomSurface || {}),
+          pinnedNodeId: null,
+          pinnedKind: null,
         }, null),
       };
     },

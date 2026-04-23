@@ -150,11 +150,11 @@ export class ChatGamesService {
       rawText: input.message.rawText,
       renderedHtml: input.message.renderedHtml,
       renderedPreviews: input.message.renderedPreviews,
-      scriptId: null,
-      scriptRevision: 0,
-      scriptMode: null,
-      scriptConfigJson: {},
-      scriptStateJson: {},
+      runtime: {
+        clientScript: null,
+        serverScript: null,
+        data: {},
+      },
       createdAt: input.message.createdAt.toISOString(),
       reactions: [],
     };

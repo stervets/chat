@@ -193,32 +193,32 @@ export default {
       return !!this.isActiveDialogAdmin;
     },
 
-    activeRoomApp(this: any) {
-      const fallbackSurfaceId = Number(this.activePinnedMessage?.id || this.activeDialog?.pinnedMessageId || 0) || null;
-      return this.normalizeRoomApp(this.activeDialog?.roomApp, fallbackSurfaceId);
+    activeRoomSurface(this: any) {
+      const fallbackSurfaceId = Number(this.activePinnedMessage?.id || this.activeDialog?.pinnedNodeId || 0) || null;
+      return this.normalizeRoomSurface(this.activeDialog?.roomSurface, fallbackSurfaceId);
     },
 
-    isAppRoom(this: any) {
-      return !!this.activeDialog && this.activeDialog.kind !== 'direct' && !!this.activeRoomApp?.enabled;
+    isRoomSurfaceEnabled(this: any) {
+      return !!this.activeDialog && this.activeDialog.kind !== 'direct' && !!this.activeRoomSurface?.enabled;
     },
 
-    activeRoomAppTypeLabel(this: any) {
-      const appType = String(this.activeRoomApp?.appType || '').trim().toLowerCase();
+    activeRoomSurfaceTypeLabel(this: any) {
+      const appType = String(this.activeRoomSurface?.type || '').trim().toLowerCase();
       if (appType === 'llm') return 'LLM room';
       if (appType === 'poll') return 'Poll room';
       if (appType === 'dashboard') return 'Dashboard room';
       if (appType === 'bot_control') return 'Bot control';
-      if (appType === 'custom') return 'Custom app';
-      return 'App room';
+      if (appType === 'custom') return 'Custom surface';
+      return 'Surface room';
     },
 
-    isPinnedAppSurface(this: any) {
-      if (!this.isAppRoom) return false;
+    isPinnedRoomSurface(this: any) {
+      if (!this.isRoomSurfaceEnabled) return false;
       return this.activePinnedMessage?.kind === 'scriptable';
     },
 
-    shouldShowAppSurfacePlaceholder(this: any) {
-      if (!this.isAppRoom) return false;
+    shouldShowRoomSurfacePlaceholder(this: any) {
+      if (!this.isRoomSurfaceEnabled) return false;
       return !this.activePinnedMessage;
     },
 

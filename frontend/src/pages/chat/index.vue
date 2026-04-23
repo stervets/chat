@@ -126,8 +126,8 @@
               <div v-if="isDiscussionRoom && activeDiscussionSourceDeleted" class="subtitle subtitle-discussion-deleted">
                 исходный пост удалён
               </div>
-              <div v-if="isAppRoom" class="subtitle subtitle-app">
-                {{ activeRoomAppTypeLabel }}
+              <div v-if="isRoomSurfaceEnabled" class="subtitle subtitle-app">
+                {{ activeRoomSurfaceTypeLabel }}
               </div>
               <div
                 v-if="wsOffline"
@@ -277,13 +277,13 @@
             :class="{
               'pinned-panel-collapsed': pinnedCollapsed,
               'pinned-panel-scriptable': activePinnedMessage?.kind === 'scriptable',
-              'pinned-panel-app-surface': isPinnedAppSurface,
+              'pinned-panel-app-surface': isPinnedRoomSurface,
             }"
             :style="pinnedPanelStyle"
           >
             <div class="pinned-head">
-              <span v-if="isPinnedAppSurface" class="pinned-app-label">
-                APP SURFACE · {{ activeRoomAppTypeLabel }}
+              <span v-if="isPinnedRoomSurface" class="pinned-app-label">
+                APP SURFACE · {{ activeRoomSurfaceTypeLabel }}
               </span>
               <span class="pinned-author" :style="getAuthorStyle(activePinnedMessage)">
                 {{ activePinnedMessage.authorName }}
@@ -333,10 +333,10 @@
             class="pinned-splitter"
             @pointerdown.prevent="onPinnedSplitterPointerDown"
           />
-          <div v-if="shouldShowAppSurfacePlaceholder" class="app-surface-placeholder">
-            <div class="app-surface-placeholder-title">App room активен</div>
+          <div v-if="shouldShowRoomSurfacePlaceholder" class="app-surface-placeholder">
+            <div class="app-surface-placeholder-title">Surface room активен</div>
             <div class="app-surface-placeholder-body">
-              Поверхность ещё не назначена. Закрепи scriptable message как app-surface.
+              Поверхность ещё не назначена. Закрепи scriptable message как room surface.
             </div>
           </div>
           <div class="chat-body" ref="messagesEl" @scroll="onMessagesScroll">
@@ -515,22 +515,22 @@
               <div class="composer-section" v-if="activeDialog && activeDialog.kind !== 'direct' && isActiveDialogAdmin">
                 <div class="composer-section-title">Room app (MVP)</div>
                 <div class="composer-scriptable-row">
-                  <button class="composer-format-btn" @click="setupPollRoomDemo">
+                  <button class="composer-format-btn" @click="setupPollRoomSurfaceDemo">
                     Poll surface
                   </button>
-                  <button class="composer-format-btn" @click="setupBotControlRoomDemo">
+                  <button class="composer-format-btn" @click="setupBotControlRoomSurfaceDemo">
                     Bot-control
                   </button>
-                  <button class="composer-format-btn" @click="setupDashboardRoomDemo">
+                  <button class="composer-format-btn" @click="setupDashboardRoomSurfaceDemo">
                     Dashboard
                   </button>
-                  <button class="composer-format-btn" @click="disableCurrentRoomApp">
+                  <button class="composer-format-btn" @click="disableCurrentRoomSurface">
                     Disable app
                   </button>
-                  <button class="composer-format-btn" @click="createAppRoom('poll')">
+                  <button class="composer-format-btn" @click="createSurfaceRoom('poll')">
                     + Poll room
                   </button>
-                  <button class="composer-format-btn" @click="createAppRoom('bot_control')">
+                  <button class="composer-format-btn" @click="createSurfaceRoom('bot_control')">
                     + Bot room
                   </button>
                 </div>

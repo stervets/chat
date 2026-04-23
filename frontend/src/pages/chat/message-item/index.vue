@@ -53,7 +53,7 @@
         :disabled="discussionOpenPendingId === message.id"
         @click="onOpenDiscussion"
       >
-        {{ message.discussionRoomId ? 'комментарии' : 'комментарии+' }}
+        {{ message.commentRoomId ? 'комментарии' : 'комментарии+' }}
       </button>
       <button
         v-if="isOwnMessage() && !isEditing && message.kind === 'text'"

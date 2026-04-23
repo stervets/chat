@@ -1,4 +1,4 @@
-export type ScriptEntityType = 'message' | 'room';
+export type ScriptNodeType = 'message' | 'room';
 export type ScriptExecutionMode = 'client' | 'client_server' | 'client_runner';
 
 export type ScriptActor = {
@@ -8,8 +8,8 @@ export type ScriptActor = {
 };
 
 export type ScriptActionInput = {
-  entityType: ScriptEntityType;
-  entityId: number;
+  nodeType: ScriptNodeType;
+  nodeId: number;
   roomId: number;
   actionType: string;
   payload: any;
@@ -31,7 +31,7 @@ export type ScriptActionResult = {
 export type ScriptDefinition = {
   scriptId: string;
   revision: number;
-  entityType: ScriptEntityType;
+  nodeType: ScriptNodeType;
   mode: ScriptExecutionMode;
   title: string;
   makeInitialConfig?: (input?: any) => any;
@@ -41,10 +41,9 @@ export type ScriptDefinition = {
 
 export type ScriptStateEventPayload = {
   roomId: number;
-  entityType: ScriptEntityType;
-  entityId: number;
-  scriptId: string;
-  scriptRevision: number;
-  scriptMode: ScriptExecutionMode;
-  scriptStateJson: any;
+  nodeType: ScriptNodeType;
+  nodeId: number;
+  clientScript: string | null;
+  serverScript: string | null;
+  data: any;
 };

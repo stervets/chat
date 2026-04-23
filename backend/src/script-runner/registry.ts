@@ -9,7 +9,7 @@ type RunnerScriptResult = {
 type RunnerScriptHandler = {
   scriptId: string;
   revision: number;
-  entityType: 'message' | 'room';
+  nodeType: 'message' | 'room';
   onRoomEvent?: (request: RunnerRequest) => RunnerScriptResult;
   onEntityAction?: (request: RunnerRequest) => RunnerScriptResult;
 };
@@ -23,8 +23,8 @@ function cloneJson<T>(value: T): T {
 }
 
 function createRoomMeterResult(request: RunnerRequest): RunnerScriptResult {
-  const state = cloneJson(request.payload.scriptStateJson || {});
-  const config = cloneJson(request.payload.scriptConfigJson || {});
+  const state = cloneJson(request.payload.state || {});
+  const config = cloneJson(request.payload.config || {});
   const announceEvery = Math.max(1, Number(config?.announceEvery || 5));
   const eventType = String(request.payload.eventType || '').trim().toLowerCase();
   const eventPayload = cloneJson(request.payload.eventPayload || {});
@@ -62,7 +62,7 @@ const scripts: RunnerScriptHandler[] = [
   // {
   //   scriptId: 'demo:room_meter',
   //   revision: 1,
-  //   entityType: 'room',
+  //   nodeType: 'room',
   //   onRoomEvent: createRoomMeterResult,
   //   onEntityAction: createRoomMeterResult,
   // },
@@ -70,12 +70,12 @@ const scripts: RunnerScriptHandler[] = [
 
 const scriptMap = new Map<string, RunnerScriptHandler>();
 scripts.forEach((script) => {
-  scriptMap.set(`${script.entityType}:${script.scriptId}:${script.revision}`, script);
+  scriptMap.set(`${script.nodeType}:${script.scriptId}:${script.revision}`, script);
 });
 
 function findScript(request: RunnerRequest) {
   return scriptMap.get(
-    `${request.payload.entityType}:${request.payload.scriptId}:${request.payload.scriptRevision}`,
+    `${request.payload.nodeType}:${request.payload.scriptId}:${request.payload.runtimeRevision}`,
   ) || null;
 }
 

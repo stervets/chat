@@ -1,4 +1,4 @@
-import type {ScriptEntitySnapshot, ScriptExecutionMode} from '@/composables/types';
+import type {ScriptEntitySnapshot} from '@/composables/types';
 import type {ScriptRuntimeEventSource} from './types';
 
 type SharedActionRequest = {
@@ -17,8 +17,8 @@ type RuntimeRecord = {
 };
 
 type RuntimeManagerOptions = {
-  onViewModel: (entityType: 'message' | 'room', entityId: number, viewModel: Record<string, any>) => void;
-  onError?: (entityType: 'message' | 'room', entityId: number, errorMessage: string) => void;
+  onViewModel: (nodeType: 'message' | 'room', nodeId: number, viewModel: Record<string, any>) => void;
+  onError?: (nodeType: 'message' | 'room', nodeId: number, errorMessage: string) => void;
   requestSharedAction: (snapshot: ScriptEntitySnapshot, request: SharedActionRequest) => Promise<{
     ok: boolean;
     state?: Record<string, any>;
@@ -33,25 +33,32 @@ function cloneJson<T>(value: T): T {
   }
 }
 
-function normalizeMode(raw: unknown): ScriptExecutionMode | null {
-  const mode = String(raw || '').trim().toLowerCase();
-  if (mode === 'client' || mode === 'client_server' || mode === 'client_runner') {
-    return mode;
-  }
-  return null;
+function runtimeScriptId(snapshot: ScriptEntitySnapshot) {
+  return String(snapshot.clientScript || '').trim().toLowerCase();
 }
 
-function buildEntityKey(entityType: 'message' | 'room', entityId: number) {
-  return `${entityType}:${entityId}`;
+function runtimeConfig(snapshot: ScriptEntitySnapshot) {
+  const configRaw = snapshot?.data?.scriptConfig;
+  if (!configRaw || typeof configRaw !== 'object' || Array.isArray(configRaw)) return {};
+  return cloneJson(configRaw);
+}
+
+function runtimeState(snapshot: ScriptEntitySnapshot) {
+  const stateRaw = snapshot?.data?.scriptState;
+  if (!stateRaw || typeof stateRaw !== 'object' || Array.isArray(stateRaw)) return {};
+  return cloneJson(stateRaw);
+}
+
+function buildEntityKey(nodeType: 'message' | 'room', nodeId: number) {
+  return `${nodeType}:${nodeId}`;
 }
 
 function buildDescriptorKey(snapshot: ScriptEntitySnapshot) {
   return [
-    snapshot.entityType,
-    snapshot.entityId,
-    snapshot.scriptId,
-    snapshot.scriptRevision,
-    snapshot.scriptMode,
+    snapshot.nodeType,
+    snapshot.nodeId,
+    runtimeScriptId(snapshot),
+    String(snapshot.serverScript || '').trim().toLowerCase(),
   ].join(':');
 }
 
@@ -73,6 +80,26 @@ function buildViewKey(viewSourceRaw: unknown, viewInstanceIdRaw: unknown) {
   const viewSource = normalizeViewSource(viewSourceRaw);
   const viewInstanceId = String(viewInstanceIdRaw || '').trim();
   return `${viewSource}:${viewInstanceId || 'default'}`;
+}
+
+function isSnapshotScriptable(snapshot: ScriptEntitySnapshot | null | undefined) {
+  if (!snapshot) return false;
+  return !!runtimeScriptId(snapshot);
+}
+
+function withSharedState(snapshot: ScriptEntitySnapshot, stateRaw: unknown) {
+  const state = stateRaw && typeof stateRaw === 'object' && !Array.isArray(stateRaw)
+    ? cloneJson(stateRaw)
+    : {};
+  return {
+    ...snapshot,
+    data: {
+      ...(snapshot?.data && typeof snapshot.data === 'object' && !Array.isArray(snapshot.data)
+        ? cloneJson(snapshot.data)
+        : {}),
+      scriptState: state,
+    },
+  } satisfies ScriptEntitySnapshot;
 }
 
 export class ScriptRuntimeManager {
@@ -160,7 +187,7 @@ export class ScriptRuntimeManager {
       const message = event.data || {};
       if (message.type === 'view_model') {
         record.viewModel = cloneJson(message.payload?.viewModel || {});
-        this.options.onViewModel(record.snapshot.entityType, record.snapshot.entityId, record.viewModel);
+        this.options.onViewModel(record.snapshot.nodeType, record.snapshot.nodeId, record.viewModel);
         return;
       }
 
@@ -171,7 +198,7 @@ export class ScriptRuntimeManager {
 
       if (message.type === 'runtime_error') {
         const errorMessage = String(message.payload?.message || 'script_runtime_error');
-        this.options.onError?.(record.snapshot.entityType, record.snapshot.entityId, errorMessage);
+        this.options.onError?.(record.snapshot.nodeType, record.snapshot.nodeId, errorMessage);
         return;
       }
 
@@ -189,11 +216,11 @@ export class ScriptRuntimeManager {
             return;
           }
           if (response.state && typeof response.state === 'object') {
-            record.snapshot.scriptStateJson = cloneJson(response.state);
+            record.snapshot = withSharedState(record.snapshot, response.state);
             this.postToWorker(record, {
               type: 'shared_state',
               payload: {
-                state: cloneJson(response.state),
+                state: runtimeState(record.snapshot),
               },
             });
           }
@@ -222,7 +249,7 @@ export class ScriptRuntimeManager {
   }
 
   private ensureRuntime(snapshot: ScriptEntitySnapshot) {
-    const entityKey = buildEntityKey(snapshot.entityType, snapshot.entityId);
+    const entityKey = buildEntityKey(snapshot.nodeType, snapshot.nodeId);
     const descriptorKey = buildDescriptorKey(snapshot);
     const existing = this.runtimes.get(entityKey);
     if (!existing) {
@@ -249,48 +276,47 @@ export class ScriptRuntimeManager {
     this.postToWorker(existing, {
       type: 'shared_state',
       payload: {
-        state: cloneJson(snapshot.scriptStateJson || {}),
+        state: runtimeState(snapshot),
       },
     });
   }
 
-  private dropRuntime(entityType: 'message' | 'room', entityId: number) {
-    const entityKey = buildEntityKey(entityType, entityId);
+  private dropRuntime(nodeType: 'message' | 'room', nodeId: number) {
+    const entityKey = buildEntityKey(nodeType, nodeId);
     const record = this.runtimes.get(entityKey);
     if (!record) return;
     this.disposeRecord(record);
     this.runtimes.delete(entityKey);
   }
 
-  private snapshotFromRaw(entityType: 'message' | 'room', raw: any): ScriptEntitySnapshot | null {
-    const scriptId = String(raw?.scriptId || '').trim().toLowerCase();
-    const scriptRevision = Number.parseInt(String(raw?.scriptRevision ?? ''), 10);
-    const scriptMode = normalizeMode(raw?.scriptMode);
-    const entityId = Number(raw?.entityId || raw?.id || 0);
+  private snapshotFromRaw(nodeType: 'message' | 'room', raw: any): ScriptEntitySnapshot | null {
+    const runtimeRaw = raw?.runtime && typeof raw.runtime === 'object' && !Array.isArray(raw.runtime)
+      ? raw.runtime
+      : raw;
+
+    const nodeId = Number(raw?.nodeId || raw?.id || 0);
     const roomId = Number(raw?.roomId || 0);
+    const clientScript = runtimeRaw?.clientScript ? String(runtimeRaw.clientScript).trim().toLowerCase() : null;
+    const serverScript = runtimeRaw?.serverScript ? String(runtimeRaw.serverScript).trim().toLowerCase() : null;
 
-    if (!scriptId || !scriptMode) return null;
-    if (!Number.isFinite(scriptRevision) || scriptRevision <= 0) return null;
-    if (!Number.isFinite(entityId) || entityId <= 0) return null;
+    if (!Number.isFinite(nodeId) || nodeId <= 0) return null;
     if (!Number.isFinite(roomId) || roomId <= 0) return null;
+    if (!clientScript && !serverScript) return null;
 
-    const scriptConfigJson = raw?.scriptConfigJson && typeof raw.scriptConfigJson === 'object'
-      ? cloneJson(raw.scriptConfigJson)
-      : {};
-    const scriptStateJson = raw?.scriptStateJson && typeof raw.scriptStateJson === 'object'
-      ? cloneJson(raw.scriptStateJson)
+    const data = runtimeRaw?.data && typeof runtimeRaw.data === 'object' && !Array.isArray(runtimeRaw.data)
+      ? cloneJson(runtimeRaw.data)
       : {};
 
-    return {
-      entityType,
-      entityId,
+    const snapshot: ScriptEntitySnapshot = {
+      nodeType,
+      nodeId,
       roomId,
-      scriptId,
-      scriptRevision,
-      scriptMode,
-      scriptConfigJson,
-      scriptStateJson,
+      clientScript,
+      serverScript,
+      data,
     };
+
+    return isSnapshotScriptable(snapshot) ? snapshot : null;
   }
 
   syncMessageRuntimes(messagesRaw: any[], activeRoomIdRaw: unknown) {
@@ -301,53 +327,53 @@ export class ScriptRuntimeManager {
       const snapshot = this.snapshotFromRaw('message', message);
       if (!snapshot) return;
       if (snapshot.roomId !== activeRoomId) return;
-      const key = buildEntityKey('message', snapshot.entityId);
+      const key = buildEntityKey('message', snapshot.nodeId);
       keepKeys.add(key);
       this.ensureRuntime(snapshot);
     });
 
     for (const [key, runtime] of this.runtimes.entries()) {
-      if (runtime.snapshot.entityType !== 'message') continue;
+      if (runtime.snapshot.nodeType !== 'message') continue;
       if (runtime.snapshot.roomId !== activeRoomId) {
-        this.dropRuntime('message', runtime.snapshot.entityId);
+        this.dropRuntime('message', runtime.snapshot.nodeId);
         continue;
       }
       if (!keepKeys.has(key)) {
-        this.dropRuntime('message', runtime.snapshot.entityId);
+        this.dropRuntime('message', runtime.snapshot.nodeId);
       }
     }
   }
 
-  syncRoomRuntime(roomScriptRaw: any | null, activeRoomIdRaw: unknown) {
+  syncRoomRuntime(roomRuntimeRaw: any | null, activeRoomIdRaw: unknown) {
     const activeRoomId = Number(activeRoomIdRaw || 0);
     if (!Number.isFinite(activeRoomId) || activeRoomId <= 0) {
       for (const runtime of this.runtimes.values()) {
-        if (runtime.snapshot.entityType !== 'room') continue;
-        this.dropRuntime('room', runtime.snapshot.entityId);
+        if (runtime.snapshot.nodeType !== 'room') continue;
+        this.dropRuntime('room', runtime.snapshot.nodeId);
       }
       return;
     }
 
-    const snapshot = roomScriptRaw
-      ? this.snapshotFromRaw('room', roomScriptRaw)
+    const snapshot = roomRuntimeRaw
+      ? this.snapshotFromRaw('room', roomRuntimeRaw)
       : null;
-    const existingRoomRuntimes = [...this.runtimes.values()].filter((runtime) => runtime.snapshot.entityType === 'room');
+    const existingRoomRuntimes = [...this.runtimes.values()].filter((runtime) => runtime.snapshot.nodeType === 'room');
 
     if (!snapshot) {
-      existingRoomRuntimes.forEach((runtime) => this.dropRuntime('room', runtime.snapshot.entityId));
+      existingRoomRuntimes.forEach((runtime) => this.dropRuntime('room', runtime.snapshot.nodeId));
       this.options.onViewModel('room', activeRoomId, {});
       return;
     }
 
     this.ensureRuntime(snapshot);
     existingRoomRuntimes.forEach((runtime) => {
-      if (runtime.snapshot.entityId === snapshot.entityId) return;
-      this.dropRuntime('room', runtime.snapshot.entityId);
+      if (runtime.snapshot.nodeId === snapshot.nodeId) return;
+      this.dropRuntime('room', runtime.snapshot.nodeId);
     });
   }
 
-  sendUserAction(entityType: 'message' | 'room', entityId: number, actionType: string, payload?: any) {
-    const key = buildEntityKey(entityType, entityId);
+  sendUserAction(nodeType: 'message' | 'room', nodeId: number, actionType: string, payload?: any) {
+    const key = buildEntityKey(nodeType, nodeId);
     const runtime = this.runtimes.get(key);
     if (!runtime) return;
 
@@ -361,17 +387,17 @@ export class ScriptRuntimeManager {
   }
 
   attachRuntimeView(
-    entityType: 'message' | 'room',
-    entityIdRaw: unknown,
+    nodeType: 'message' | 'room',
+    nodeIdRaw: unknown,
     viewSourceRaw: unknown,
     viewInstanceIdRaw?: unknown,
   ) {
-    const entityId = Number(entityIdRaw || 0);
-    if (!Number.isFinite(entityId) || entityId <= 0) return;
+    const nodeId = Number(nodeIdRaw || 0);
+    if (!Number.isFinite(nodeId) || nodeId <= 0) return;
 
     const viewKey = buildViewKey(viewSourceRaw, viewInstanceIdRaw);
-    const runtime = this.runtimes.get(buildEntityKey(entityType, entityId));
-    const entityKey = buildEntityKey(entityType, entityId);
+    const runtime = this.runtimes.get(buildEntityKey(nodeType, nodeId));
+    const entityKey = buildEntityKey(nodeType, nodeId);
     const pendingSet = this.pendingMountedViews.get(entityKey) || new Set<string>();
     pendingSet.add(viewKey);
     this.pendingMountedViews.set(entityKey, pendingSet);
@@ -388,16 +414,16 @@ export class ScriptRuntimeManager {
   }
 
   detachRuntimeView(
-    entityType: 'message' | 'room',
-    entityIdRaw: unknown,
+    nodeType: 'message' | 'room',
+    nodeIdRaw: unknown,
     viewSourceRaw: unknown,
     viewInstanceIdRaw?: unknown,
   ) {
-    const entityId = Number(entityIdRaw || 0);
-    if (!Number.isFinite(entityId) || entityId <= 0) return;
+    const nodeId = Number(nodeIdRaw || 0);
+    if (!Number.isFinite(nodeId) || nodeId <= 0) return;
 
-    const runtime = this.runtimes.get(buildEntityKey(entityType, entityId));
-    const entityKey = buildEntityKey(entityType, entityId);
+    const runtime = this.runtimes.get(buildEntityKey(nodeType, nodeId));
+    const entityKey = buildEntityKey(nodeType, nodeId);
     const viewKey = buildViewKey(viewSourceRaw, viewInstanceIdRaw);
     const pendingSet = this.pendingMountedViews.get(entityKey);
     if (pendingSet) {
@@ -418,32 +444,39 @@ export class ScriptRuntimeManager {
   }
 
   pushSharedStateUpdate(payload: any) {
-    const entityType = String(payload?.entityType || '').trim().toLowerCase();
-    const entityId = Number(payload?.entityId || 0);
-    if ((entityType !== 'message' && entityType !== 'room') || !Number.isFinite(entityId) || entityId <= 0) {
+    const nodeType = String(payload?.nodeType || '').trim().toLowerCase();
+    const nodeId = Number(payload?.nodeId || 0);
+    if ((nodeType !== 'message' && nodeType !== 'room') || !Number.isFinite(nodeId) || nodeId <= 0) {
       return;
     }
 
-    const runtime = this.runtimes.get(buildEntityKey(entityType as 'message' | 'room', entityId));
+    const runtime = this.runtimes.get(buildEntityKey(nodeType as 'message' | 'room', nodeId));
     if (!runtime) return;
 
-    runtime.snapshot.scriptStateJson = cloneJson(payload?.scriptStateJson || {});
-    if (payload?.scriptRevision) {
-      runtime.snapshot.scriptRevision = Number(payload.scriptRevision || runtime.snapshot.scriptRevision);
-    }
-    if (payload?.scriptMode) {
-      const mode = normalizeMode(payload.scriptMode);
-      if (mode) runtime.snapshot.scriptMode = mode;
+    const nextSnapshot: ScriptEntitySnapshot = {
+      ...runtime.snapshot,
+      clientScript: payload?.clientScript ? String(payload.clientScript).trim().toLowerCase() : runtime.snapshot.clientScript,
+      serverScript: payload?.serverScript ? String(payload.serverScript).trim().toLowerCase() : runtime.snapshot.serverScript,
+      data: payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+        ? cloneJson(payload.data)
+        : cloneJson(runtime.snapshot.data || {}),
+    };
+    runtime.snapshot = nextSnapshot;
+
+    if (!isSnapshotScriptable(runtime.snapshot)) {
+      this.dropRuntime(runtime.snapshot.nodeType, runtime.snapshot.nodeId);
+      return;
     }
 
     const nextDescriptor = buildDescriptorKey(runtime.snapshot);
     if (nextDescriptor !== runtime.descriptorKey) {
       const localState = cloneJson(runtime.localState || {});
       const mountedViewKeys = new Set(runtime.mountedViewKeys);
+      const entityKey = buildEntityKey(runtime.snapshot.nodeType, runtime.snapshot.nodeId);
       this.disposeRecord(runtime);
-      this.runtimes.delete(buildEntityKey(runtime.snapshot.entityType, runtime.snapshot.entityId));
+      this.runtimes.delete(entityKey);
       this.runtimes.set(
-        buildEntityKey(runtime.snapshot.entityType, runtime.snapshot.entityId),
+        entityKey,
         this.createWorkerRecord(runtime.snapshot, localState, mountedViewKeys),
       );
       return;
@@ -452,7 +485,7 @@ export class ScriptRuntimeManager {
     this.postToWorker(runtime, {
       type: 'shared_state',
       payload: {
-        state: cloneJson(runtime.snapshot.scriptStateJson || {}),
+        state: runtimeState(runtime.snapshot),
       },
     });
   }

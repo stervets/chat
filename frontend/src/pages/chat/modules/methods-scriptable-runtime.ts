@@ -7,29 +7,34 @@ export const chatMethodsScriptableRuntime = {
       if (this.scriptRuntimeManager) return;
 
       this.scriptRuntimeManager = new ScriptRuntimeManager({
-        onViewModel: (entityType, entityId, viewModel) => {
-          if (entityType === 'message') {
+        onViewModel: (nodeType, nodeId, viewModel) => {
+          if (nodeType === 'message') {
             this.scriptMessageViewModels = {
               ...this.scriptMessageViewModels,
-              [entityId]: viewModel || {},
+              [nodeId]: viewModel || {},
             };
             return;
           }
-          if (entityType === 'room') {
+          if (nodeType === 'room') {
             this.activeRoomScriptViewModel = viewModel || null;
           }
         },
-        onError: (_entityType, _entityId, errorMessage) => {
+        onError: (_nodeType, _nodeId, errorMessage) => {
           this.error = `Script runtime error: ${String(errorMessage || 'unknown_error')}`;
         },
         requestSharedAction: async (snapshot, request) => {
-          if (snapshot.scriptMode === 'client') {
-            return {ok: true, state: snapshot.scriptStateJson || {}};
+          const hasServer = !!String(snapshot?.serverScript || '').trim();
+          if (!hasServer) {
+            const state = snapshot?.data?.scriptState;
+            return {
+              ok: true,
+              state: state && typeof state === 'object' && !Array.isArray(state) ? state : {},
+            };
           }
 
           const result = await ws.request('scripts:action', {
-            entityType: snapshot.entityType,
-            entityId: snapshot.entityId,
+            nodeType: snapshot.nodeType,
+            nodeId: snapshot.nodeId,
             actionType: request.actionType,
             payload: request.payload,
           });
@@ -63,9 +68,9 @@ export const chatMethodsScriptableRuntime = {
       if (!manager) return;
 
       const messageSnapshots = Array.isArray(this.messages) ? [...this.messages] : [];
-      const pinnedMessageId = Number(this.activePinnedMessage?.id || 0);
-      if (pinnedMessageId > 0) {
-        const hasPinnedInTimeline = messageSnapshots.some((message) => Number(message?.id || 0) === pinnedMessageId);
+      const pinnedNodeId = Number(this.activePinnedMessage?.id || 0);
+      if (pinnedNodeId > 0) {
+        const hasPinnedInTimeline = messageSnapshots.some((message) => Number(message?.id || 0) === pinnedNodeId);
         if (!hasPinnedInTimeline) {
           messageSnapshots.push(this.activePinnedMessage);
         }
@@ -75,8 +80,8 @@ export const chatMethodsScriptableRuntime = {
       manager.syncRoomRuntime(this.activeRoomScript, this.activeDialog?.id || 0);
     },
 
-    setActiveRoomScript(this: any, roomScriptRaw: any | null) {
-      if (!roomScriptRaw || typeof roomScriptRaw !== 'object') {
+    setActiveRoomScript(this: any, roomRuntimeRaw: any | null) {
+      if (!roomRuntimeRaw || typeof roomRuntimeRaw !== 'object') {
         this.activeRoomScript = null;
         this.activeRoomScriptViewModel = null;
         this.syncScriptableRuntimes();
@@ -84,7 +89,7 @@ export const chatMethodsScriptableRuntime = {
       }
 
       this.activeRoomScript = {
-        ...roomScriptRaw,
+        ...roomRuntimeRaw,
       };
       this.syncScriptableRuntimes();
     },
@@ -101,71 +106,74 @@ export const chatMethodsScriptableRuntime = {
         this.setActiveRoomScript(null);
         return;
       }
-      this.setActiveRoomScript((result as any).roomScript || null);
+      this.setActiveRoomScript((result as any).roomRuntime || null);
     },
 
     onScriptsState(this: any, payloadRaw: any) {
       const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
-      const entityType = String(payload.entityType || '').trim().toLowerCase();
-      const entityId = Number(payload.entityId || 0);
+      const nodeType = String(payload.nodeType || '').trim().toLowerCase();
+      const nodeId = Number(payload.nodeId || 0);
       const roomId = Number(payload.roomId || 0);
-      if (!Number.isFinite(entityId) || entityId <= 0) return;
+      if (!Number.isFinite(nodeId) || nodeId <= 0) return;
       if (!Number.isFinite(roomId) || roomId <= 0) return;
+      const nextRuntime = {
+        clientScript: payload?.clientScript ? String(payload.clientScript) : null,
+        serverScript: payload?.serverScript ? String(payload.serverScript) : null,
+        data: payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+          ? payload.data
+          : {},
+      };
 
-      if (entityType === 'message') {
+      if (nodeType === 'message') {
         this.messages = this.messages.map((message: Message) => {
-          if (Number(message.id) !== entityId) return message;
+          if (Number(message.id) !== nodeId) return message;
           return {
             ...message,
-            scriptStateJson: payload.scriptStateJson && typeof payload.scriptStateJson === 'object'
-              ? payload.scriptStateJson
-              : {},
-            scriptRevision: Number(payload.scriptRevision || message.scriptRevision || 0),
-            scriptMode: payload.scriptMode || message.scriptMode || null,
+            runtime: {
+              clientScript: nextRuntime.clientScript || message.runtime?.clientScript || null,
+              serverScript: nextRuntime.serverScript || message.runtime?.serverScript || null,
+              data: nextRuntime.data,
+            },
           };
         });
-        if (Number(this.activePinnedMessage?.id || 0) === entityId) {
+        if (Number(this.activePinnedMessage?.id || 0) === nodeId) {
           this.activePinnedMessage = {
             ...(this.activePinnedMessage || {}),
-            scriptStateJson: payload.scriptStateJson && typeof payload.scriptStateJson === 'object'
-              ? payload.scriptStateJson
-              : {},
-            scriptRevision: Number(payload.scriptRevision || this.activePinnedMessage?.scriptRevision || 0),
-            scriptMode: payload.scriptMode || this.activePinnedMessage?.scriptMode || null,
+            runtime: {
+              clientScript: nextRuntime.clientScript || this.activePinnedMessage?.runtime?.clientScript || null,
+              serverScript: nextRuntime.serverScript || this.activePinnedMessage?.runtime?.serverScript || null,
+              data: nextRuntime.data,
+            },
           };
         }
-      } else if (entityType === 'room') {
+      } else if (nodeType === 'room') {
         if (Number(this.activeDialog?.id || 0) === roomId) {
           this.activeRoomScript = {
             ...(this.activeRoomScript || {}),
-            entityType: 'room',
-            entityId,
+            nodeType: 'room',
+            nodeId,
             roomId,
-            scriptId: String(payload.scriptId || this.activeRoomScript?.scriptId || ''),
-            scriptRevision: Number(payload.scriptRevision || this.activeRoomScript?.scriptRevision || 0),
-            scriptMode: payload.scriptMode || this.activeRoomScript?.scriptMode || null,
-            scriptConfigJson: this.activeRoomScript?.scriptConfigJson || {},
-            scriptStateJson: payload.scriptStateJson && typeof payload.scriptStateJson === 'object'
-              ? payload.scriptStateJson
-              : {},
+            clientScript: nextRuntime.clientScript || this.activeRoomScript?.clientScript || null,
+            serverScript: nextRuntime.serverScript || this.activeRoomScript?.serverScript || null,
+            data: nextRuntime.data,
           };
         }
       }
 
       this.scriptRuntimeManager?.pushSharedStateUpdate(payload);
-      if (entityType === 'message') {
+      if (nodeType === 'message') {
         this.emitScriptHostRoomEvent('message_script_state', {
-          entityId,
+          nodeId,
           roomId,
-          scriptId: String(payload.scriptId || ''),
-          scriptRevision: Number(payload.scriptRevision || 0),
+          clientScript: nextRuntime.clientScript,
+          serverScript: nextRuntime.serverScript,
         }, 'server', roomId);
-      } else if (entityType === 'room') {
+      } else if (nodeType === 'room') {
         this.emitScriptHostRoomEvent('room_script_state', {
-          entityId,
+          nodeId,
           roomId,
-          scriptId: String(payload.scriptId || ''),
-          scriptRevision: Number(payload.scriptRevision || 0),
+          clientScript: nextRuntime.clientScript,
+          serverScript: nextRuntime.serverScript,
         }, 'server', roomId);
       }
       this.notifyMessagesChanged();
@@ -254,29 +262,33 @@ export const chatMethodsScriptableRuntime = {
       this.closeComposerTools();
     },
 
-    normalizeAppTypeForSetup(this: any, appTypeRaw: unknown) {
-      const appType = String(appTypeRaw || '').trim().toLowerCase();
-      if (appType === 'llm' || appType === 'poll' || appType === 'dashboard' || appType === 'bot_control' || appType === 'custom') {
-        return appType;
+    normalizeSurfaceTypeForSetup(this: any, surfaceTypeRaw: unknown) {
+      const surfaceType = String(surfaceTypeRaw || '').trim().toLowerCase();
+      if (surfaceType === 'llm' || surfaceType === 'poll' || surfaceType === 'dashboard' || surfaceType === 'bot_control' || surfaceType === 'custom') {
+        return surfaceType;
       }
       return 'custom';
     },
 
-    async configureActiveRoomApp(this: any, payloadRaw: any) {
+    async configureActiveRoomSurface(this: any, payloadRaw: any) {
       const roomId = Number(this.activeDialog?.id || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return null;
 
-      const result = await ws.request('rooms:app:configure', roomId, payloadRaw);
+      const result = await ws.request('rooms:surface:configure', roomId, payloadRaw);
       if (!(result as any)?.ok) {
         const code = String((result as any)?.error || '');
         if (code === 'room_runtime_required') {
-          this.error = 'Для этой app room требуется room runtime, но он не настроен.';
-        } else if (code === 'app_surface_must_be_scriptable') {
-          this.error = 'App surface должен быть scriptable message.';
+          this.error = 'Для этой room surface нужен room runtime, но он не настроен.';
+        } else if (code === 'room_surface_must_be_scriptable') {
+          this.error = 'Room surface должен быть scriptable message.';
+        } else if (code === 'invalid_surface_type') {
+          this.error = 'Некорректный тип room surface.';
+        } else if (code === 'room_surface_not_supported') {
+          this.error = 'В direct room surface не поддерживается.';
         } else if (code === 'forbidden') {
-          this.error = 'Только админ комнаты может менять app room.';
+          this.error = 'Только админ комнаты может менять room surface.';
         } else {
-          this.error = 'Не удалось обновить app room.';
+          this.error = 'Не удалось обновить room surface.';
         }
         return null;
       }
@@ -286,16 +298,16 @@ export const chatMethodsScriptableRuntime = {
       this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
         ? this.normalizeMessage(pinnedMessageRaw)
         : null;
-      this.setActiveRoomScript((result as any).roomScript || null);
+      this.setActiveRoomScript((result as any).roomRuntime || null);
       return result;
     },
 
-    async createAppRoom(this: any, appTypeRaw: unknown) {
-      const appType = this.normalizeAppTypeForSetup(appTypeRaw);
-      const defaultTitle = appType === 'poll'
+    async createSurfaceRoom(this: any, surfaceTypeRaw: unknown) {
+      const surfaceType = this.normalizeSurfaceTypeForSetup(surfaceTypeRaw);
+      const defaultTitle = surfaceType === 'poll'
         ? 'Poll room'
-        : (appType === 'dashboard' ? 'Dashboard room' : 'Bot-control room');
-      const titleRaw = window.prompt('Название app room', defaultTitle);
+        : (surfaceType === 'dashboard' ? 'Dashboard room' : 'Bot-control room');
+      const titleRaw = window.prompt('Название surface room', defaultTitle);
       if (titleRaw === null) return false;
       const title = String(titleRaw || '').trim() || defaultTitle;
 
@@ -316,23 +328,23 @@ export const chatMethodsScriptableRuntime = {
         kind: 'group',
         title: String((result as any).title || title || 'Комната'),
         createdById: Number((result as any).createdById || 0) || null,
-        pinnedMessageId: null,
-        roomApp: this.normalizeRoomApp((result as any).roomApp, null),
+        pinnedNodeId: null,
+        roomSurface: this.normalizeRoomSurface((result as any).roomSurface, null),
       }, {routeMode: 'none'});
 
-      return this.setupCurrentRoomAsApp(appType);
+      return this.setupCurrentRoomSurface(surfaceType);
     },
 
-    async setupCurrentRoomAsApp(this: any, appTypeRaw: unknown) {
+    async setupCurrentRoomSurface(this: any, surfaceTypeRaw: unknown) {
       const roomId = Number(this.activeDialog?.id || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return false;
       if (String(this.activeDialog?.kind || '') === 'direct') {
-        this.error = 'В direct app room не поддерживается.';
+        this.error = 'В direct room surface не поддерживается.';
         return false;
       }
 
-      const appType = this.normalizeAppTypeForSetup(appTypeRaw);
-      const scriptPayload = appType === 'poll'
+      const surfaceType = this.normalizeSurfaceTypeForSetup(surfaceTypeRaw);
+      const scriptPayload = surfaceType === 'poll'
         ? {
           scriptId: 'demo:poll_surface',
           config: {
@@ -344,17 +356,17 @@ export const chatMethodsScriptableRuntime = {
         : {
           scriptId: 'demo:bot_control_surface',
           config: {
-            title: appType === 'dashboard' ? 'Комнатная панель' : 'Bot control',
+            title: surfaceType === 'dashboard' ? 'Комнатная панель' : 'Bot control',
             initialEnabled: true,
           },
         };
       const createdMessage = await this.createScriptableMessage(scriptPayload);
       if (!createdMessage?.id) return false;
 
-      await this.configureActiveRoomApp({
+      await this.configureActiveRoomSurface({
         enabled: true,
-        appType,
-        surfaceMessageId: createdMessage.id,
+        type: surfaceType,
+        pinnedNodeId: createdMessage.id,
         config: {
           title: scriptPayload.config.title,
           requireRoomRuntime: false,
@@ -365,20 +377,20 @@ export const chatMethodsScriptableRuntime = {
       return true;
     },
 
-    async setupPollRoomDemo(this: any) {
-      await this.setupCurrentRoomAsApp('poll');
+    async setupPollRoomSurfaceDemo(this: any) {
+      await this.setupCurrentRoomSurface('poll');
     },
 
-    async setupBotControlRoomDemo(this: any) {
-      await this.setupCurrentRoomAsApp('bot_control');
+    async setupBotControlRoomSurfaceDemo(this: any) {
+      await this.setupCurrentRoomSurface('bot_control');
     },
 
-    async setupDashboardRoomDemo(this: any) {
-      await this.setupCurrentRoomAsApp('dashboard');
+    async setupDashboardRoomSurfaceDemo(this: any) {
+      await this.setupCurrentRoomSurface('dashboard');
     },
 
-    async disableCurrentRoomApp(this: any) {
-      await this.configureActiveRoomApp({
+    async disableCurrentRoomSurface(this: any) {
+      await this.configureActiveRoomSurface({
         enabled: false,
       });
       this.closeComposerTools();

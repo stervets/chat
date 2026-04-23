@@ -12,7 +12,7 @@ import type {
   DiscussionMeta,
   Dialog,
   Message,
-  RoomApp,
+  RoomSurface,
   User,
   DirectDialog,
   NotificationItem,
@@ -40,16 +40,16 @@ export const chatMethodsAuthDialogsAndProfile = {
       };
     },
 
-    normalizeRoomApp(this: any, raw: any, fallbackSurfaceMessageIdRaw?: unknown): RoomApp {
-      const appTypeRaw = String(raw?.appType || '').trim().toLowerCase();
-      const appType = appTypeRaw === 'llm' || appTypeRaw === 'poll' || appTypeRaw === 'dashboard' || appTypeRaw === 'bot_control' || appTypeRaw === 'custom'
-        ? appTypeRaw
+    normalizeRoomSurface(this: any, raw: any, fallbackPinnedNodeIdRaw?: unknown): RoomSurface {
+      const typeRaw = String(raw?.type || '').trim().toLowerCase();
+      const type = typeRaw === 'llm' || typeRaw === 'poll' || typeRaw === 'dashboard' || typeRaw === 'bot_control' || typeRaw === 'custom'
+        ? typeRaw
         : null;
-      const fallbackSurfaceMessageId = Number(fallbackSurfaceMessageIdRaw || 0);
-      const surfaceMessageId = Number(raw?.surfaceMessageId || fallbackSurfaceMessageId || 0);
-      const surfaceKindRaw = String(raw?.surfaceKind || '').trim().toLowerCase();
-      const surfaceKind = surfaceKindRaw === 'text' || surfaceKindRaw === 'system' || surfaceKindRaw === 'scriptable'
-        ? surfaceKindRaw
+      const fallbackPinnedNodeId = Number(fallbackPinnedNodeIdRaw || 0);
+      const pinnedNodeId = Number(raw?.pinnedNodeId || fallbackPinnedNodeId || 0);
+      const pinnedKindRaw = String(raw?.pinnedKind || '').trim().toLowerCase();
+      const pinnedKind = pinnedKindRaw === 'text' || pinnedKindRaw === 'system' || pinnedKindRaw === 'scriptable'
+        ? pinnedKindRaw
         : null;
       const config = raw?.config && typeof raw.config === 'object' && !Array.isArray(raw.config)
         ? {...raw.config}
@@ -57,13 +57,12 @@ export const chatMethodsAuthDialogsAndProfile = {
 
       return {
         enabled: !!raw?.enabled,
-        appType,
+        type,
         config,
-        surfaceMessageId: Number.isFinite(surfaceMessageId) && surfaceMessageId > 0 ? surfaceMessageId : null,
-        surfaceKind,
+        pinnedNodeId: Number.isFinite(pinnedNodeId) && pinnedNodeId > 0 ? pinnedNodeId : null,
+        pinnedKind,
         hasRoomRuntime: !!raw?.hasRoomRuntime,
         requiresRoomRuntime: !!raw?.requiresRoomRuntime,
-        canCollapseSurface: raw?.canCollapseSurface !== false,
       };
     },
 
@@ -209,7 +208,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (Array.isArray(result)) {
         this.directDialogs = result.map((dialogRaw: any) => ({
           ...dialogRaw,
-          roomApp: this.normalizeRoomApp(dialogRaw?.roomApp, dialogRaw?.pinnedMessageId),
+          roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
         }));
       }
     },
@@ -222,8 +221,8 @@ export const chatMethodsAuthDialogsAndProfile = {
         kind: 'group',
         title: (result as any).title,
         createdById: Number((result as any).createdById || 0) || null,
-        pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
-        roomApp: this.normalizeRoomApp((result as any).roomApp, (result as any).pinnedMessageId),
+        pinnedNodeId: Number((result as any).pinnedNodeId || 0) || null,
+        roomSurface: this.normalizeRoomSurface((result as any).roomSurface, (result as any).pinnedNodeId),
         discussion: null,
       } as Dialog;
     },
@@ -240,8 +239,8 @@ export const chatMethodsAuthDialogsAndProfile = {
         targetUser: (result as any).targetUser,
         title: (result as any).targetUser.name,
         createdById: null,
-        pinnedMessageId: Number((result as any).pinnedMessageId || 0) || null,
-        roomApp: this.normalizeRoomApp((result as any).roomApp, (result as any).pinnedMessageId),
+        pinnedNodeId: Number((result as any).pinnedNodeId || 0) || null,
+        roomSurface: this.normalizeRoomSurface((result as any).roomSurface, (result as any).pinnedNodeId),
         discussion: null,
       } as Dialog;
     },
@@ -332,18 +331,18 @@ export const chatMethodsAuthDialogsAndProfile = {
         const nextKind = joinedKind === 'direct' || joinedKind === 'game'
           ? joinedKind
           : 'group';
-        const nextPinnedMessageId = Number((result as any).pinnedMessageId || 0) || null;
+        const nextPinnedNodeId = Number((result as any).pinnedNodeId || 0) || null;
         this.activeDialog = {
           ...this.activeDialog,
           kind: nextKind,
           createdById: Number((result as any).createdById || 0) || null,
-          pinnedMessageId: nextPinnedMessageId,
-          roomApp: this.normalizeRoomApp((result as any).roomApp, nextPinnedMessageId),
+          pinnedNodeId: nextPinnedNodeId,
+          roomSurface: this.normalizeRoomSurface((result as any).roomSurface, nextPinnedNodeId),
           discussion: this.normalizeDiscussionMeta((result as any).discussion),
         };
       }
 
-      this.setActiveRoomScript((result as any).roomScript || null);
+      this.setActiveRoomScript((result as any).roomRuntime || null);
       const pinnedMessageRaw = (result as any).pinnedMessage;
       this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
         ? this.normalizeMessage(pinnedMessageRaw)
@@ -437,8 +436,8 @@ export const chatMethodsAuthDialogsAndProfile = {
         targetUser: dialog.targetUser,
         title: dialog.targetUser.name,
         createdById: null,
-        pinnedMessageId: Number(dialog.pinnedMessageId || 0) || null,
-        roomApp: this.normalizeRoomApp(dialog?.roomApp, dialog?.pinnedMessageId),
+        pinnedNodeId: Number(dialog.pinnedNodeId || 0) || null,
+        roomSurface: this.normalizeRoomSurface(dialog?.roomSurface, dialog?.pinnedNodeId),
         discussion: null,
       }, {routeMode: 'push'});
       this.closeLeftMenu();
@@ -453,7 +452,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       const roomKind = roomKindRaw === 'direct' || roomKindRaw === 'game'
         ? roomKindRaw
         : 'group';
-      const pinnedMessageId = Number(payloadRaw?.pinnedMessageId || 0) || null;
+      const pinnedNodeId = Number(payloadRaw?.pinnedNodeId || 0) || null;
       const hasDiscussionPayload = Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'discussion');
       const discussion = hasDiscussionPayload
         ? this.normalizeDiscussionMeta(payloadRaw?.discussion)
@@ -462,10 +461,13 @@ export const chatMethodsAuthDialogsAndProfile = {
         ...this.activeDialog,
         kind: roomKind,
         createdById: Number(payloadRaw?.createdById || 0) || null,
-        pinnedMessageId,
-        roomApp: this.normalizeRoomApp(payloadRaw?.roomApp, pinnedMessageId),
+        pinnedNodeId,
+        roomSurface: this.normalizeRoomSurface(payloadRaw?.roomSurface, pinnedNodeId),
         discussion,
       };
+      if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'roomRuntime')) {
+        this.setActiveRoomScript(payloadRaw?.roomRuntime || null);
+      }
     },
 
     async onDeleteActiveRoom(this: any) {

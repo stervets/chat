@@ -95,12 +95,12 @@ export class ChatMessagesService {
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,
-        scriptId: null,
-        scriptRevision: 0,
-        scriptMode: null,
-        scriptConfigJson: {},
-        scriptStateJson: {},
-        discussionRoomId: null,
+        runtime: {
+          clientScript: null,
+          serverScript: null,
+          data: {},
+        },
+        commentRoomId: null,
         createdAt: created.message.createdAt.toISOString(),
         reactions: [],
       },
@@ -258,7 +258,7 @@ export class ChatMessagesService {
     messageIdRaw: unknown,
   ): Promise<ApiError | ApiOk<{
     messageId: number;
-    discussionRoomId: number | null;
+    commentRoomId: number | null;
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -311,7 +311,7 @@ export class ChatMessagesService {
     return {
       ok: true,
       messageId: message.id,
-      discussionRoomId: Number(discussionRoom?.id || 0) || null,
+      commentRoomId: Number(discussionRoom?.id || 0) || null,
     };
   }
 
@@ -322,7 +322,7 @@ export class ChatMessagesService {
     created: boolean;
     messageId: number;
     sourceRoomId: number;
-    discussionRoomId: number;
+    commentRoomId: number;
     message: ChatContextMessagePayload | null;
   }>> {
     const authError = this.ctx.requireAuth(state);
@@ -380,7 +380,7 @@ export class ChatMessagesService {
         created: false,
         messageId: existingMessage.id,
         sourceRoomId,
-        discussionRoomId: existingCommentRoom.id,
+        commentRoomId: existingCommentRoom.id,
         message: await this.ctx.loadMessagePayloadById(sourceRoomId, existingMessage.id),
       };
     }
@@ -429,7 +429,7 @@ export class ChatMessagesService {
           created: false,
           messageId: locked.id,
           sourceRoomId: lockedSourceRoomId,
-          discussionRoomId: linkedCommentRoom.id,
+          commentRoomId: linkedCommentRoom.id,
         } as const;
       }
 
@@ -465,7 +465,7 @@ export class ChatMessagesService {
         created: true,
         messageId: locked.id,
         sourceRoomId: lockedSourceRoomId,
-        discussionRoomId: createdRoom.room.id,
+        commentRoomId: createdRoom.room.id,
       } as const;
     });
 
@@ -486,7 +486,7 @@ export class ChatMessagesService {
     changed: boolean;
     roomId: number;
     dialogId: number;
-    pinnedMessageId: number | null;
+    pinnedNodeId: number | null;
     pinnedMessage: ChatContextMessagePayload | null;
   }>> {
     const authError = this.ctx.requireAuth(state);
@@ -533,8 +533,8 @@ export class ChatMessagesService {
     if (Number(message.node?.parentId || 0) !== roomId) {
       return {ok: false, error: 'message_not_in_room'};
     }
-    if (room.app_enabled && message.kind !== 'scriptable') {
-      return {ok: false, error: 'app_surface_must_be_scriptable'};
+    if (room.surface_enabled && message.kind !== 'scriptable') {
+      return {ok: false, error: 'room_surface_must_be_scriptable'};
     }
 
     const changed = Number(room.pinned_node_id || 0) !== messageId;
@@ -555,7 +555,7 @@ export class ChatMessagesService {
       changed,
       roomId,
       dialogId: roomId,
-      pinnedMessageId: pinnedMessage?.id || messageId,
+      pinnedNodeId: pinnedMessage?.id || messageId,
       pinnedMessage,
     };
   }
@@ -564,7 +564,7 @@ export class ChatMessagesService {
     changed: boolean;
     roomId: number;
     dialogId: number;
-    pinnedMessageId: null;
+    pinnedNodeId: null;
     pinnedMessage: null;
   }>> {
     const authError = this.ctx.requireAuth(state);
@@ -603,7 +603,7 @@ export class ChatMessagesService {
       changed,
       roomId,
       dialogId: roomId,
-      pinnedMessageId: null,
+      pinnedNodeId: null,
       pinnedMessage: null,
     };
   }

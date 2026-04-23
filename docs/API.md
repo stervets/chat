@@ -36,16 +36,16 @@ HTTP `upload/*` и `push/*` требуют `Authorization: Bearer <token>`.
 
 ## Chat / Rooms
 
-Исторический префикс `dialogs:*` остался, но модель теперь целиком room-based.
+Исторический префикс `dialogs:*` сохранён, но модель полностью room-based.
 
-- `dialogs:general([])` -> `{roomId, dialogId, type:'group', title, createdById, pinnedMessageId, roomApp}`
-- `dialogs:private([userId])` -> `{roomId, dialogId, type:'direct', targetUser, createdById:null, pinnedMessageId:null, roomApp}`
-- `dialogs:directs([])` -> `[{roomId, dialogId, targetUser, lastMessageAt, createdById:null, pinnedMessageId:null, roomApp}]`
+- `dialogs:general([])` -> `{roomId, dialogId, type:'group', title, createdById, pinnedNodeId, roomSurface}`
+- `dialogs:private([userId])` -> `{roomId, dialogId, type:'direct', targetUser, createdById:null, pinnedNodeId:null, roomSurface}`
+- `dialogs:directs([])` -> `[{roomId, dialogId, targetUser, lastMessageAt, createdById:null, pinnedNodeId:null, roomSurface}]`
 - `dialogs:messages([roomId, limit?, beforeMessageId?])` -> `Message[]`
-- `chat:join([roomId])` -> `{ok:true, roomId, dialogId, kind, createdById, roomScript, roomApp, discussion, pinnedMessageId, pinnedMessage}`
+- `chat:join([roomId])` -> `{ok:true, roomId, dialogId, kind, createdById, roomRuntime, roomSurface, discussion, pinnedNodeId, pinnedMessage}`
 - `dialogs:delete([roomId, {confirm:true}])` -> `{ok:true, changed, roomId, dialogId, kind}`
-- `rooms:create([{title?}])` -> `{ok:true, roomId, dialogId, kind:'group', title, createdById, pinnedMessageId:null, roomApp}`
-- `rooms:app:configure([roomId, payload])` -> `{ok:true, roomId, dialogId, kind, createdById, roomApp, roomScript, pinnedMessageId, pinnedMessage}`
+- `rooms:create([{title?}])` -> `{ok:true, roomId, dialogId, kind:'group', title, createdById, pinnedNodeId:null, roomSurface}`
+- `rooms:surface:configure([roomId, payload])` -> `{ok:true, roomId, dialogId, kind, createdById, roomSurface, roomRuntime, pinnedNodeId, pinnedMessage}`
 
 Сообщения:
 
@@ -58,51 +58,39 @@ HTTP `upload/*` и `push/*` требуют `Authorization: Bearer <token>`.
 
 Комментарии:
 
-- `messages:discussion:get([messageId])` -> `{ok:true, messageId, discussionRoomId|null}`
-- `messages:discussion:create([messageId])` -> `{ok:true, created, messageId, sourceRoomId, discussionRoomId, message}`
+- `messages:discussion:get([messageId])` -> `{ok:true, messageId, commentRoomId|null}`
+- `messages:discussion:create([messageId])` -> `{ok:true, created, messageId, sourceRoomId, commentRoomId, message}`
 
 Важно:
 
-- `discussionRoomId` в payload теперь означает child room-node (`rooms.kind='comment'`) под message-node;
-- отдельного `messages.discussion_room_id` в БД больше нет;
-- `messages.room_id` в БД больше нет;
-- pinned хранится в `rooms.pinned_node_id`, но в payload по-прежнему отдаётся как `pinnedMessageId`, потому что pinned сейчас всегда message-node.
-
-Ограничения:
-
-- `chat:pin/chat:unpin` работают только в non-direct комнате и только для админа комнаты;
-- pinned может быть `text | system | scriptable`, если сообщение лежит в этой же комнате;
-- если app room включён, surface должен быть `scriptable`;
-- `dialogs:delete` требует `confirm:true`;
-- `direct` может удалить любой участник, non-direct — только админ.
+- `commentRoomId` — id comment room-node (`rooms.kind='comment'`), дочерней к message-node;
+- `messages.room_id` и `messages.discussion_room_id` в БД отсутствуют;
+- pinned хранится в `rooms.pinned_node_id`, наружу отдаётся как `pinnedNodeId`.
 
 ## Scriptable
 
 - `scripts:create-message([roomId, payload])` -> `{ok:true, message}`
-- `scripts:action([{entityType, entityId, actionType, payload?}])` -> `{ok:true, roomId, entityType, entityId, state}`
-- `scripts:room:get([roomId])` -> `{ok:true, roomId, roomScript|null}`
+- `scripts:action([{nodeType, nodeId, actionType, payload?}])` -> `{ok:true, roomId, nodeType, nodeId, state}`
+- `scripts:room:get([roomId])` -> `{ok:true, roomId, roomRuntime|null}`
 
-Снимок runtime по payload:
+Runtime snapshot в payload:
 
-- `scriptId`
-- `scriptRevision`
-- `scriptMode`
-- `scriptConfigJson`
-- `scriptStateJson`
-
-Хранение в БД при этом идёт через `nodes.client_script`, `nodes.server_script`, `nodes.data`.
+```ts
+{
+  nodeType: 'message' | 'room',
+  nodeId: number,
+  roomId: number,
+  clientScript: string | null,
+  serverScript: string | null,
+  data: Record<string, any>
+}
+```
 
 ## Games
 
 - `games:solo:create([{moduleKey:'king'}])`
 - `games:session:get([sessionId])`
 - `games:action([{sessionId, action}])`
-
-## Graph / Spaces
-
-`graph:*` команды удалены.
-
-Отдельной graph-модели, spaces/folders/room_ref и graph-state в системе больше нет.
 
 ## WS events
 
@@ -129,15 +117,15 @@ HTTP `upload/*` и `push/*` требуют `Authorization: Bearer <token>`.
 - `rawText`
 - `renderedHtml`
 - `renderedPreviews[]`
-- `scriptId`, `scriptRevision`, `scriptMode`, `scriptConfigJson`, `scriptStateJson`
-- `discussionRoomId`
+- `runtime: {clientScript, serverScript, data}`
+- `commentRoomId`
 - `createdAt`
 - `reactions[]`
 
 Анонимная отправка:
 
 - в БД `messages.sender_id = NULL`;
-- в payload приходит `authorId = 0`, `authorNickname = 'anonymous'`, `authorName = 'Аноним'`.
+- в payload: `authorId = 0`, `authorNickname = 'anonymous'`, `authorName = 'Аноним'`.
 
 Ошибки: `{ok:false, error:'...'}`.
 

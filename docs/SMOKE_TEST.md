@@ -57,7 +57,7 @@ yarn run invite:create
 - отправка, edit, delete, reactions работают;
 - pinned в non-direct работает, в direct недоступен;
 - pinned scriptable message остаётся интерактивным;
-- app room продолжает работать через `rooms:app:configure`;
+- room surface продолжает работать через `rooms:surface:configure`;
 - кнопка `комментарии+` создаёт comment room и повторно использует её;
 - comment room открывается как обычная room, а `к посту` возвращает в исходную;
 - после удаления исходного сообщения comment room не пропадает, но header показывает удалённый источник;

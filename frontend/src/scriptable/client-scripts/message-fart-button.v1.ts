@@ -3,7 +3,7 @@ import type {ScriptWorkerFactory} from '../runtime/types';
 export const messageFartButtonV1: ScriptWorkerFactory = {
   scriptId: 'demo:fart_button',
   revision: 1,
-  entityType: 'message',
+  nodeType: 'message',
 
   create(api) {
     return {

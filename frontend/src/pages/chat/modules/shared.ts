@@ -35,6 +35,6 @@ export type {
   Dialog,
   Message,
   MessageReaction,
-  RoomApp,
+  RoomSurface,
   User,
 } from '@/composables/types';

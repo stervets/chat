@@ -2,47 +2,21 @@
 
 ## Что сделано
 
-- Расширена модель БД для scriptable message/room.
-- Добавлен backend shared-state слой (`scripts:action`).
-- Добавлен file-based script registry (backend/frontend/runner).
-- Добавлен отдельный runner process + внутренний WS transport.
-- Добавлен frontend worker runtime для message + room сущностей.
-- Внедрён runtime hot-restart по `scriptRevision`.
-- Интегрированы WS-события `scripts:state` в текущий чат-flow.
-- Добавлены 3 demo-сценария:
-  - `demo:fart_button` (client-only message),
-  - `demo:guess_word` (shared-state message),
-  - `demo:room_meter` (room-level runner script).
+- Scriptable runtime переведён на node-модель (`client_script`, `server_script`, `nodes.data`).
+- Shared-state слой работает через `scripts:action` + `scripts:state`.
+- Snapshot payload унифицирован на `nodeType/nodeId/clientScript/serverScript/data`.
+- Frontend runtime manager/worker синхронизирован с этим snapshot-контрактом.
+- Runner transport переведён на `nodeType/nodeId` и runtime-поля без legacy `script*Json` ключей.
 
-## Ключевые архитектурные решения
+## Архитектурный итог
 
-- Не делали отдельный heavy engine.
-- Использован простой контракт:
-  - script metadata в entity,
-  - shared state в entity JSON,
-  - action/event transport поверх текущего WS.
-- Runner вынесен в отдельный процесс, но остаётся внутри репозитория.
-- UI-runtime изолирован в Web Worker без sandbox/VM.
+- Нет отдельного graph/spaces/script storage слоя.
+- Runtime identity и lifecycle едины для timeline/pinned.
+- Persistent/shared state живёт в `nodes.data.scriptState`.
+- Runtime config живёт в `nodes.data.scriptConfig`.
 
-## Почему так
+## Что сознательно не делали
 
-- Минимально встраивается в текущий код и протокол.
-- Не ломает текущий чат и исторические команды `dialogs:*`.
-- Простая отладка: всё читается по файлам, без внешней инфраструктуры.
-- Понятная точка расширения: новый script = новый файл + registry entry.
-
-## Что покрыто сейчас
-
-- Scriptable message creation и render в bubble.
-- Shared-state actions и синхронизация между клиентами.
-- Room-level runtime и room banner.
-- Room event -> runner -> state update -> broadcast.
-- Local/client-only runtime без backend-зависимости.
-
-## Что оставлено на будущее
-
-- ACL/permissions на script mutation.
-- Богатые side-effects (кроме system_message).
-- Версионированные migration scripts под CI flow.
-- Глубокая observability runner runtime.
-- Полноценный набор e2e тестов именно под scriptable сценарии.
+- enterprise-абстракции и dual-model;
+- совместимость с legacy runtime hooks;
+- отдельный тяжёлый script engine вне текущего WS/runner pipeline.

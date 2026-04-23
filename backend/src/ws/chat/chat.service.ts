@@ -122,8 +122,8 @@ export class ChatService implements OnApplicationShutdown {
     return this.dialogsService.roomsCreate(state, payloadRaw);
   }
 
-  roomsAppConfigure(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
-    return this.dialogsService.roomsAppConfigure(state, roomIdRaw, payloadRaw);
+  roomsSurfaceConfigure(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
+    return this.dialogsService.roomsSurfaceConfigure(state, roomIdRaw, payloadRaw);
   }
 
   dialogsDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any) {

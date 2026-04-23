@@ -54,12 +54,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async handleScriptStateEvent(payload: {
     roomId: number;
-    entityType: 'message' | 'room';
-    entityId: number;
-    scriptId: string;
-    scriptRevision: number;
-    scriptMode: 'client' | 'client_server' | 'client_runner';
-    scriptStateJson: any;
+    nodeType: 'message' | 'room';
+    nodeId: number;
+    clientScript: string | null;
+    serverScript: string | null;
+    data: any;
   }) {
     const room = await getRoomById(payload.roomId);
     if (room) {
@@ -399,8 +398,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return this.chatService.roomsCreate(client.state, args[0]);
     }
 
-    if (com === 'rooms:app:configure') {
-      const result = await this.chatService.roomsAppConfigure(client.state, args[0], args[1]);
+    if (com === 'rooms:surface:configure') {
+      const result = await this.chatService.roomsSurfaceConfigure(client.state, args[0], args[1]);
       if ((result as any)?.ok) {
         const room = await getRoomById((result as any).roomId);
         const roomPayload = {
@@ -408,14 +407,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           dialogId: (result as any).roomId,
           kind: (result as any).kind,
           createdById: (result as any).createdById || null,
-          roomApp: (result as any).roomApp || null,
-          roomScript: (result as any).roomScript || null,
-          pinnedMessageId: (result as any).pinnedMessageId || null,
+          roomSurface: (result as any).roomSurface || null,
+          roomRuntime: (result as any).roomRuntime || null,
+          pinnedNodeId: (result as any).pinnedNodeId || null,
         };
         const pinPayload = {
           roomId: (result as any).roomId,
           dialogId: (result as any).roomId,
-          pinnedMessageId: (result as any).pinnedMessageId || null,
+          pinnedNodeId: (result as any).pinnedNodeId || null,
           pinnedMessage: (result as any).pinnedMessage || null,
         };
 
@@ -519,8 +518,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           roomId: Number((result as any).roomId || 0),
           eventType: 'script_action',
           eventPayload: {
-            entityType: String((result as any).entityType || ''),
-            entityId: Number((result as any).entityId || 0),
+            nodeType: String((result as any).nodeType || ''),
+            nodeId: Number((result as any).nodeId || 0),
             actionType: String((args[0] as any)?.actionType || ''),
             actorId: Number(client.state?.user?.id || 0),
             actorNickname: String(client.state?.user?.nickname || ''),
@@ -563,7 +562,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             this.broadcastToRoomMembers(room, 'chat:pinned', {
               roomId: (result as any).roomId,
               dialogId: (result as any).roomId,
-              pinnedMessageId: null,
+              pinnedNodeId: null,
               pinnedMessage: null,
             });
           }
@@ -573,7 +572,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             this.broadcast((result as any).roomId, 'chat:pinned', {
               roomId: (result as any).roomId,
               dialogId: (result as any).roomId,
-              pinnedMessageId: null,
+              pinnedNodeId: null,
               pinnedMessage: null,
             });
           }
@@ -589,7 +588,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const payload = {
           roomId: (result as any).roomId,
           dialogId: (result as any).roomId,
-          pinnedMessageId: (result as any).pinnedMessageId || null,
+          pinnedNodeId: (result as any).pinnedNodeId || null,
           pinnedMessage: (result as any).pinnedMessage || null,
         };
 
@@ -609,7 +608,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const payload = {
           roomId: (result as any).roomId,
           dialogId: (result as any).roomId,
-          pinnedMessageId: null,
+          pinnedNodeId: null,
           pinnedMessage: null,
         };
 

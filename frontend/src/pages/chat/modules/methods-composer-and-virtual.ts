@@ -238,14 +238,14 @@ export const chatMethodsComposerAndVirtual = {
     normalizeMessage(this: any, message: any): Message {
       const rawText = String(message?.rawText ?? message?.body ?? '');
       const renderedPreviews = Array.isArray(message?.renderedPreviews) ? message.renderedPreviews : [];
-      const scriptConfigJson = message?.scriptConfigJson && typeof message.scriptConfigJson === 'object'
-        ? message.scriptConfigJson
+      const runtimeRaw = message?.runtime && typeof message.runtime === 'object' && !Array.isArray(message.runtime)
+        ? message.runtime
         : {};
-      const scriptStateJson = message?.scriptStateJson && typeof message.scriptStateJson === 'object'
-        ? message.scriptStateJson
+      const runtimeData = runtimeRaw?.data && typeof runtimeRaw.data === 'object' && !Array.isArray(runtimeRaw.data)
+        ? runtimeRaw.data
         : {};
       const messageKind = String(message?.kind || 'text').trim().toLowerCase();
-      const discussionRoomId = Number(message?.discussionRoomId || 0);
+      const commentRoomId = Number(message?.commentRoomId || 0);
       return {
         ...message,
         kind: messageKind === 'scriptable'
@@ -257,12 +257,12 @@ export const chatMethodsComposerAndVirtual = {
           : null,
         renderedHtml: String(message?.renderedHtml ?? ''),
         renderedPreviews,
-        scriptId: message?.scriptId ? String(message.scriptId) : null,
-        scriptRevision: Number(message?.scriptRevision || 0),
-        scriptMode: message?.scriptMode || null,
-        scriptConfigJson,
-        scriptStateJson,
-        discussionRoomId: Number.isFinite(discussionRoomId) && discussionRoomId > 0 ? discussionRoomId : null,
+        runtime: {
+          clientScript: runtimeRaw?.clientScript ? String(runtimeRaw.clientScript) : null,
+          serverScript: runtimeRaw?.serverScript ? String(runtimeRaw.serverScript) : null,
+          data: runtimeData,
+        },
+        commentRoomId: Number.isFinite(commentRoomId) && commentRoomId > 0 ? commentRoomId : null,
         reactions: Array.isArray(message?.reactions) ? message.reactions : [],
       } as Message;
     },
@@ -537,36 +537,33 @@ export const chatMethodsComposerAndVirtual = {
       return Number.isFinite(messageId) && messageId > 0;
     },
 
-    applyMessageDiscussionRoomId(this: any, messageIdRaw: unknown, discussionRoomIdRaw: unknown) {
+    applyMessageCommentRoomId(this: any, messageIdRaw: unknown, commentRoomIdRaw: unknown) {
       const messageId = Number(messageIdRaw || 0);
-      const discussionRoomId = Number(discussionRoomIdRaw || 0);
+      const commentRoomId = Number(commentRoomIdRaw || 0);
       if (!Number.isFinite(messageId) || messageId <= 0) return;
-      const nextDiscussionRoomId = Number.isFinite(discussionRoomId) && discussionRoomId > 0
-        ? discussionRoomId
+      const nextCommentRoomId = Number.isFinite(commentRoomId) && commentRoomId > 0
+        ? commentRoomId
         : null;
 
       this.messages = this.messages.map((item: Message) => {
         if (Number(item.id || 0) !== messageId) return item;
         return {
           ...item,
-          discussionRoomId: nextDiscussionRoomId,
+          commentRoomId: nextCommentRoomId,
         };
       });
 
       if (Number(this.activePinnedMessage?.id || 0) === messageId) {
         this.activePinnedMessage = {
           ...this.activePinnedMessage,
-          discussionRoomId: nextDiscussionRoomId,
+          commentRoomId: nextCommentRoomId,
         };
       }
     },
 
     buildDiscussionRouteContext(this: any, sourceMessageIdRaw: unknown) {
       const sourceMessageId = Number(sourceMessageIdRaw || 0);
-      const routeContext = this.getRoomRouteContext();
       return {
-        spaceId: routeContext.spaceId,
-        nodeId: routeContext.nodeId,
         sourceRoomId: Number(this.activeDialog?.id || 0) || null,
         sourceMessageId: Number.isFinite(sourceMessageId) && sourceMessageId > 0
           ? sourceMessageId
@@ -584,25 +581,25 @@ export const chatMethodsComposerAndVirtual = {
       this.hapticTap();
       this.discussionOpenPendingMessageId = messageId;
       try {
-        let discussionRoomId = Number(message.discussionRoomId || 0);
-        if (Number.isFinite(discussionRoomId) && discussionRoomId > 0) {
+        let commentRoomId = Number(message.commentRoomId || 0);
+        if (Number.isFinite(commentRoomId) && commentRoomId > 0) {
           const current = await ws.request('messages:discussion:get', messageId);
           if (!(current as any)?.ok) {
-            discussionRoomId = 0;
+            commentRoomId = 0;
           } else {
-            discussionRoomId = Number((current as any).discussionRoomId || 0);
+            commentRoomId = Number((current as any).commentRoomId || 0);
           }
         }
 
-        if (!Number.isFinite(discussionRoomId) || discussionRoomId <= 0) {
+        if (!Number.isFinite(commentRoomId) || commentRoomId <= 0) {
           const result = await ws.request('messages:discussion:create', messageId);
           if (!(result as any)?.ok) {
             this.error = 'Не удалось открыть комментарии.';
             return;
           }
 
-          discussionRoomId = Number((result as any).discussionRoomId || 0);
-          if (!Number.isFinite(discussionRoomId) || discussionRoomId <= 0) {
+          commentRoomId = Number((result as any).commentRoomId || 0);
+          if (!Number.isFinite(commentRoomId) || commentRoomId <= 0) {
             this.error = 'Не удалось открыть комментарии.';
             return;
           }
@@ -611,13 +608,13 @@ export const chatMethodsComposerAndVirtual = {
           if (updatedMessageRaw && typeof updatedMessageRaw === 'object') {
             this.applyMessageUpdate(updatedMessageRaw);
           } else {
-            this.applyMessageDiscussionRoomId(messageId, discussionRoomId);
+            this.applyMessageCommentRoomId(messageId, commentRoomId);
           }
           await this.fetchDirectDialogs();
         }
 
         const path = this.buildRoomRoutePath(
-          discussionRoomId,
+          commentRoomId,
           this.buildDiscussionRouteContext(messageId),
         );
         await this.router.push(path);
@@ -638,10 +635,7 @@ export const chatMethodsComposerAndVirtual = {
         return;
       }
 
-      const routeContext = this.getRoomRouteContext();
       const path = this.buildRoomRoutePath(sourceRoomId, {
-        spaceId: routeContext.spaceId,
-        nodeId: routeContext.nodeId,
         focusMessageId: Number.isFinite(sourceMessageId) && sourceMessageId > 0
           ? sourceMessageId
           : null,

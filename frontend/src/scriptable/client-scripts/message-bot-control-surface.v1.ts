@@ -22,7 +22,7 @@ function buildView(config: Record<string, any>, shared: Record<string, any>, loc
 export const messageBotControlSurfaceV1: ScriptWorkerFactory = {
   scriptId: 'demo:bot_control_surface',
   revision: 1,
-  entityType: 'message',
+  nodeType: 'message',
 
   create(api) {
     return {

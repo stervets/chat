@@ -2,12 +2,12 @@ import {db} from '../db.js';
 import {
   cloneJson,
   createRoomNode,
-  type RoomAppType,
+  type RoomSurfaceType,
   type RoomKind,
-  readRoomApp,
+  readRoomSurface,
 } from './nodes.js';
 
-export type {RoomAppType, RoomKind} from './nodes.js';
+export type {RoomSurfaceType, RoomKind} from './nodes.js';
 
 export type RoomRow = {
   id: number;
@@ -15,10 +15,9 @@ export type RoomRow = {
   title: string | null;
   created_by: number | null;
   pinned_node_id: number | null;
-  pinned_message_id: number | null;
-  app_enabled: boolean;
-  app_type: RoomAppType | null;
-  app_config_json: Record<string, any>;
+  surface_enabled: boolean;
+  surface_type: RoomSurfaceType | null;
+  surface_config_json: Record<string, any>;
   component: string | null;
   client_script: string | null;
   server_script: string | null;
@@ -42,7 +41,7 @@ type RoomWithUsers = {
 };
 
 function mapRoom(row: RoomWithUsers): RoomRow {
-  const roomApp = readRoomApp({
+  const roomSurface = readRoomSurface({
     data: row.node?.data || {},
   });
 
@@ -52,10 +51,9 @@ function mapRoom(row: RoomWithUsers): RoomRow {
     title: row.title || null,
     created_by: Number(row.node?.createdById || 0) || null,
     pinned_node_id: Number(row.pinnedNodeId || 0) || null,
-    pinned_message_id: Number(row.pinnedNodeId || 0) || null,
-    app_enabled: !!roomApp.enabled,
-    app_type: roomApp.type,
-    app_config_json: cloneJson(roomApp.config || {}),
+    surface_enabled: !!roomSurface.enabled,
+    surface_type: roomSurface.type,
+    surface_config_json: cloneJson(roomSurface.config || {}),
     component: row.node?.component || null,
     client_script: row.node?.clientScript || null,
     server_script: row.node?.serverScript || null,

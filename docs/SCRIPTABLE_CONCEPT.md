@@ -1,50 +1,28 @@
-# Scriptable Chat Concept (MVP)
+# Scriptable Concept
 
-## Цель слоя
+## Цель
 
-Scriptable runtime нужен как минимальная платформа для интерактивных `message` и `room` сценариев без отдельного frontend-приложения на каждый кейс.
+Минимальный runtime для интерактивных `message` и `room` без отдельного frontend-приложения под каждый кейс.
 
-Поддерживаются режимы:
+## Runtime identity
 
-- `client`
-- `client_server`
-- `client_runner`
+Один runtime instance на одну node-сущность:
 
-## Runtime Identity
+- `message:<id>`
+- `room:<id>`
 
-Базовое правило: **один runtime instance на одну сущность**.
+Pinned view использует тот же instance по `messageId`.
 
-- message runtime identity: `message:<messageId>`
-- room runtime identity: `room:<roomId>`
-
-Pinned-рендер не создаёт второй runtime для message. Он использует тот же runtime по `messageId`.
-
-## Lifecycle (формализовано)
-
-Lifecycle для scriptable message/room:
+## Lifecycle
 
 1. `init`
-- происходит при создании worker runtime (`onInit`)
-- триггерится один раз на instance
+2. `mount` (переход active views `0 -> 1`)
+3. `state:update`
+4. `unmount` (переход active views `1 -> 0`)
 
-2. `mount`
-- происходит, когда в UI появляется хотя бы один view этой сущности
-- в runtime приходит system event `lifecycle:mount`
-- если views несколько (например timeline + pinned), mount всё равно один на переход `0 -> 1`
+## Event pipeline
 
-3. `update`
-- происходит при изменении persistent/shared state
-- в runtime приходит unified event `state:update`
-
-4. `unmount`
-- происходит, когда последний view исчезает из UI
-- в runtime приходит system event `lifecycle:unmount` на переход `1 -> 0`
-
-Важно: unmount view не равен dispose runtime. Runtime может жить без активного view до следующего sync/drop.
-
-## Event Pipeline
-
-Все события в runtime приводятся к единому формату:
+Единый envelope:
 
 ```ts
 type ScriptRuntimeEvent = {
@@ -54,87 +32,25 @@ type ScriptRuntimeEvent = {
 }
 ```
 
-Источники:
+- `ui` — пользовательские действия.
+- `room` — события комнаты.
+- `server` — shared-state update / shared_action_error.
+- `system` — lifecycle/runtime события.
 
-- `ui`: действия пользователя (`ui:action`)
-- `room`: события комнаты (`chat_message`, `chat_message_updated`, `chat_message_deleted`)
-- `server`: shared-state update (`state:update`) и server-side ошибки действия (`shared_action_error`)
-- `system`: lifecycle/runtime/ws события (`runtime:init`, `runtime:dispose`, `lifecycle:*`, `system:*`)
+## State model
 
-Для room runtime дополнительно прокидывается room-event `script_action` после успешного `scripts:action` (через текущий room-event pipeline).
+- persistent/shared state: `nodes.data.scriptState`
+- runtime config: `nodes.data.scriptConfig`
+- local state: только worker
+- effects (звук/вибрация/одноразовые вещи): не хранить в shared state
 
-Единственный event hook runtime: `onEvent`. Legacy hooks не поддерживаются.
+## Room surface
 
-## State vs Effects
+`roomSurface` в `nodes.data.roomSurface` описывает UI-поверхность комнаты:
 
-### Persistent state (shared)
+- `enabled`
+- `type`
+- `config`
+- pinned scriptable message как surface node
 
-Хранится на сервере/в БД, синхронизируется через `scripts:state`:
-
-- `nodes.data.scriptState` у message-node
-- `nodes.data.scriptState` у room-node
-
-Используется через `getSharedState()` и server event `state:update`.
-
-### Local state
-
-Хранится только в runtime worker на клиенте:
-
-- `getLocalState()`
-- `setLocalState(next)`
-
-Не синхронизируется между пользователями.
-
-### Effects
-
-Effect = побочное действие, которое не должно считаться состоянием:
-
-- звук
-- вибрация
-- одноразовые UI side-effects
-
-Эффекты не хранятся в persistent state. Persistent/shared state должен оставаться чисто данными.
-
-## Pinned + Passive Effects
-
-При двойном рендере одного message (timeline + pinned):
-
-- runtime остаётся один
-- pinned может быть вторым view
-- второй view может работать в `passiveEffects` режиме
-
-`passiveEffects=true` выключает локальные эффекты в этом view (например, повторное проигрывание звука), чтобы не было дублей side-effects.
-
-## App Room Model (MVP)
-
-`room` может работать как app-host:
-
-- `roomApp.enabled=true` + `roomApp.appType`
-- `pinned scriptable message` выступает app-surface
-- `room script` остаётся опциональным room-runtime оркестратором
-
-Модель явная: app room не определяется “по совпадению”, а приходит отдельным `roomApp` payload в `dialogs:*` / `chat:join` / `chat:room-updated`.
-
-## Cleanup / Устойчивость
-
-`ScriptRuntimeManager`:
-
-- корректно dispose'ит runtime при drop/disposeAll
-- снимает worker handlers при terminate
-- не постит события в уже остановленный runtime
-- сохраняет local state при hot-restart (смена descriptor/revision)
-
-## Границы MVP
-
-Что НЕ делаем в текущем слое:
-
-- отдельную новую архитектуру/graph-layer
-- универсальный DSL событий
-- server-driven mount/unmount orchestration
-
-Что уже стабильно:
-
-- единый runtime identity
-- единый event envelope
-- разделение state/effects
-- корректная работа pinned scriptable без второго runtime
+Это derived-поведение поверх room/message nodes, не отдельная structural модель.

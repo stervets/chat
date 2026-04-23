@@ -670,12 +670,6 @@ export const chatMethodsRuntimeAndRouting = {
       const roomRaw = Array.isArray(this.route?.query?.room)
         ? this.route.query.room[0]
         : this.route?.query?.room;
-      const spaceRaw = Array.isArray(this.route?.query?.space)
-        ? this.route.query.space[0]
-        : this.route?.query?.space;
-      const nodeRaw = Array.isArray(this.route?.query?.node)
-        ? this.route.query.node[0]
-        : this.route?.query?.node;
       const sourceRoomRaw = Array.isArray(this.route?.query?.sourceRoom)
         ? this.route.query.sourceRoom[0]
         : this.route?.query?.sourceRoom;
@@ -688,8 +682,6 @@ export const chatMethodsRuntimeAndRouting = {
 
       return {
         roomId: this.parseRoutePositiveInt(roomRaw),
-        spaceId: this.parseRoutePositiveInt(spaceRaw),
-        nodeId: this.parseRoutePositiveInt(nodeRaw),
         sourceRoomId: this.parseRoutePositiveInt(sourceRoomRaw),
         sourceMessageId: this.parseRoutePositiveInt(sourceMessageRaw),
         focusMessageId: this.parseRoutePositiveInt(focusMessageRaw),
@@ -697,8 +689,6 @@ export const chatMethodsRuntimeAndRouting = {
     },
 
     buildRoomRoutePath(this: any, roomIdRaw: unknown, contextRaw?: {
-      spaceId?: number | null;
-      nodeId?: number | null;
       sourceRoomId?: number | null;
       sourceMessageId?: number | null;
       focusMessageId?: number | null;
@@ -710,19 +700,11 @@ export const chatMethodsRuntimeAndRouting = {
         return '/chat';
       }
 
-      const spaceId = Number(contextRaw?.spaceId || 0);
-      const nodeId = Number(contextRaw?.nodeId || 0);
       const sourceRoomId = Number(contextRaw?.sourceRoomId || 0);
       const sourceMessageId = Number(contextRaw?.sourceMessageId || 0);
       const focusMessageId = Number(contextRaw?.focusMessageId || 0);
       const query = new URLSearchParams();
       query.set('room', String(roomId));
-      if (Number.isFinite(spaceId) && spaceId > 0) {
-        query.set('space', String(spaceId));
-      }
-      if (Number.isFinite(nodeId) && nodeId > 0) {
-        query.set('node', String(nodeId));
-      }
       if (Number.isFinite(sourceRoomId) && sourceRoomId > 0) {
         query.set('sourceRoom', String(sourceRoomId));
       }
@@ -800,8 +782,8 @@ export const chatMethodsRuntimeAndRouting = {
           targetUser: direct.targetUser,
           title: direct.targetUser.name,
           createdById: null,
-          pinnedMessageId: Number(direct.pinnedMessageId || 0) || null,
-          roomApp: this.normalizeRoomApp(direct.roomApp, direct.pinnedMessageId),
+          pinnedNodeId: Number(direct.pinnedNodeId || 0) || null,
+          roomSurface: this.normalizeRoomSurface(direct.roomSurface, direct.pinnedNodeId),
           discussion: null,
         } as Dialog;
       }
@@ -811,8 +793,8 @@ export const chatMethodsRuntimeAndRouting = {
         kind: 'group',
         title: `Комната #${roomId}`,
         createdById: null,
-        pinnedMessageId: null,
-        roomApp: this.normalizeRoomApp(null, null),
+        pinnedNodeId: null,
+        roomSurface: this.normalizeRoomSurface(null, null),
         discussion: null,
       } as Dialog;
     },
@@ -899,8 +881,6 @@ export const chatMethodsRuntimeAndRouting = {
       if (roomDialog.kind !== 'direct') {
         const routeContext = this.getRoomRouteContext();
         const canonicalPath = this.buildRoomRoutePath(roomDialog.id, {
-          spaceId: routeContext.spaceId,
-          nodeId: routeContext.nodeId,
           sourceRoomId: routeContext.sourceRoomId,
           sourceMessageId: routeContext.sourceMessageId,
           focusMessageId: routeContext.focusMessageId,

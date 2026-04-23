@@ -15,7 +15,7 @@ function toRoomView(config: Record<string, any>, shared: Record<string, any>) {
 export const roomMeterV1: ScriptWorkerFactory = {
   scriptId: 'demo:room_meter',
   revision: 1,
-  entityType: 'room',
+  nodeType: 'room',
 
   create(api) {
     return {

@@ -27,6 +27,6 @@ export type ScriptWorkerInstance = {
 export type ScriptWorkerFactory = {
   scriptId: string;
   revision: number;
-  entityType: 'message' | 'room';
+  nodeType: 'message' | 'room';
   create: (api: ScriptWorkerApi) => ScriptWorkerInstance;
 };

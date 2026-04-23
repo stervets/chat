@@ -12,11 +12,7 @@ import {ensureUserInGroupRooms, getOrCreateDirectRoom} from '../../common/rooms.
 import {deleteUploadFile, sanitizeUploadName} from '../../common/uploads.js';
 import {
   findCommentRoomNodeIdByMessageId,
-  readNodeScriptConfig,
-  readNodeScriptId,
-  readNodeScriptMode,
-  readNodeScriptRevision,
-  readNodeScriptState,
+  readNodeRuntime,
 } from '../../common/nodes.js';
 import type {SocketState} from '../protocol.js';
 
@@ -532,12 +528,8 @@ export class ChatContext {
 
     if (!messageRow) return null;
 
-    const discussionRoomId = await findCommentRoomNodeIdByMessageId(messageRow.id);
-    const scriptId = readNodeScriptId(messageRow.node);
-    const scriptRevision = readNodeScriptRevision(messageRow.node);
-    const scriptMode = readNodeScriptMode(messageRow.node);
-    const scriptConfigJson = readNodeScriptConfig(messageRow.node);
-    const scriptStateJson = readNodeScriptState(messageRow.node);
+    const commentRoomId = await findCommentRoomNodeIdByMessageId(messageRow.id);
+    const runtime = readNodeRuntime(messageRow.node);
 
     const isScriptable = messageRow.kind === 'scriptable';
     const compiled = isScriptable
@@ -566,12 +558,8 @@ export class ChatContext {
       rawText: compiled.rawText,
       renderedHtml: compiled.renderedHtml,
       renderedPreviews: compiled.renderedPreviews,
-      scriptId,
-      scriptRevision,
-      scriptMode,
-      scriptConfigJson,
-      scriptStateJson,
-      discussionRoomId,
+      runtime,
+      commentRoomId,
       createdAt: messageRow.createdAt.toISOString(),
       reactions: await this.loadMessageReactions(messageRow.id),
     };
@@ -712,12 +700,12 @@ export type ChatContextMessagePayload = {
   rawText: string;
   renderedHtml: string;
   renderedPreviews: MessageLinkPreview[];
-  scriptId: string | null;
-  scriptRevision: number;
-  scriptMode: 'client' | 'client_server' | 'client_runner' | null;
-  scriptConfigJson: any;
-  scriptStateJson: any;
-  discussionRoomId?: number | null;
+  runtime: {
+    clientScript: string | null;
+    serverScript: string | null;
+    data: Record<string, any>;
+  };
+  commentRoomId?: number | null;
   createdAt: string;
   reactions: MessageReaction[];
 };

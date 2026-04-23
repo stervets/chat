@@ -215,7 +215,7 @@ async function migrateData(client: Client) {
             coalesce(r.script_config_json, '{}'::jsonb),
             'scriptState',
             coalesce(r.script_state_json, '{}'::jsonb),
-            'roomApp',
+            'roomSurface',
             case
               when coalesce(r.app_enabled, false)
                 or r.app_type is not null
@@ -481,6 +481,141 @@ async function verifyCounts(client: Client) {
   }
 }
 
+async function verifySemantics(client: Client) {
+  const checks = [
+    {
+      name: 'rooms_have_room_nodes',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from rooms r
+        left join nodes n on n.id = r.id
+        where n.id is null or n.type <> 'room'
+      `),
+    },
+    {
+      name: 'messages_have_message_nodes',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from messages m
+        left join nodes n on n.id = m.id
+        where n.id is null or n.type <> 'message'
+      `),
+    },
+    {
+      name: 'message_nodes_have_room_parent',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from messages m
+        join nodes message_node on message_node.id = m.id
+        left join nodes parent_node on parent_node.id = message_node.parent_id
+        left join rooms parent_room on parent_room.id = parent_node.id
+        where message_node.parent_id is null
+          or parent_node.type <> 'room'
+          or parent_room.id is null
+      `),
+    },
+    {
+      name: 'comment_rooms_have_message_parent',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from rooms comment_room
+        join nodes comment_node on comment_node.id = comment_room.id
+        left join nodes parent_node on parent_node.id = comment_node.parent_id
+        left join messages parent_message on parent_message.id = parent_node.id
+        where comment_room.kind = 'comment'
+          and (
+            comment_node.parent_id is null
+            or parent_node.type <> 'message'
+            or parent_message.id is null
+          )
+      `),
+    },
+    {
+      name: 'pinned_nodes_reference_message_nodes',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from rooms r
+        left join nodes n on n.id = r.pinned_node_id
+        left join messages m on m.id = r.pinned_node_id
+        where r.pinned_node_id is not null
+          and (n.id is null or n.type <> 'message' or m.id is null)
+      `),
+    },
+    {
+      name: 'orphan_room_nodes',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from nodes n
+        left join rooms r on r.id = n.id
+        where n.type = 'room' and r.id is null
+      `),
+    },
+    {
+      name: 'orphan_message_nodes',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from nodes n
+        left join messages m on m.id = n.id
+        where n.type = 'message' and m.id is null
+      `),
+    },
+    {
+      name: 'memberships_reference_existing_rooms',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from rooms_users ru
+        left join rooms r on r.id = ru.room_id
+        where r.id is null
+      `),
+    },
+    {
+      name: 'reactions_reference_existing_messages',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from message_reactions mr
+        left join messages m on m.id = mr.message_id
+        where m.id is null
+      `),
+    },
+    {
+      name: 'game_sessions_reference_existing_rooms',
+      actual: await scalarInt(client, `
+        select count(*) as value
+        from game_sessions gs
+        left join rooms r on r.id = gs.room_id
+        where r.id is null
+      `),
+    },
+  ];
+
+  for (const check of checks) {
+    if (check.actual !== 0) {
+      throw new Error(`semantic_check_failed:${check.name}:${check.actual}`);
+    }
+  }
+
+  const droppedTables = ['graph_edges', 'graph_nodes'];
+  for (const tableName of droppedTables) {
+    if (await tableExists(client, tableName)) {
+      throw new Error(`semantic_check_failed:legacy_table_exists:${tableName}`);
+    }
+  }
+
+  const legacyColumns: Array<{tableName: string; columnName: string}> = [
+    {tableName: 'messages', columnName: 'room_id'},
+    {tableName: 'messages', columnName: 'discussion_room_id'},
+    {tableName: 'rooms', columnName: 'pinned_message_id'},
+    {tableName: 'rooms', columnName: 'app_enabled'},
+    {tableName: 'rooms', columnName: 'app_type'},
+    {tableName: 'rooms', columnName: 'app_config_json'},
+  ];
+  for (const column of legacyColumns) {
+    if (await columnExists(client, column.tableName, column.columnName)) {
+      throw new Error(`semantic_check_failed:legacy_column_exists:${column.tableName}.${column.columnName}`);
+    }
+  }
+}
+
 async function finalizeMigration(client: Client) {
   await client.query(`
     create table ${META_TABLE} (
@@ -550,6 +685,7 @@ async function run() {
     await migrateData(client);
     await verifyCounts(client);
     await finalizeMigration(client);
+    await verifySemantics(client);
 
     await client.query('commit');
     logStep('nodes migration completed successfully');
