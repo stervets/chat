@@ -1,3 +1,4 @@
+import {Prisma} from '@prisma/client';
 import {db} from '../../db.js';
 import {
   createPublicGroupRoom,
@@ -325,30 +326,36 @@ export class ChatDialogsService {
       },
     });
 
-    const mapped = (await Promise.all(rows.map(async (row) => {
+    const roomIds = rows.map((row) => row.id);
+    const lastMessageRows = roomIds.length > 0
+      ? await db.$queryRaw<Array<{roomId: number; createdAt: Date}>>(Prisma.sql`
+        select distinct on (n.parent_id)
+          n.parent_id as "roomId",
+          m.created_at as "createdAt"
+        from messages m
+        join nodes n on n.id = m.id
+        where n.parent_id in (${Prisma.join(roomIds)})
+        order by n.parent_id, m.created_at desc, m.id desc
+      `)
+      : [];
+
+    const lastMessageAtByRoomId = new Map<number, string>();
+    lastMessageRows.forEach((row) => {
+      lastMessageAtByRoomId.set(
+        Number(row.roomId || 0),
+        row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date(row.createdAt).toISOString(),
+      );
+    });
+
+    const mapped = rows.map((row) => {
       const targetMember = row.roomUsers.find((member) => member.userId !== userId);
       const targetUser = targetMember?.user;
       if (!targetUser) return null;
 
-      const lastMessage = await db.message.findFirst({
-        where: {
-          node: {
-            parentId: row.id,
-          },
-        },
-        orderBy: [
-          {createdAt: 'desc'},
-          {id: 'desc'},
-        ],
-        select: {
-          createdAt: true,
-        },
-      });
-
       return {
         roomId: row.id,
         dialogId: row.id,
-        lastMessageAt: lastMessage?.createdAt.toISOString() || new Date(0).toISOString(),
+        lastMessageAt: lastMessageAtByRoomId.get(row.id) || new Date(0).toISOString(),
         targetUser: this.ctx.toPublicUser(targetUser),
         createdById: null,
         pinnedNodeId: null,
@@ -368,7 +375,7 @@ export class ChatDialogsService {
           member_user_ids: [],
         }, null, null),
       };
-    }))).filter(Boolean) as Array<{
+    }).filter(Boolean) as Array<{
       roomId: number;
       dialogId: number;
       targetUser: PublicUser;
@@ -848,17 +855,7 @@ export class ChatDialogsService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const uploadRows = await db.message.findMany({
-      where: {
-        node: {
-          parentId: roomId,
-        },
-      },
-      select: {
-        rawText: true,
-      },
-    });
-    const uploadNames = uploadRows.flatMap((row) => this.ctx.extractUploadNamesFromRawText(row.rawText || ''));
+    const uploadNames = await this.ctx.collectUploadNamesFromNodeSubtree(roomId);
 
     const result = await db.node.deleteMany({
       where: {id: roomId},

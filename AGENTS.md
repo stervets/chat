@@ -102,3 +102,12 @@ yarn run frontend:dev
 - для существенных изменений поведения обновлять `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/SMOKE_TEST.md`;
 - после фронтовых/WS правок прогонять `yarn run test:login` или `yarn run smoke`;
 - после локального запуска сервисов — остановить процессы.
+
+## Актуализация 2026-04-23
+- `getOrCreateGroupRoom/getOrCreateDirectRoom` защищены per-key in-memory lock без изменения схемы БД.
+- cleanup upload-ссылок при `message:delete` и `room:delete` теперь собирает ссылки по всему subtree через `nodes`.
+- `roomListDirect` берёт last message батчем (один SQL-запрос), без N+1.
+- в compile-пайплайне сообщений добавлен tail-режим time-ref для новых сообщений без полного скана таймлайна; полный скан оставлен только там, где нужен точный nearest по индексу.
+- добавлены black-box e2e тесты для login/session restore, group/direct send, comment room, upload cleanup при удалении source.
+- для hot WS-команд введён единый ответ `{ok:true,data}` / `{ok:false,error}` на границе `chat.gateway.ts`, с нормализацией ошибок.
+- для тех же WS-команд добавлены явные payload/data типы на boundary; старый формат на фронте поддержан локальным compat-адаптером в `frontend/src/composables/classes/ws.ts`.

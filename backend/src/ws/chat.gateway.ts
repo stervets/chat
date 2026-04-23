@@ -15,6 +15,7 @@ import {ChatService} from './chat.service.js';
 import {scriptableEvents} from '../scriptable/events.js';
 import {
   SYSTEM_NICKNAME,
+  type ChatContextMessagePayload,
 } from './chat/chat-context.js';
 import {
   BACKEND_PEER_ID,
@@ -27,6 +28,102 @@ import {
 type ClientSocket = WebSocket & {
   state: SocketState;
 };
+
+type WsArgs = Record<string, unknown>;
+type WsErrorObject = {message: string; code?: string | number};
+type WsError = string | WsErrorObject;
+type WsSuccess<T> = {ok: true; data: T};
+type WsFailure = {ok: false; error: WsError};
+type WsResponse<T> = WsSuccess<T> | WsFailure;
+
+type AuthSessionPayload = {token?: string};
+type AuthLoginPayload = {nickname?: string; password?: string};
+type AuthUpdateProfilePayload = {name?: string; nicknameColor?: string | null; pushDisableAllMentions?: boolean};
+type AuthChangePasswordPayload = {newPassword?: string};
+
+type RoomGetPayload = {roomId?: number};
+type RoomListPayload = {kind?: string};
+type RoomCreatePayload = {title?: string};
+type RoomDeletePayload = {roomId?: number; confirm?: boolean};
+
+type MessageListPayload = {roomId?: number; limit?: number; beforeMessageId?: number};
+type MessageCreatePayload = {
+  roomId?: number;
+  text?: string;
+  body?: string;
+  kind?: string;
+  silent?: boolean;
+  [key: string]: unknown;
+};
+type MessageUpdatePayload = {messageId?: number; text?: string; body?: string};
+type MessageDeletePayload = {messageId?: number};
+
+type ReactionSetPayload = {messageId?: number; emoji?: string | null};
+
+type RuntimeActionPayload = {
+  nodeType?: 'message' | 'room' | string;
+  nodeId?: number;
+  actionType?: string;
+  payload?: unknown;
+};
+
+type RoomGetData = {roomId: number; [key: string]: unknown};
+type RoomDeleteData = {
+  changed: boolean;
+  roomId: number;
+  dialogId: number;
+  kind: 'group' | 'direct' | 'game' | 'comment';
+};
+type MessageCreateData = {
+  message: ChatContextMessagePayload;
+};
+type MessageUpdateData = {
+  changed: boolean;
+  message: {
+    roomId: number;
+    [key: string]: unknown;
+  };
+};
+type MessageDeleteData = {
+  changed: boolean;
+  roomId: number;
+  dialogId: number;
+  messageId: number;
+  pinnedCleared: boolean;
+};
+type ReactionSetData = {
+  changed: boolean;
+  roomId: number;
+  dialogId: number;
+  messageId: number;
+  reactions: unknown[];
+  notify: ({userId: number; [key: string]: unknown} | null);
+};
+type RuntimeActionData = {
+  roomId: number;
+  nodeType: string;
+  nodeId: number;
+  data: unknown;
+};
+
+const STRICT_WS_COMMANDS = new Set<string>([
+  'auth:login',
+  'auth:session',
+  'auth:me',
+  'auth:logout',
+  'auth:updateProfile',
+  'auth:changePassword',
+  'room:get',
+  'room:list',
+  'room:create',
+  'room:delete',
+  'message:create',
+  'message:update',
+  'message:delete',
+  'message:list',
+  'message:reaction:set',
+  'runtime:action',
+]);
 
 @WebSocketGateway({
   path: config.wsPath,
@@ -117,14 +214,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`WS disconnected: ${client.state?.id || 'unknown'}`);
   }
 
-  private parsePacket(raw: string): Packet | null {
+  private parsePacket(raw: string): [string, WsArgs, string, string, string?] | null {
     try {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed) || parsed.length < 4) return null;
 
       const com = typeof parsed[0] === 'string' ? parsed[0] : '';
       if (!com) return null;
-      const args = parsed[1] && typeof parsed[1] === 'object' && !Array.isArray(parsed[1]) ? parsed[1] : {};
+      const args = parsed[1] && typeof parsed[1] === 'object' && !Array.isArray(parsed[1])
+        ? parsed[1] as WsArgs
+        : {};
       const senderId = typeof parsed[2] === 'string' ? parsed[2] : FRONTEND_PEER_ID;
       const recipientId = typeof parsed[3] === 'string' ? parsed[3] : BACKEND_PEER_ID;
       const requestId = typeof parsed[4] === 'string' ? parsed[4] : undefined;
@@ -140,7 +239,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.send(JSON.stringify(packet));
   }
 
-  private sendResult(client: ClientSocket, recipientId: string, requestId: string, value: any) {
+  private sendResult(client: ClientSocket, recipientId: string, requestId: string, value: unknown) {
     this.sendPacket(client, [
       RESULT_COMMAND,
       [value],
@@ -150,7 +249,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     ]);
   }
 
-  private sendEvent(client: ClientSocket, com: string, payload: Record<string, any> | any = {}) {
+  private sendEvent(client: ClientSocket, com: string, payload: Record<string, unknown> | unknown = {}) {
     this.sendPacket(client, [
       com,
       payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {},
@@ -181,7 +280,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private broadcast(roomId: number, com: string, payload: Record<string, any> | any = {}) {
+  private broadcast(roomId: number, com: string, payload: Record<string, unknown> | unknown = {}) {
     const set = this.subscriptions.get(roomId);
     if (!set) return;
     for (const client of set) {
@@ -189,7 +288,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private broadcastToRoomMembers(room: RoomRow, com: string, payload: Record<string, any> | any = {}) {
+  private broadcastToRoomMembers(room: RoomRow, com: string, payload: Record<string, unknown> | unknown = {}) {
     for (const rawClient of this.server.clients) {
       const client = rawClient as ClientSocket;
       if (!client.state?.user) continue;
@@ -198,7 +297,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private sendToUser(userId: number, com: string, payload: Record<string, any> | any = {}) {
+  private sendToUser(userId: number, com: string, payload: Record<string, unknown> | unknown = {}) {
     for (const rawClient of this.server.clients) {
       const client = rawClient as ClientSocket;
       if (!client.state?.user) continue;
@@ -207,7 +306,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private broadcastToAuthorized(com: string, payload: Record<string, any> | any = {}) {
+  private broadcastToAuthorized(com: string, payload: Record<string, unknown> | unknown = {}) {
     for (const rawClient of this.server.clients) {
       const client = rawClient as ClientSocket;
       if (!client.state?.user) continue;
@@ -245,17 +344,310 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private async dispatch(client: ClientSocket, com: string, args: Record<string, any>) {
-    if (com === 'auth:login') return this.chatService.authLogin(client.state, args);
-    if (com === 'auth:session') return this.chatService.authSession(client.state, args.token);
-    if (com === 'auth:me') return this.chatService.authMe(client.state);
-    if (com === 'auth:logout') {
-      const result = await this.chatService.authLogout(client.state);
-      this.unsubscribe(client);
-      return result;
+  private isStrictWsCommand(com: string) {
+    return STRICT_WS_COMMANDS.has(com);
+  }
+
+  private ok<T>(data: T): WsSuccess<T> {
+    return {ok: true, data};
+  }
+
+  private normalizeWsError(errorRaw: unknown): WsError {
+    if (typeof errorRaw === 'string') return errorRaw;
+
+    if (errorRaw && typeof errorRaw === 'object') {
+      const maybeMessage = (errorRaw as {message?: unknown}).message;
+      const maybeCode = (errorRaw as {code?: unknown}).code;
+      const message = String(maybeMessage || '').trim();
+
+      if (message) {
+        if (typeof maybeCode === 'string' || typeof maybeCode === 'number') {
+          return {
+            message,
+            code: maybeCode,
+          };
+        }
+        return {message};
+      }
     }
-    if (com === 'auth:updateProfile') return this.chatService.authUpdateProfile(client.state, args);
-    if (com === 'auth:changePassword') return this.chatService.authChangePassword(client.state, args);
+
+    return 'server_error';
+  }
+
+  private fail(errorRaw: unknown): WsFailure {
+    return {
+      ok: false,
+      error: this.normalizeWsError(errorRaw),
+    };
+  }
+
+  private normalizeResult<T>(resultRaw: unknown): WsResponse<T> {
+    if (resultRaw && typeof resultRaw === 'object') {
+      const result = resultRaw as Record<string, unknown>;
+      if (result.ok === false) {
+        return this.fail(result.error);
+      }
+
+      if (result.ok === true) {
+        const keys = Object.keys(result);
+        if (keys.length === 2 && Object.prototype.hasOwnProperty.call(result, 'data')) {
+          return this.ok(result.data as T);
+        }
+
+        const rest: Record<string, unknown> = {...result};
+        delete rest.ok;
+        return this.ok(rest as T);
+      }
+    }
+
+    return this.ok(resultRaw as T);
+  }
+
+  private async dispatchStrictCommand(
+    client: ClientSocket,
+    com: string,
+    args: WsArgs,
+  ): Promise<WsResponse<unknown> | null> {
+    if (!this.isStrictWsCommand(com)) return null;
+
+    try {
+      if (com === 'auth:login') {
+        return this.normalizeResult(await this.chatService.authLogin(client.state, args as AuthLoginPayload));
+      }
+
+      if (com === 'auth:session') {
+        const payload = args as AuthSessionPayload;
+        return this.normalizeResult(await this.chatService.authSession(client.state, payload.token));
+      }
+
+      if (com === 'auth:me') {
+        return this.normalizeResult(await this.chatService.authMe(client.state));
+      }
+
+      if (com === 'auth:logout') {
+        const result = this.normalizeResult(await this.chatService.authLogout(client.state));
+        if (result.ok) {
+          this.unsubscribe(client);
+        }
+        return result;
+      }
+
+      if (com === 'auth:updateProfile') {
+        return this.normalizeResult(await this.chatService.authUpdateProfile(client.state, args as AuthUpdateProfilePayload));
+      }
+
+      if (com === 'auth:changePassword') {
+        return this.normalizeResult(await this.chatService.authChangePassword(client.state, args as AuthChangePasswordPayload));
+      }
+
+      if (com === 'room:get') {
+        const payload = args as RoomGetPayload;
+        const result = this.normalizeResult<RoomGetData>(await this.chatService.roomGet(client.state, payload.roomId));
+        if (result.ok) {
+          const roomId = Number(result.data.roomId || 0);
+          if (Number.isFinite(roomId) && roomId > 0) {
+            this.subscribe(client, roomId);
+          }
+        }
+        return result;
+      }
+
+      if (com === 'room:list') {
+        const payload = args as RoomListPayload;
+        const kind = String(payload.kind || '').trim().toLowerCase();
+        if (kind === 'direct') {
+          return this.normalizeResult(await this.chatService.roomListDirect(client.state));
+        }
+        if (kind === 'group') {
+          const group = this.normalizeResult(await this.chatService.roomGetDefaultGroup(client.state));
+          if (!group.ok) return group;
+          return this.ok([group.data]);
+        }
+        return this.fail('invalid_room_kind');
+      }
+
+      if (com === 'room:create') {
+        return this.normalizeResult(await this.chatService.roomCreate(client.state, args as RoomCreatePayload));
+      }
+
+      if (com === 'room:delete') {
+        const payload = args as RoomDeletePayload;
+        const parsedRoomId = Number.parseInt(String(payload.roomId ?? ''), 10);
+        const roomBeforeDelete = Number.isFinite(parsedRoomId) && parsedRoomId > 0
+          ? await getRoomById(parsedRoomId)
+          : null;
+        const result = this.normalizeResult<RoomDeleteData>(await this.chatService.roomDelete(client.state, payload.roomId, payload));
+        if (result.ok && result.data.changed) {
+          if (roomBeforeDelete) {
+            this.broadcastToRoomMembers(roomBeforeDelete, 'room:deleted', {
+              roomId: result.data.roomId,
+              dialogId: result.data.dialogId,
+              kind: result.data.kind,
+            });
+          }
+          this.closeRoomSubscriptions(result.data.roomId);
+        }
+        return result;
+      }
+
+      if (com === 'message:create') {
+        const payload = args as MessageCreatePayload;
+        const kind = String(payload.kind || 'text').trim().toLowerCase();
+        const rawResult = kind === 'scriptable'
+          ? await this.chatService.messageCreateScriptable(client.state, payload.roomId, payload)
+          : await this.chatService.messageCreate(client.state, payload.roomId, payload.text ?? payload.body, payload);
+
+        const result = this.normalizeResult<MessageCreateData>(rawResult);
+        if (result.ok && result.data.message) {
+          const room = await getRoomById(result.data.message.roomId);
+          const silentRequested = Boolean(payload.silent);
+          const skipPush = silentRequested && client.state?.user?.nickname === SYSTEM_NICKNAME;
+          if (room) {
+            this.broadcastToRoomMembers(room, 'message:created', result.data.message);
+            if (!skipPush) {
+              void this.webPushService.sendChatMessagePush({
+                room,
+                message: result.data.message,
+                senderId: Number(client.state?.user?.id || 0),
+                excludeUserIds: this.getOnlineUserIds(),
+              });
+            }
+          } else {
+            this.broadcast(result.data.message.roomId, 'message:created', result.data.message);
+          }
+
+          await this.chatService.scriptableNotifyRoomEvent({
+            roomId: Number(result.data.message.roomId || 0),
+            eventType: 'message_created',
+            eventPayload: {
+              id: Number(result.data.message.id || 0),
+              kind: String(result.data.message.kind || 'text'),
+              authorId: Number(result.data.message.authorId || 0),
+              authorNickname: String(result.data.message.authorNickname || ''),
+            },
+          });
+        }
+        return result;
+      }
+
+      if (com === 'message:update') {
+        const payload = args as MessageUpdatePayload;
+        const result = this.normalizeResult<MessageUpdateData>(
+          await this.chatService.messageUpdate(client.state, payload.messageId, payload.text ?? payload.body),
+        );
+        if (result.ok && result.data.changed && result.data.message) {
+          const room = await getRoomById(result.data.message.roomId);
+          if (room) {
+            this.broadcastToRoomMembers(room, 'message:updated', result.data.message);
+          } else {
+            this.broadcast(result.data.message.roomId, 'message:updated', result.data.message);
+          }
+        }
+        return result;
+      }
+
+      if (com === 'message:delete') {
+        const payload = args as MessageDeletePayload;
+        const result = this.normalizeResult<MessageDeleteData>(await this.chatService.messageDelete(client.state, payload.messageId));
+        if (result.ok && result.data.changed) {
+          const room = await getRoomById(result.data.roomId);
+          const payloadForEvent = {
+            roomId: result.data.roomId,
+            dialogId: result.data.dialogId,
+            messageId: result.data.messageId,
+          };
+
+          if (room) {
+            this.broadcastToRoomMembers(room, 'message:deleted', payloadForEvent);
+            if (result.data.pinnedCleared) {
+              this.broadcastToRoomMembers(room, 'room:pin:updated', {
+                roomId: result.data.roomId,
+                dialogId: result.data.dialogId,
+                pinnedNodeId: null,
+                pinnedMessage: null,
+              });
+            }
+          } else {
+            this.broadcast(result.data.roomId, 'message:deleted', payloadForEvent);
+            if (result.data.pinnedCleared) {
+              this.broadcast(result.data.roomId, 'room:pin:updated', {
+                roomId: result.data.roomId,
+                dialogId: result.data.dialogId,
+                pinnedNodeId: null,
+                pinnedMessage: null,
+              });
+            }
+          }
+        }
+        return result;
+      }
+
+      if (com === 'message:list') {
+        const payload = args as MessageListPayload;
+        return this.normalizeResult(await this.chatService.messageList(
+          client.state,
+          payload.roomId,
+          payload.limit,
+          payload.beforeMessageId,
+        ));
+      }
+
+      if (com === 'message:reaction:set') {
+        const payload = args as ReactionSetPayload;
+        const result = this.normalizeResult<ReactionSetData>(
+          await this.chatService.messageReactionSet(client.state, payload.messageId, payload.emoji ?? null),
+        );
+        if (result.ok && result.data.changed) {
+          const room = await getRoomById(result.data.roomId);
+          const payloadForEvent = {
+            roomId: result.data.roomId,
+            dialogId: result.data.dialogId,
+            messageId: result.data.messageId,
+            reactions: result.data.reactions,
+          };
+
+          if (room) {
+            this.broadcastToRoomMembers(room, 'message:reactions:updated', payloadForEvent);
+          } else {
+            this.broadcast(result.data.roomId, 'message:reactions:updated', payloadForEvent);
+          }
+
+          if (result.data.notify) {
+            this.sendToUser(result.data.notify.userId, 'message:reaction:notify', result.data.notify);
+          }
+        }
+        return result;
+      }
+
+      if (com === 'runtime:action') {
+        const payload = args as RuntimeActionPayload;
+        const result = this.normalizeResult<RuntimeActionData>(await this.chatService.runtimeAction(client.state, payload));
+        if (result.ok) {
+          await this.chatService.scriptableNotifyRoomEvent({
+            roomId: Number(result.data.roomId || 0),
+            eventType: 'script_action',
+            eventPayload: {
+              nodeType: String(result.data.nodeType || ''),
+              nodeId: Number(result.data.nodeId || 0),
+              actionType: String(payload.actionType || ''),
+              actorId: Number(client.state?.user?.id || 0),
+              actorNickname: String(client.state?.user?.nickname || ''),
+            },
+          });
+        }
+        return result;
+      }
+
+      return this.fail(`handler_not_found:${com}`);
+    } catch (error) {
+      this.logger.error((error as {message?: string})?.message || String(error));
+      return this.fail(error);
+    }
+  }
+
+  private async dispatch(client: ClientSocket, com: string, args: Record<string, any>) {
+    const strictResult = await this.dispatchStrictCommand(client, com, args as WsArgs);
+    if (strictResult) return strictResult;
 
     if (com === 'user:list') return this.chatService.usersList(client.state);
 
@@ -365,47 +757,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     if (com === 'room:group:get-default') return this.chatService.roomGetDefaultGroup(client.state);
     if (com === 'room:direct:get-or-create') return this.chatService.roomDirectGetOrCreate(client.state, args.userId);
-    if (com === 'room:list') {
-      const kind = String(args.kind || '').trim().toLowerCase();
-      if (kind === 'direct') return this.chatService.roomListDirect(client.state);
-      if (kind === 'group') {
-        const result = await this.chatService.roomGetDefaultGroup(client.state);
-        if ((result as any)?.ok === false) return result;
-        return [result];
-      }
-      return {ok: false, error: 'invalid_room_kind'};
-    }
-    if (com === 'message:list') return this.chatService.messageList(client.state, args.roomId, args.limit, args.beforeMessageId);
-    if (com === 'room:delete') {
-      const roomId = Number.parseInt(String(args.roomId ?? ''), 10);
-      const roomBeforeDelete = Number.isFinite(roomId) && roomId > 0
-        ? await getRoomById(roomId)
-        : null;
-      const result = await this.chatService.roomDelete(client.state, args.roomId, args);
-      if ((result as any)?.ok && (result as any)?.changed) {
-        if (roomBeforeDelete) {
-          this.broadcastToRoomMembers(roomBeforeDelete, 'room:deleted', {
-            roomId: (result as any).roomId,
-            dialogId: (result as any).roomId,
-            kind: (result as any).kind,
-          });
-        }
-        this.closeRoomSubscriptions((result as any).roomId);
-      }
-      return result;
-    }
-
-    if (com === 'room:get') {
-      const result = await this.chatService.roomGet(client.state, args.roomId);
-      if ((result as any)?.ok) {
-        this.subscribe(client, (result as any).roomId);
-      }
-      return result;
-    }
-
-    if (com === 'room:create') {
-      return this.chatService.roomCreate(client.state, args);
-    }
 
     if (com === 'room:surface:set') {
       const result = await this.chatService.roomSurfaceSet(client.state, args.roomId, args);
@@ -458,111 +809,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'message:create') {
-      const kind = String(args.kind || 'text').trim().toLowerCase();
-      const result = kind === 'scriptable'
-        ? await this.chatService.messageCreateScriptable(client.state, args.roomId, args)
-        : await this.chatService.messageCreate(client.state, args.roomId, args.text ?? args.body, args);
-      if ((result as any)?.ok && (result as any)?.message) {
-        const room = await getRoomById((result as any).message.roomId);
-        const silentRequested = Boolean(args.silent);
-        const skipPush = silentRequested && client.state?.user?.nickname === SYSTEM_NICKNAME;
-        if (room) {
-          this.broadcastToRoomMembers(room, 'message:created', (result as any).message);
-          if (!skipPush) {
-            void this.webPushService.sendChatMessagePush({
-              room,
-              message: (result as any).message,
-              senderId: Number(client.state?.user?.id || 0),
-              excludeUserIds: this.getOnlineUserIds(),
-            });
-          }
-        } else {
-          this.broadcast((result as any).message.roomId, 'message:created', (result as any).message);
-        }
-
-        await this.chatService.scriptableNotifyRoomEvent({
-          roomId: Number((result as any).message.roomId || 0),
-          eventType: 'message_created',
-          eventPayload: {
-            id: Number((result as any).message.id || 0),
-            kind: String((result as any).message.kind || 'text'),
-            authorId: Number((result as any).message.authorId || 0),
-            authorNickname: String((result as any).message.authorNickname || ''),
-          },
-        });
-      }
-      return result;
-    }
-
-    if (com === 'runtime:action') {
-      const result = await this.chatService.runtimeAction(client.state, args);
-      if ((result as any)?.ok) {
-        await this.chatService.scriptableNotifyRoomEvent({
-          roomId: Number((result as any).roomId || 0),
-          eventType: 'script_action',
-          eventPayload: {
-            nodeType: String((result as any).nodeType || ''),
-            nodeId: Number((result as any).nodeId || 0),
-            actionType: String(args.actionType || ''),
-            actorId: Number(client.state?.user?.id || 0),
-            actorNickname: String(client.state?.user?.nickname || ''),
-          },
-        });
-      }
-      return result;
-    }
-
     if (com === 'room:runtime:get') {
       return this.chatService.roomRuntimeGet(client.state, args.roomId);
-    }
-
-    if (com === 'message:update') {
-      const result = await this.chatService.messageUpdate(client.state, args.messageId, args.text ?? args.body);
-      if ((result as any)?.ok && (result as any)?.changed && (result as any)?.message) {
-        const room = await getRoomById((result as any).message.roomId);
-        if (room) {
-          this.broadcastToRoomMembers(room, 'message:updated', (result as any).message);
-        } else {
-          this.broadcast((result as any).message.roomId, 'message:updated', (result as any).message);
-        }
-      }
-      return result;
-    }
-
-    if (com === 'message:delete') {
-      const result = await this.chatService.messageDelete(client.state, args.messageId);
-      if ((result as any)?.ok && (result as any)?.changed) {
-        const room = await getRoomById((result as any).roomId);
-        const payload = {
-          roomId: (result as any).roomId,
-          dialogId: (result as any).roomId,
-          messageId: (result as any).messageId,
-        };
-
-        if (room) {
-          this.broadcastToRoomMembers(room, 'message:deleted', payload);
-          if ((result as any).pinnedCleared) {
-            this.broadcastToRoomMembers(room, 'room:pin:updated', {
-              roomId: (result as any).roomId,
-              dialogId: (result as any).roomId,
-              pinnedNodeId: null,
-              pinnedMessage: null,
-            });
-          }
-        } else {
-          this.broadcast((result as any).roomId, 'message:deleted', payload);
-          if ((result as any).pinnedCleared) {
-            this.broadcast((result as any).roomId, 'room:pin:updated', {
-              roomId: (result as any).roomId,
-              dialogId: (result as any).roomId,
-              pinnedNodeId: null,
-              pinnedMessage: null,
-            });
-          }
-        }
-      }
-      return result;
     }
 
     if (com === 'room:pin:set') {
@@ -605,30 +853,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'message:reaction:set') {
-      const result = await this.chatService.messageReactionSet(client.state, args.messageId, args.emoji ?? null);
-      if ((result as any)?.ok && (result as any)?.changed) {
-        const room = await getRoomById((result as any).roomId);
-        const payload = {
-          roomId: (result as any).roomId,
-          dialogId: (result as any).roomId,
-          messageId: (result as any).messageId,
-          reactions: (result as any).reactions,
-        };
-
-        if (room) {
-          this.broadcastToRoomMembers(room, 'message:reactions:updated', payload);
-        } else {
-          this.broadcast((result as any).roomId, 'message:reactions:updated', payload);
-        }
-
-        if ((result as any).notify) {
-          this.sendToUser((result as any).notify.userId, 'message:reaction:notify', (result as any).notify);
-        }
-      }
-      return result;
-    }
-
     return {ok: false, error: `handler_not_found:${com}`};
   }
 
@@ -647,7 +871,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (err: any) {
       this.logger.error(err?.message || String(err));
       if (requestId) {
-        this.sendResult(client, senderId, requestId, {ok: false, error: 'server_error'});
+        const errorPayload = this.isStrictWsCommand(com)
+          ? this.fail(err)
+          : {ok: false, error: 'server_error'};
+        this.sendResult(client, senderId, requestId, errorPayload);
       }
     }
   }

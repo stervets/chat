@@ -25,7 +25,7 @@
 ## Быстрый старт (dev)
 
 Нужно:
-- Node.js 22+
+- Node.js 24+
 - Yarn
 - PostgreSQL 16+
 

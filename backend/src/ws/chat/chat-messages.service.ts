@@ -208,7 +208,6 @@ export class ChatMessagesService {
       select: {
         id: true,
         senderId: true,
-        rawText: true,
         node: {
           select: {
             parentId: true,
@@ -235,7 +234,7 @@ export class ChatMessagesService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const uploadNames = this.ctx.extractUploadNamesFromRawText(existing.rawText || '');
+    const uploadNames = await this.ctx.collectUploadNamesFromNodeSubtree(messageId);
     const pinnedCleared = Number(room.pinned_node_id || 0) === messageId;
     const result = await db.node.deleteMany({
       where: {id: messageId},

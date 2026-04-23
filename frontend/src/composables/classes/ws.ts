@@ -1,9 +1,28 @@
 import {emit} from '@/composables/event-bus';
 
+const STRICT_WS_COMMANDS = new Set([
+  'auth:login',
+  'auth:session',
+  'auth:me',
+  'auth:logout',
+  'auth:updateProfile',
+  'auth:changePassword',
+  'room:get',
+  'room:list',
+  'room:create',
+  'room:delete',
+  'message:create',
+  'message:update',
+  'message:delete',
+  'message:list',
+  'message:reaction:set',
+  'runtime:action',
+]);
+
 export class WsClient {
   socket: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
-  private readonly requests: Record<string, (result: any) => void> = {};
+  private readonly requests: Record<string, {resolve: (result: any) => void; com: string}> = {};
   private lastUrl = '';
 
   private parsePacket(raw: string): [string, Record<string, any> | any[], string, string, string?] | null {
@@ -28,6 +47,31 @@ export class WsClient {
 
   private genId() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  private adaptStrictResponseToLegacy(com: string, result: any) {
+    if (!STRICT_WS_COMMANDS.has(com)) return result;
+    if (!result || typeof result !== 'object') return result;
+    if (!((result as any).ok) || !Object.prototype.hasOwnProperty.call(result, 'data')) {
+      return result;
+    }
+
+    const data = (result as any).data;
+    if (com === 'auth:me' || com === 'room:list' || com === 'message:list') {
+      return data;
+    }
+
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      return {
+        ok: true,
+        ...data,
+      };
+    }
+
+    return {
+      ok: true,
+      data,
+    };
   }
 
   connect(url: string) {
@@ -55,7 +99,11 @@ export class WsClient {
 
         if (com === '[res]') {
           if (!requestId || !this.requests[requestId]) return;
-          this.requests[requestId](Array.isArray(args) ? args[0] : undefined);
+          const pending = this.requests[requestId];
+          pending.resolve(this.adaptStrictResponseToLegacy(
+            pending.com,
+            Array.isArray(args) ? args[0] : undefined,
+          ));
           delete this.requests[requestId];
           return;
         }
@@ -74,7 +122,7 @@ export class WsClient {
         this.socket = null;
         this.connectPromise = null;
         Object.keys(this.requests).forEach((requestId) => {
-          this.requests[requestId]({ok: false, error: 'disconnected'});
+          this.requests[requestId].resolve({ok: false, error: 'disconnected'});
           delete this.requests[requestId];
         });
         emit('ws:disconnected');
@@ -119,7 +167,10 @@ export class WsClient {
     ];
 
     return new Promise((resolve) => {
-      this.requests[requestId] = resolve;
+      this.requests[requestId] = {
+        resolve,
+        com,
+      };
       try {
         this.socket!.send(JSON.stringify(packet));
       } catch (error: any) {

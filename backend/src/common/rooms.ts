@@ -40,6 +40,51 @@ type RoomWithUsers = {
   roomUsers: Array<{userId: number}>;
 };
 
+type RoomCreateLockState = {
+  tail: Promise<void>;
+  pending: number;
+};
+
+const roomCreateLocks = new Map<string, RoomCreateLockState>();
+const DEFAULT_GROUP_ROOM_LOCK_KEY = 'group:default';
+
+async function withRoomCreateLock<T>(lockKey: string, action: () => Promise<T>) {
+  let state = roomCreateLocks.get(lockKey);
+  if (!state) {
+    state = {
+      tail: Promise.resolve(),
+      pending: 0,
+    };
+    roomCreateLocks.set(lockKey, state);
+  }
+
+  state.pending += 1;
+  const waitForTurn = state.tail.catch(() => {});
+  let releaseLock: () => void = () => {};
+  const turnFinished = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+
+  state.tail = waitForTurn.then(() => turnFinished);
+  await waitForTurn;
+
+  try {
+    return await action();
+  } finally {
+    releaseLock();
+    state.pending -= 1;
+    if (state.pending <= 0) {
+      roomCreateLocks.delete(lockKey);
+    }
+  }
+}
+
+function buildDirectRoomLockKey(firstUserId: number, secondUserId: number) {
+  const minUserId = Math.min(firstUserId, secondUserId);
+  const maxUserId = Math.max(firstUserId, secondUserId);
+  return `direct:${minUserId}:${maxUserId}`;
+}
+
 function mapRoom(row: RoomWithUsers): RoomRow {
   const roomSurface = readRoomSurface({
     data: row.node?.data || {},
@@ -123,84 +168,86 @@ export async function ensureUserInGroupRooms(userId: number) {
 }
 
 export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<RoomRow> {
-  const createdById = Number(createdByIdRaw || 0);
-  const canAssignCreator = Number.isFinite(createdById) && createdById > 0;
+  return withRoomCreateLock(DEFAULT_GROUP_ROOM_LOCK_KEY, async () => {
+    const createdById = Number(createdByIdRaw || 0);
+    const canAssignCreator = Number.isFinite(createdById) && createdById > 0;
 
-  let room = await db.room.findFirst({
-    where: {
-      kind: 'group',
-      node: {
-        parentId: null,
+    let room = await db.room.findFirst({
+      where: {
+        kind: 'group',
+        node: {
+          parentId: null,
+        },
       },
-    },
-    orderBy: {
-      id: 'asc',
-    },
-    select: roomSelect(),
-  }) as RoomWithUsers | null;
+      orderBy: {
+        id: 'asc',
+      },
+      select: roomSelect(),
+    }) as RoomWithUsers | null;
 
-  if (!room) {
-    try {
-      room = await db.$transaction(async (tx) => {
-        const created = await createRoomNode(tx, {
-          kind: 'group',
-          title: 'Общий чат',
-          createdById: canAssignCreator ? createdById : null,
-          nodeData: {},
-        });
-
-        const users = await tx.user.findMany({
-          select: {
-            id: true,
-          },
-        });
-
-        if (users.length > 0) {
-          await tx.roomUser.createMany({
-            data: users.map((user) => ({
-              roomId: created.room.id,
-              userId: user.id,
-            })),
-            skipDuplicates: true,
+    if (!room) {
+      try {
+        room = await db.$transaction(async (tx) => {
+          const created = await createRoomNode(tx, {
+            kind: 'group',
+            title: 'Общий чат',
+            createdById: canAssignCreator ? createdById : null,
+            nodeData: {},
           });
-        }
 
-        return {
-          id: created.room.id,
-          kind: created.room.kind,
-          title: created.room.title,
-          pinnedNodeId: created.room.pinnedNodeId,
-          node: {
-            createdById: created.node.createdById,
-            component: created.node.component,
-            clientScript: created.node.clientScript,
-            serverScript: created.node.serverScript,
-            data: created.node.data,
+          const users = await tx.user.findMany({
+            select: {
+              id: true,
+            },
+          });
+
+          if (users.length > 0) {
+            await tx.roomUser.createMany({
+              data: users.map((user) => ({
+                roomId: created.room.id,
+                userId: user.id,
+              })),
+              skipDuplicates: true,
+            });
+          }
+
+          return {
+            id: created.room.id,
+            kind: created.room.kind,
+            title: created.room.title,
+            pinnedNodeId: created.room.pinnedNodeId,
+            node: {
+              createdById: created.node.createdById,
+              component: created.node.component,
+              clientScript: created.node.clientScript,
+              serverScript: created.node.serverScript,
+              data: created.node.data,
+            },
+            roomUsers: users.map((user) => ({userId: user.id})),
+          } satisfies RoomWithUsers;
+        });
+      } catch {
+        room = await db.room.findFirst({
+          where: {
+            kind: 'group',
+            node: {
+              parentId: null,
+            },
           },
-          roomUsers: users.map((user) => ({userId: user.id})),
-        } satisfies RoomWithUsers;
-      });
-    } catch {
-      room = await db.room.findFirst({
-        where: {
-          kind: 'group',
-          node: {
-            parentId: null,
+          orderBy: {
+            id: 'asc',
           },
-        },
-        orderBy: {
-          id: 'asc',
-        },
-        select: roomSelect(),
-      }) as RoomWithUsers | null;
+          select: roomSelect(),
+        }) as RoomWithUsers | null;
+      }
     }
-  }
 
-  if (!room) {
-    throw new Error('failed_to_create_group_room');
-  }
+    if (!room) {
+      throw new Error('failed_to_create_group_room');
+    }
 
-  return mapRoom(room);
+    return mapRoom(room);
+  });
 }
 
 export async function getRoomById(roomId: number): Promise<RoomRow | null> {
@@ -251,57 +298,60 @@ async function findExistingDirectRoom(firstUserId: number, secondUserId: number)
 }
 
 export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: number): Promise<RoomRow> {
-  let room = await findExistingDirectRoom(firstUserId, secondUserId);
+  const lockKey = buildDirectRoomLockKey(firstUserId, secondUserId);
+  return withRoomCreateLock(lockKey, async () => {
+    let room = await findExistingDirectRoom(firstUserId, secondUserId);
 
-  if (!room) {
-    try {
-      room = await db.$transaction(async (tx) => {
-        const created = await createRoomNode(tx, {
-          kind: 'direct',
-          title: null,
-          createdById: null,
-          nodeData: {},
-        });
+    if (!room) {
+      try {
+        room = await db.$transaction(async (tx) => {
+          const created = await createRoomNode(tx, {
+            kind: 'direct',
+            title: null,
+            createdById: null,
+            nodeData: {},
+          });
 
-        await tx.roomUser.createMany({
-          data: [
-            {
-              roomId: created.room.id,
-              userId: firstUserId,
+          await tx.roomUser.createMany({
+            data: [
+              {
+                roomId: created.room.id,
+                userId: firstUserId,
+              },
+              {
+                roomId: created.room.id,
+                userId: secondUserId,
+              },
+            ],
+            skipDuplicates: true,
+          });
+
+          return {
+            id: created.room.id,
+            kind: created.room.kind,
+            title: created.room.title,
+            pinnedNodeId: created.room.pinnedNodeId,
+            node: {
+              createdById: created.node.createdById,
+              component: created.node.component,
+              clientScript: created.node.clientScript,
+              serverScript: created.node.serverScript,
+              data: created.node.data,
             },
-            {
-              roomId: created.room.id,
-              userId: secondUserId,
-            },
-          ],
-          skipDuplicates: true,
+            roomUsers: [{userId: firstUserId}, {userId: secondUserId}],
+          } satisfies RoomWithUsers;
         });
-
-        return {
-          id: created.room.id,
-          kind: created.room.kind,
-          title: created.room.title,
-          pinnedNodeId: created.room.pinnedNodeId,
-          node: {
-            createdById: created.node.createdById,
-            component: created.node.component,
-            clientScript: created.node.clientScript,
-            serverScript: created.node.serverScript,
-            data: created.node.data,
-          },
-          roomUsers: [{userId: firstUserId}, {userId: secondUserId}],
-        } satisfies RoomWithUsers;
-      });
-    } catch {
-      room = await findExistingDirectRoom(firstUserId, secondUserId);
+      } catch {
+        room = await findExistingDirectRoom(firstUserId, secondUserId);
+      }
     }
-  }
 
-  if (!room) {
-    throw new Error('failed_to_create_direct_room');
-  }
+    if (!room) {
+      throw new Error('failed_to_create_direct_room');
+    }
 
-  return mapRoom(room);
+    return mapRoom(room);
+  });
 }
 
 export async function ensureUserInRoom(roomId: number, userId: number) {

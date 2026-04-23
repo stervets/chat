@@ -43,6 +43,7 @@ const ALLOWED_REACTIONS = new Set([
   '👎',
   '😢',
 ]);
+const TAIL_TIME_SCAN_BATCH = 200;
 
 export type ApiError = {ok: false; error: string};
 export type ApiOk<T> = {ok: true} & T;
@@ -196,6 +197,29 @@ export class ChatContext {
     }
   }
 
+  async collectUploadNamesFromNodeSubtree(rootNodeIdRaw: unknown) {
+    const rootNodeId = Number(rootNodeIdRaw || 0);
+    if (!Number.isFinite(rootNodeId) || rootNodeId <= 0) return [];
+
+    const rows = await db.$queryRaw<Array<{rawText: string | null}>>(Prisma.sql`
+      with recursive subtree as (
+        select id
+        from nodes
+        where id = ${rootNodeId}
+        union all
+        select child.id
+        from nodes child
+        join subtree parent on parent.id = child.parent_id
+      )
+      select m.raw_text as "rawText"
+      from messages m
+      join subtree s on s.id = m.id
+    `);
+
+    const uploadNames = rows.flatMap((row) => this.extractUploadNamesFromRawText(row.rawText || ''));
+    return Array.from(new Set(uploadNames));
+  }
+
   normalizeName(nameRaw: unknown, fallbackNickname: string) {
     const name = String(nameRaw ?? '').trim();
     if (!name) return fallbackNickname;
@@ -301,7 +325,69 @@ export class ChatContext {
     return `${this.formatUsername(authorNicknameRaw)}: ${preview || '(пусто)'}`;
   }
 
-  async buildRoomMessageRenderContext(roomId: number, rawTexts: string[]) {
+  private async loadLatestTimeCandidatesByLabel(roomId: number, timeLabels: Set<string>) {
+    const unresolved = new Set(Array.from(timeLabels));
+    const byLabel = new Map<string, TimeRefCandidate[]>();
+    let beforeMessageId: number | null = null;
+
+    while (unresolved.size > 0) {
+      const timelineRows = await db.message.findMany({
+        where: {
+          node: {
+            parentId: roomId,
+          },
+          ...(beforeMessageId ? {id: {lt: beforeMessageId}} : {}),
+        },
+        orderBy: [
+          {createdAt: 'desc'},
+          {id: 'desc'},
+        ],
+        take: TAIL_TIME_SCAN_BATCH,
+        select: {
+          id: true,
+          rawText: true,
+          createdAt: true,
+          sender: {
+            select: {
+              nickname: true,
+            },
+          },
+        },
+      });
+
+      if (!timelineRows.length) break;
+
+      for (const row of timelineRows) {
+        const timeLabel = this.formatMessageTime(row.createdAt);
+        if (!unresolved.has(timeLabel)) continue;
+
+        byLabel.set(timeLabel, [{
+          id: row.id,
+          index: 0,
+          tooltip: this.buildTimeReferenceTooltip(
+            row.rawText,
+            row.sender?.nickname || ANONYMOUS_AUTHOR_NICKNAME,
+          ),
+        }]);
+        unresolved.delete(timeLabel);
+        if (unresolved.size <= 0) break;
+      }
+
+      if (timelineRows.length < TAIL_TIME_SCAN_BATCH) break;
+      beforeMessageId = timelineRows[timelineRows.length - 1]?.id || null;
+      if (!beforeMessageId) break;
+    }
+
+    return byLabel;
+  }
+
+  async buildRoomMessageRenderContext(
+    roomId: number,
+    rawTexts: string[],
+    options?: {
+      useTailTimeCandidates?: boolean;
+    },
+  ) {
     const mentionNicknames = new Set<string>();
     const timeLabels = new Set<string>();
 
@@ -385,48 +471,56 @@ export class ChatContext {
     let timelineSize = 0;
 
     if (timeLabels.size > 0) {
-      const timelineRows = await db.message.findMany({
-        where: {
-          node: {
-            parentId: roomId,
-          },
-        },
-        orderBy: [
-          {createdAt: 'asc'},
-          {id: 'asc'},
-        ],
-        select: {
-          id: true,
-          rawText: true,
-          createdAt: true,
-          sender: {
-            select: {
-              nickname: true,
+      if (options?.useTailTimeCandidates) {
+        const tailCandidates = await this.loadLatestTimeCandidatesByLabel(roomId, timeLabels);
+        tailCandidates.forEach((candidates, timeLabel) => {
+          timeCandidatesByLabel.set(timeLabel, candidates);
+        });
+      } else {
+        // Для "ближайшего по таймлайну" time-ref нужен полный стабильный порядок сообщений комнаты.
+        const timelineRows = await db.message.findMany({
+          where: {
+            node: {
+              parentId: roomId,
             },
           },
-        },
-      });
-
-      timelineSize = timelineRows.length;
-
-      timelineRows.forEach((row, index) => {
-        messageIndexById.set(row.id, index);
-
-        const timeLabel = this.formatMessageTime(row.createdAt);
-        if (!timeLabels.has(timeLabel)) return;
-
-        const tooltip = this.buildTimeReferenceTooltip(
-          row.rawText,
-          row.sender?.nickname || ANONYMOUS_AUTHOR_NICKNAME,
-        );
-        const candidates = timeCandidatesByLabel.get(timeLabel) || [];
-        candidates.push({
-          id: row.id,
-          index,
-          tooltip,
+          orderBy: [
+            {createdAt: 'asc'},
+            {id: 'asc'},
+          ],
+          select: {
+            id: true,
+            rawText: true,
+            createdAt: true,
+            sender: {
+              select: {
+                nickname: true,
+              },
+            },
+          },
         });
-        timeCandidatesByLabel.set(timeLabel, candidates);
-      });
+
+        timelineSize = timelineRows.length;
+
+        timelineRows.forEach((row, index) => {
+          messageIndexById.set(row.id, index);
+
+          const timeLabel = this.formatMessageTime(row.createdAt);
+          if (!timeLabels.has(timeLabel)) return;
+
+          const tooltip = this.buildTimeReferenceTooltip(
+            row.rawText,
+            row.sender?.nickname || ANONYMOUS_AUTHOR_NICKNAME,
+          );
+          const candidates = timeCandidatesByLabel.get(timeLabel) || [];
+          candidates.push({
+            id: row.id,
+            index,
+            tooltip,
+          });
+          timeCandidatesByLabel.set(timeLabel, candidates);
+        });
+      }
     }
 
     const context: RoomMessageRenderContext = {
@@ -486,7 +580,9 @@ export class ChatContext {
   }
 
   async compileMessageForRoom(roomId: number, rawText: string, sourceMessageId: number | null = null) {
-    const context = await this.buildRoomMessageRenderContext(roomId, [rawText]);
+    const context = await this.buildRoomMessageRenderContext(roomId, [rawText], {
+      useTailTimeCandidates: sourceMessageId === null,
+    });
     return this.compileMessageWithContext(rawText, context, sourceMessageId);
   }
 
