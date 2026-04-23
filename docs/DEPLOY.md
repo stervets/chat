@@ -67,15 +67,15 @@ cd /home/lisov/projects/chat/backend
 
 ### Ручные SQL миграции
 
-Если в релизе есть SQL в `backend/prisma/manual/*.sql`:
+`backend/prisma/manual` больше не хранит старые архитектурные хвосты. Там лежат только точечные актуальные SQL, которые реально ещё могут понадобиться вручную:
+- `backend/prisma/manual/20260421_king_stage1.sql`
+- `backend/prisma/manual/20260422_allow_non_unique_user_names.sql`
+
+Если в релизе есть ручной SQL:
 1. backup;
 2. остановить backend;
 3. применить SQL;
 4. собрать backend и поднять обратно.
-
-Актуальные ручные SQL (если применяешь вручную, а не через `prisma migrate deploy`):
-- `backend/prisma/manual/20260421_king_stage1.sql`
-- `backend/prisma/manual/20260422_allow_non_unique_user_names.sql`
 
 После King stage 1 нужно засидить ботов:
 ```bash

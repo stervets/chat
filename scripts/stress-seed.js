@@ -121,7 +121,7 @@ class WsRpcClient {
     pending.resolve(Array.isArray(parsed[1]) ? parsed[1][0] : undefined);
   }
 
-  async request(com, ...args) {
+  async request(com, args = {}) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error(`WS is not open for request ${com}`);
     }
@@ -280,7 +280,7 @@ async function main() {
     allDesiredNicknames.push(stressNickname(i));
   }
 
-  let users = ensureOk(await admin.request('users:list'), 'users:list(initial)');
+  let users = ensureOk(await admin.request('user:list'), 'user:list(initial)');
   const existingSet = new Set(
     users.map((user) => String(user.nickname || '').toLowerCase()).filter(Boolean),
   );
@@ -305,7 +305,7 @@ async function main() {
   }
   log(`Users created this run: ${createdUsers}`);
 
-  users = ensureOk(await admin.request('users:list'), 'users:list(after-create)');
+  users = ensureOk(await admin.request('user:list'), 'user:list(after-create)');
   const byNickname = new Map();
   for (const user of users) {
     byNickname.set(String(user.nickname || '').toLowerCase(), user);
@@ -322,12 +322,12 @@ async function main() {
     }
   }
 
-  const general = ensureOk(await admin.request('dialogs:general'), 'dialogs:general');
-  const generalDialogId = Number(general.dialogId);
-  if (!Number.isFinite(generalDialogId)) {
-    throw new Error('General dialog id is invalid');
+  const general = ensureOk(await admin.request('room:group:get-default'), 'room:group:get-default');
+  const generalRoomId = Number(general.roomId);
+  if (!Number.isFinite(generalRoomId)) {
+    throw new Error('General room id is invalid');
   }
-  log(`General dialog id=${generalDialogId}`);
+  log(`General room id=${generalRoomId}`);
 
   const senderNicknames = [
     'lisov',
@@ -346,8 +346,12 @@ async function main() {
   for (let i = 0; i < GENERAL_MESSAGE_COUNT; i += 1) {
     const sender = senderClients[i % senderClients.length];
     const text = buildGeneralMessage(i + 1, sender.nickname);
-    const result = await sender.client.request('chat:send', generalDialogId, text);
-    ensureOk(result, `chat:send(general,#${i + 1})`);
+    const result = await sender.client.request('message:create', {
+      roomId: generalRoomId,
+      kind: 'text',
+      text,
+    });
+    ensureOk(result, `message:create(general,#${i + 1})`);
 
     if ((i + 1) % 500 === 0) {
       log(`General messages sent: ${i + 1}/${GENERAL_MESSAGE_COUNT}`);
@@ -377,12 +381,12 @@ async function main() {
     const rightClient = await getOrCreateAuthedClient(rightNickname, DEFAULT_USER_PASSWORD, clientPool);
 
     const direct = ensureOk(
-      await leftClient.request('dialogs:private', rightUser.id),
-      `dialogs:private(${leftNickname},${rightNickname})`,
+      await leftClient.request('room:direct:get-or-create', {userId: rightUser.id}),
+      `room:direct:get-or-create(${leftNickname},${rightNickname})`,
     );
-    const dialogId = Number(direct.dialogId);
-    if (!Number.isFinite(dialogId)) {
-      throw new Error(`Direct dialog id invalid for ${leftNickname} <-> ${rightNickname}`);
+    const roomId = Number(direct.roomId);
+    if (!Number.isFinite(roomId)) {
+      throw new Error(`Direct room id invalid for ${leftNickname} <-> ${rightNickname}`);
     }
 
     for (let j = 0; j < DIRECT_MESSAGES_PER_DIALOG; j += 1) {
@@ -391,17 +395,21 @@ async function main() {
       const targetNickname = fromLeft ? rightNickname : leftNickname;
       const authorClient = fromLeft ? leftClient : rightClient;
       const text = buildDirectMessage(j + 1, authorNickname, targetNickname);
-      const sent = await authorClient.request('chat:send', dialogId, text);
-      ensureOk(sent, `chat:send(direct:${dialogId},#${j + 1})`);
+      const sent = await authorClient.request('message:create', {
+        roomId,
+        kind: 'text',
+        text,
+      });
+      ensureOk(sent, `message:create(direct:${roomId},#${j + 1})`);
       directMessagesSent += 1;
     }
 
-    log(`Direct ${i + 1}/${DIRECT_DIALOGS_COUNT} done: @${leftNickname} <-> @${rightNickname}, dialog=${dialogId}`);
+    log(`Direct ${i + 1}/${DIRECT_DIALOGS_COUNT} done: @${leftNickname} <-> @${rightNickname}, room=${roomId}`);
   }
 
   log(`Direct dialogs seeded: ${DIRECT_DIALOGS_COUNT}, messages=${directMessagesSent}`);
 
-  const totalUsersInDb = ensureOk(await admin.request('users:list'), 'users:list(final)').length + 1;
+  const totalUsersInDb = ensureOk(await admin.request('user:list'), 'user:list(final)').length + 1;
   log(`Final users (incl admin): ${totalUsersInDb}`);
   log('Stress seed completed successfully');
 

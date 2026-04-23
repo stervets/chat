@@ -318,7 +318,10 @@ export const chatMethodsMessageBodyAndReactions = {
 
     async pinMessage(this: any, message: Message) {
       if (!this.activeDialog?.id) return false;
-      const result = await ws.request('chat:pin', this.activeDialog.id, message.id);
+      const result = await ws.request('room:pin:set', {
+        roomId: this.activeDialog.id,
+        nodeId: message.id,
+      });
       if (!(result as any)?.ok) {
         this.error = (result as any)?.error === 'forbidden'
           ? 'Только админ комнаты может закреплять.'
@@ -335,7 +338,9 @@ export const chatMethodsMessageBodyAndReactions = {
 
     async unpinActiveMessage(this: any) {
       if (!this.activeDialog?.id) return false;
-      const result = await ws.request('chat:unpin', this.activeDialog.id);
+      const result = await ws.request('room:pin:clear', {
+        roomId: this.activeDialog.id,
+      });
       if (!(result as any)?.ok) {
         this.error = (result as any)?.error === 'forbidden'
           ? 'Только админ комнаты может удалять закреп.'
@@ -452,7 +457,10 @@ export const chatMethodsMessageBodyAndReactions = {
     },
 
     async sendReaction(this: any, message: Message, emoji: string | null) {
-      const result = await ws.request('chat:react', message.id, emoji);
+      const result = await ws.request('message:reaction:set', {
+        messageId: message.id,
+        emoji,
+      });
       if (!(result as any)?.ok) {
         this.error = 'Не удалось поставить реакцию.';
         return false;

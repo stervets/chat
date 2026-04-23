@@ -86,7 +86,7 @@ async function connectWs(url: string) {
   });
 }
 
-async function wsCall(ws: WebSocket, com: string, args: any[]): Promise<RpcResult> {
+async function wsCall(ws: WebSocket, com: string, args: Record<string, any> = {}): Promise<RpcResult> {
   return new Promise((resolve, reject) => {
     const requestId = randomBytes(8).toString('hex');
 
@@ -202,18 +202,19 @@ async function run() {
 
     ws = await connectWs(wsUrl);
 
-    const authResult = await wsCall(ws, 'auth:session', [token]);
+    const authResult = await wsCall(ws, 'auth:session', {token});
     if (!authResult?.ok) {
       const error = String(authResult?.error || 'unauthorized');
       process.stderr.write(`Auth failed: ${error}\n`);
       process.exit(1);
     }
 
-    const sendArgs = silent
-      ? [room.id, text, {silent: true}]
-      : [room.id, text];
-
-    const sendResult = await wsCall(ws, 'chat:send', sendArgs);
+    const sendResult = await wsCall(ws, 'message:create', {
+      roomId: room.id,
+      kind: 'text',
+      text,
+      silent,
+    });
     if (!sendResult?.ok) {
       const error = String(sendResult?.error || 'send_failed');
       process.stderr.write(`Failed to create message: ${error}\n`);

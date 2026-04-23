@@ -149,7 +149,7 @@ export class ScriptableService {
       if (String(sideEffect?.type || '') !== 'system_message') continue;
       const payload = await this.createSystemMessage(roomId, sideEffect?.text);
       if (payload) {
-        scriptableEvents.emit('scripts:message', payload);
+        scriptableEvents.emit('runtime:message:created', payload);
       }
     }
   }
@@ -372,7 +372,7 @@ export class ScriptableService {
 
     await this.saveNodeRuntimeData(input.nodeId, nextData);
 
-    scriptableEvents.emit('scripts:state', this.toScriptStatePayload({
+    scriptableEvents.emit('runtime:data:updated', this.toScriptStatePayload({
       roomId: input.roomId,
       nodeType: input.nodeType,
       nodeId: input.nodeId,
@@ -424,7 +424,7 @@ export class ScriptableService {
 
     await this.saveNodeRuntimeData(input.nodeId, nextData);
 
-    scriptableEvents.emit('scripts:state', this.toScriptStatePayload({
+    scriptableEvents.emit('runtime:data:updated', this.toScriptStatePayload({
       roomId: input.roomId,
       nodeType: input.nodeType,
       nodeId: input.nodeId,
@@ -562,7 +562,7 @@ export class ScriptableService {
     const nextData = asRecord(response.data);
     await this.saveNodeRuntimeData(room.id, nextData);
 
-    scriptableEvents.emit('scripts:state', this.toScriptStatePayload({
+    scriptableEvents.emit('runtime:data:updated', this.toScriptStatePayload({
       roomId: room.id,
       nodeType: 'room',
       nodeId: room.id,

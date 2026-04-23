@@ -44,7 +44,7 @@ Runner и frontend worker работают с одним и тем же прос
 - client script вызывает `requestRuntimeAction(actionType, payload)`;
 - backend обрабатывает action либо через `reduceAction`, либо через runner;
 - новое `data` сохраняется в `nodes.data`;
-- обновление прилетает через `scripts:state` и прокидывается в worker как `data:update`.
+- обновление прилетает через `runtime:data:updated` и прокидывается в worker как `data:update`.
 
 ## Отладка
 

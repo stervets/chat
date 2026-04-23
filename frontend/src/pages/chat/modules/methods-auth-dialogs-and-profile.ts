@@ -195,7 +195,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchUsers(this: any) {
-      const result = await ws.request('users:list');
+      const result = await ws.request('user:list');
       if (Array.isArray(result)) {
         this.users = result
           .map((row: any) => this.normalizeUser(row))
@@ -204,7 +204,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchDirectDialogs(this: any) {
-      const result = await ws.request('dialogs:directs');
+      const result = await ws.request('room:list', {kind: 'direct'});
       if (Array.isArray(result)) {
         this.directDialogs = result.map((dialogRaw: any) => ({
           ...dialogRaw,
@@ -214,7 +214,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchGeneralDialog(this: any) {
-      const result = await ws.request('dialogs:general');
+      const result = await ws.request('room:group:get-default');
       if ((result as any)?.error || (result as any)?.ok === false) return null;
       return {
         id: (result as any).roomId,
@@ -228,7 +228,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchPrivateDialog(this: any, user: User) {
-      const result = await ws.request('dialogs:private', user.id);
+      const result = await ws.request('room:direct:get-or-create', {userId: user.id});
       if ((result as any)?.error || (result as any)?.ok === false) {
         this.error = 'Не удалось открыть диалог.';
         return null;
@@ -259,7 +259,11 @@ export const chatMethodsAuthDialogsAndProfile = {
       const prevScrollHeight = this.messagesEl?.scrollHeight || 0;
 
       try {
-        const result = await ws.request('dialogs:messages', roomId, HISTORY_BATCH_SIZE, beforeMessageId);
+        const result = await ws.request('message:list', {
+          roomId,
+          limit: HISTORY_BATCH_SIZE,
+          beforeMessageId,
+        });
         if (seq !== this.historyLoadSeq) return;
         if (!Array.isArray(result)) {
           this.error = 'Не удалось загрузить историю.';
@@ -318,7 +322,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async joinDialog(this: any, roomId: number) {
-      const result = await ws.request('chat:join', roomId);
+      const result = await ws.request('room:get', {roomId});
       if (!(result as any)?.ok) {
         this.error = 'Не удалось подключиться к диалогу.';
         this.setActiveRoomScript(null);
@@ -484,7 +488,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.roomDeletePending = true;
       try {
         const roomId = this.activeDialog.id;
-        const result = await ws.request('dialogs:delete', roomId, {confirm: true});
+        const result = await ws.request('room:delete', {roomId, confirm: true});
         if (!(result as any)?.ok) {
           this.error = this.activeDialog.kind === 'direct'
             ? 'Не удалось удалить директ.'

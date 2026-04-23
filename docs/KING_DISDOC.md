@@ -55,19 +55,19 @@ Frontend:
 ## Текущий WS API для игр
 
 Команды:
-- `games:solo:create({moduleKey:'king'})`
-- `games:session:get(sessionId)`
-- `games:action({sessionId, action})`
+- `game:session:create-solo({moduleKey:'king'})`
+- `game:session:get({sessionId})`
+- `game:session:action({sessionId, action})`
 
 События:
-- `games:session`
-- `games:event`
-- `games:state`
+- `game:session:updated`
+- `game:event`
+- `game:state:updated`
 
 Параллельно работает обычный чат в той же игровой комнате:
-- `dialogs:messages(roomId, ...)`
-- `chat:send(roomId, text)`
-- realtime `chat:message`.
+- `message:list({roomId, ...})`
+- `message:create({roomId, kind:'text', text})`
+- realtime `message:created`.
 
 ## Игровой action (сейчас)
 
@@ -88,7 +88,7 @@ Frontend:
 
 ## Flow solo
 
-1. Клиент вызывает `games:solo:create`.
+1. Клиент вызывает `game:session:create-solo`.
 2. Backend создаёт `room(kind='game')`.
 3. Backend создаёт `game_session(status='active', visibility='solo')`.
 4. Добавляет человека и 3 ботов в `game_session_players` и `rooms_users`.

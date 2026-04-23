@@ -33,7 +33,7 @@ export const chatMethodsScriptableRuntime = {
             };
           }
 
-          const result = await ws.request('scripts:action', {
+          const result = await ws.request('runtime:action', {
             nodeType: snapshot.nodeType,
             nodeId: snapshot.nodeId,
             actionType: request.actionType,
@@ -102,7 +102,7 @@ export const chatMethodsScriptableRuntime = {
         return;
       }
 
-      const result = await ws.request('scripts:room:get', roomId);
+      const result = await ws.request('room:runtime:get', {roomId});
       if (!(result as any)?.ok) {
         this.setActiveRoomScript(null);
         return;
@@ -224,7 +224,11 @@ export const chatMethodsScriptableRuntime = {
       const roomId = Number(this.activeDialog?.id || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return null;
 
-      const result = await ws.request('scripts:create-message', roomId, payloadRaw);
+      const result = await ws.request('message:create', {
+        roomId,
+        kind: 'scriptable',
+        ...payloadRaw,
+      });
       if (!(result as any)?.ok) {
         this.error = 'Не удалось создать scriptable message.';
         return null;
@@ -275,7 +279,10 @@ export const chatMethodsScriptableRuntime = {
       const roomId = Number(this.activeDialog?.id || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return null;
 
-      const result = await ws.request('rooms:surface:configure', roomId, payloadRaw);
+      const result = await ws.request('room:surface:set', {
+        roomId,
+        ...payloadRaw,
+      });
       if (!(result as any)?.ok) {
         const code = String((result as any)?.error || '');
         if (code === 'room_runtime_required') {
@@ -312,7 +319,7 @@ export const chatMethodsScriptableRuntime = {
       if (titleRaw === null) return false;
       const title = String(titleRaw || '').trim() || defaultTitle;
 
-      const result = await ws.request('rooms:create', {title});
+      const result = await ws.request('room:create', {title});
       if (!(result as any)?.ok) {
         this.error = 'Не удалось создать комнату.';
         return false;

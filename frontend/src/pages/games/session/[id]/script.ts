@@ -254,7 +254,10 @@ export default {
     async loadRoomMessages(this: any) {
       if (!this.session?.roomId) return;
 
-      const result = await ws.request('dialogs:messages', this.session.roomId, 60);
+      const result = await ws.request('message:list', {
+        roomId: this.session.roomId,
+        limit: 60,
+      });
       if (!Array.isArray(result)) return;
       const normalized = result
         .map((item: any) => this.normalizeRoomMessage(item))
@@ -325,7 +328,11 @@ export default {
 
       this.chatSendPending = true;
       try {
-        const result = await ws.request('chat:send', this.session.roomId, text);
+        const result = await ws.request('message:create', {
+          roomId: this.session.roomId,
+          kind: 'text',
+          text,
+        });
         if ((result as any)?.ok) {
           this.chatInput = '';
         }
@@ -366,16 +373,16 @@ export default {
       this.onChatMessage(payload);
     };
 
-    on('games:session', this.gamesSessionHandler);
-    on('games:state', this.gamesStateHandler);
-    on('chat:message', this.chatMessageHandler);
+    on('game:session:updated', this.gamesSessionHandler);
+    on('game:state:updated', this.gamesStateHandler);
+    on('message:created', this.chatMessageHandler);
 
     await this.fetchSession();
   },
 
   beforeUnmount(this: any) {
-    this.gamesSessionHandler && off('games:session', this.gamesSessionHandler);
-    this.gamesStateHandler && off('games:state', this.gamesStateHandler);
-    this.chatMessageHandler && off('chat:message', this.chatMessageHandler);
+    this.gamesSessionHandler && off('game:session:updated', this.gamesSessionHandler);
+    this.gamesStateHandler && off('game:state:updated', this.gamesStateHandler);
+    this.chatMessageHandler && off('message:created', this.chatMessageHandler);
   },
 };

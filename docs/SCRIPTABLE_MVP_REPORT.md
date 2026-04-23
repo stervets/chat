@@ -3,7 +3,7 @@
 ## Что сделано
 
 - Scriptable runtime переведён на node-модель (`client_script`, `server_script`, `nodes.data`).
-- Shared-state слой работает через `scripts:action` + `scripts:state`.
+- Runtime action/data sync работает через `runtime:action` + `runtime:data:updated`.
 - Snapshot payload унифицирован на `nodeType/nodeId/clientScript/serverScript/data`.
 - Frontend runtime manager/worker синхронизирован с этим snapshot-контрактом.
 - Runner transport переведён на `nodeType/nodeId` и runtime-поля без legacy `script*Json` ключей.

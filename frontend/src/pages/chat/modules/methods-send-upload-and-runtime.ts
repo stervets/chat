@@ -85,7 +85,10 @@ export const chatMethodsSendUploadAndRuntime = {
       if (!Number.isFinite(roomId) || roomId <= 0) return false;
       if (this.wsConnectionState !== 'connected') return false;
 
-      const result = await ws.request('dialogs:messages', roomId, HISTORY_BATCH_SIZE);
+      const result = await ws.request('message:list', {
+        roomId,
+        limit: HISTORY_BATCH_SIZE,
+      });
       if (!Array.isArray(result)) return false;
 
       const incoming = result
@@ -294,7 +297,12 @@ export const chatMethodsSendUploadAndRuntime = {
       if (!text) return false;
       const anonymous = !!this.sendAnonymous;
 
-      const result = await ws.request('chat:send', this.activeDialog.id, text, {anonymous});
+      const result = await ws.request('message:create', {
+        roomId: this.activeDialog.id,
+        kind: 'text',
+        text,
+        anonymous,
+      });
       if (!(result as any)?.ok) {
         this.error = 'Не удалось отправить сообщение.';
         return false;

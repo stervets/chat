@@ -40,16 +40,19 @@ Scriptable/runtime:
 ```
 
 Основные команды:
-- `dialogs:general`, `dialogs:private`, `dialogs:directs`, `dialogs:messages`, `dialogs:delete`
-- `chat:join`, `chat:send`, `chat:edit`, `chat:delete`, `chat:react`, `chat:pin`, `chat:unpin`
-- `messages:discussion:get`, `messages:discussion:create`
-- `rooms:create`, `rooms:surface:configure`
-- `scripts:create-message`, `scripts:action`, `scripts:room:get`
+- `room:group:get-default`, `room:list`, `room:direct:get-or-create`, `room:get`, `room:create`, `room:delete`
+- `room:surface:set`, `room:pin:set`, `room:pin:clear`, `room:runtime:get`
+- `message:list`, `message:create`, `message:update`, `message:delete`, `message:reaction:set`
+- `message:comment-room:get`, `message:comment-room:create`
+- `runtime:action`
+- `game:session:create-solo`, `game:session:get`, `game:session:action`
 
 Основные events:
-- `chat:message`, `chat:message-updated`, `chat:message-deleted`, `chat:pinned`
-- `chat:room-updated`, `chat:reactions`, `chat:reaction-notify`
-- `dialogs:deleted`, `users:updated`, `scripts:state`, `games:*`
+- `message:created`, `message:updated`, `message:deleted`
+- `message:reactions:updated`, `message:reaction:notify`
+- `room:updated`, `room:deleted`, `room:pin:updated`
+- `runtime:data:updated`, `user:updated`
+- `game:session:updated`, `game:event`, `game:state:updated`
 
 ## Ключевые entry points
 Backend:

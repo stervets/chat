@@ -583,7 +583,7 @@ export const chatMethodsComposerAndVirtual = {
       try {
         let commentRoomId = Number(message.commentRoomId || 0);
         if (Number.isFinite(commentRoomId) && commentRoomId > 0) {
-          const current = await ws.request('messages:discussion:get', messageId);
+          const current = await ws.request('message:comment-room:get', {messageId});
           if (!(current as any)?.ok) {
             commentRoomId = 0;
           } else {
@@ -592,7 +592,7 @@ export const chatMethodsComposerAndVirtual = {
         }
 
         if (!Number.isFinite(commentRoomId) || commentRoomId <= 0) {
-          const result = await ws.request('messages:discussion:create', messageId);
+          const result = await ws.request('message:comment-room:create', {messageId});
           if (!(result as any)?.ok) {
             this.error = 'Не удалось открыть комментарии.';
             return;
@@ -730,7 +730,10 @@ export const chatMethodsComposerAndVirtual = {
 
       this.messageActionPendingId = message.id;
       try {
-        const result = await ws.request('chat:edit', message.id, body);
+        const result = await ws.request('message:update', {
+          messageId: message.id,
+          text: body,
+        });
         if (!(result as any)?.ok) {
           this.error = 'Не удалось отредактировать сообщение.';
           return;
@@ -750,7 +753,7 @@ export const chatMethodsComposerAndVirtual = {
 
       this.messageActionPendingId = message.id;
       try {
-        const result = await ws.request('chat:delete', message.id);
+        const result = await ws.request('message:delete', {messageId: message.id});
         if (!(result as any)?.ok) {
           this.error = 'Не удалось удалить сообщение.';
           return;

@@ -2,9 +2,11 @@ export const BACKEND_PEER_ID = 'backend';
 export const FRONTEND_PEER_ID = 'frontend';
 export const RESULT_COMMAND = '[res]';
 
+export type PacketArgs = Record<string, any> | any[];
+
 export type Packet = [
   com: string,
-  args: any[],
+  args: PacketArgs,
   senderId: string,
   recipientId: string,
   requestId?: string,

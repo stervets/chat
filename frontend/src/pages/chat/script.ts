@@ -332,16 +332,16 @@ export default {
     this.windowBlurHandler = () => this.onWindowBlur();
     this.visibilityChangeHandler = () => this.onVisibilityChange();
 
-    on('chat:message', this.chatMessageHandler);
-    on('chat:message-updated', this.chatMessageUpdatedHandler);
-    on('chat:message-deleted', this.chatMessageDeletedHandler);
-    on('chat:pinned', this.chatPinnedHandler);
-    on('chat:room-updated', this.chatRoomUpdatedHandler);
-    on('chat:reactions', this.chatReactionsHandler);
-    on('dialogs:deleted', this.dialogsDeletedHandler);
-    on('chat:reaction-notify', this.chatReactionNotifyHandler);
-    on('users:updated', this.usersUpdatedHandler);
-    on('scripts:state', this.scriptsStateHandler);
+    on('message:created', this.chatMessageHandler);
+    on('message:updated', this.chatMessageUpdatedHandler);
+    on('message:deleted', this.chatMessageDeletedHandler);
+    on('room:pin:updated', this.chatPinnedHandler);
+    on('room:updated', this.chatRoomUpdatedHandler);
+    on('message:reactions:updated', this.chatReactionsHandler);
+    on('room:deleted', this.dialogsDeletedHandler);
+    on('message:reaction:notify', this.chatReactionNotifyHandler);
+    on('user:updated', this.usersUpdatedHandler);
+    on('runtime:data:updated', this.scriptsStateHandler);
     on('ws:disconnected', this.disconnectedHandler);
     on('ws:reconnected', this.reconnectedHandler);
     on('ws:session-expired', this.sessionExpiredHandler);
@@ -371,16 +371,16 @@ export default {
   },
 
   beforeUnmount(this: any) {
-    this.chatMessageHandler && off('chat:message', this.chatMessageHandler);
-    this.chatMessageUpdatedHandler && off('chat:message-updated', this.chatMessageUpdatedHandler);
-    this.chatMessageDeletedHandler && off('chat:message-deleted', this.chatMessageDeletedHandler);
-    this.chatPinnedHandler && off('chat:pinned', this.chatPinnedHandler);
-    this.chatRoomUpdatedHandler && off('chat:room-updated', this.chatRoomUpdatedHandler);
-    this.chatReactionsHandler && off('chat:reactions', this.chatReactionsHandler);
-    this.dialogsDeletedHandler && off('dialogs:deleted', this.dialogsDeletedHandler);
-    this.chatReactionNotifyHandler && off('chat:reaction-notify', this.chatReactionNotifyHandler);
-    this.usersUpdatedHandler && off('users:updated', this.usersUpdatedHandler);
-    this.scriptsStateHandler && off('scripts:state', this.scriptsStateHandler);
+    this.chatMessageHandler && off('message:created', this.chatMessageHandler);
+    this.chatMessageUpdatedHandler && off('message:updated', this.chatMessageUpdatedHandler);
+    this.chatMessageDeletedHandler && off('message:deleted', this.chatMessageDeletedHandler);
+    this.chatPinnedHandler && off('room:pin:updated', this.chatPinnedHandler);
+    this.chatRoomUpdatedHandler && off('room:updated', this.chatRoomUpdatedHandler);
+    this.chatReactionsHandler && off('message:reactions:updated', this.chatReactionsHandler);
+    this.dialogsDeletedHandler && off('room:deleted', this.dialogsDeletedHandler);
+    this.chatReactionNotifyHandler && off('message:reaction:notify', this.chatReactionNotifyHandler);
+    this.usersUpdatedHandler && off('user:updated', this.usersUpdatedHandler);
+    this.scriptsStateHandler && off('runtime:data:updated', this.scriptsStateHandler);
     this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
     this.reconnectedHandler && off('ws:reconnected', this.reconnectedHandler);
     this.sessionExpiredHandler && off('ws:session-expired', this.sessionExpiredHandler);

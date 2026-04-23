@@ -43,11 +43,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @Inject(WebPushService)
     private readonly webPushService: WebPushService,
   ) {
-    scriptableEvents.on('scripts:state', (payload) => {
+    scriptableEvents.on('runtime:data:updated', (payload) => {
       void this.handleScriptStateEvent(payload);
     });
 
-    scriptableEvents.on('scripts:message', (message) => {
+    scriptableEvents.on('runtime:message:created', (message) => {
       void this.handleScriptSystemMessage(message);
     });
   }
@@ -62,10 +62,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }) {
     const room = await getRoomById(payload.roomId);
     if (room) {
-      this.broadcastToRoomMembers(room, 'scripts:state', payload);
+      this.broadcastToRoomMembers(room, 'runtime:data:updated', payload);
       return;
     }
-    this.broadcast(payload.roomId, 'scripts:state', payload);
+    this.broadcast(payload.roomId, 'runtime:data:updated', payload);
   }
 
   private async handleScriptSystemMessage(message: any) {
@@ -74,9 +74,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const room = await getRoomById(roomId);
     if (room) {
-      this.broadcastToRoomMembers(room, 'chat:message', message);
+      this.broadcastToRoomMembers(room, 'message:created', message);
     } else {
-      this.broadcast(roomId, 'chat:message', message);
+      this.broadcast(roomId, 'message:created', message);
     }
 
     await this.chatService.scriptableNotifyRoomEvent({
@@ -124,7 +124,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const com = typeof parsed[0] === 'string' ? parsed[0] : '';
       if (!com) return null;
-      const args = Array.isArray(parsed[1]) ? parsed[1] : [];
+      const args = parsed[1] && typeof parsed[1] === 'object' && !Array.isArray(parsed[1]) ? parsed[1] : {};
       const senderId = typeof parsed[2] === 'string' ? parsed[2] : FRONTEND_PEER_ID;
       const recipientId = typeof parsed[3] === 'string' ? parsed[3] : BACKEND_PEER_ID;
       const requestId = typeof parsed[4] === 'string' ? parsed[4] : undefined;
@@ -150,10 +150,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     ]);
   }
 
-  private sendEvent(client: ClientSocket, com: string, ...args: any[]) {
+  private sendEvent(client: ClientSocket, com: string, payload: Record<string, any> | any = {}) {
     this.sendPacket(client, [
       com,
-      args,
+      payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {},
       BACKEND_PEER_ID,
       client.state?.id || FRONTEND_PEER_ID,
     ]);
@@ -181,37 +181,37 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private broadcast(roomId: number, com: string, ...args: any[]) {
+  private broadcast(roomId: number, com: string, payload: Record<string, any> | any = {}) {
     const set = this.subscriptions.get(roomId);
     if (!set) return;
     for (const client of set) {
-      this.sendEvent(client, com, ...args);
+      this.sendEvent(client, com, payload);
     }
   }
 
-  private broadcastToRoomMembers(room: RoomRow, com: string, ...args: any[]) {
+  private broadcastToRoomMembers(room: RoomRow, com: string, payload: Record<string, any> | any = {}) {
     for (const rawClient of this.server.clients) {
       const client = rawClient as ClientSocket;
       if (!client.state?.user) continue;
       if (!userCanAccessRoom(client.state.user.id, room)) continue;
-      this.sendEvent(client, com, ...args);
+      this.sendEvent(client, com, payload);
     }
   }
 
-  private sendToUser(userId: number, com: string, ...args: any[]) {
+  private sendToUser(userId: number, com: string, payload: Record<string, any> | any = {}) {
     for (const rawClient of this.server.clients) {
       const client = rawClient as ClientSocket;
       if (!client.state?.user) continue;
       if (client.state.user.id !== userId) continue;
-      this.sendEvent(client, com, ...args);
+      this.sendEvent(client, com, payload);
     }
   }
 
-  private broadcastToAuthorized(com: string, ...args: any[]) {
+  private broadcastToAuthorized(com: string, payload: Record<string, any> | any = {}) {
     for (const rawClient of this.server.clients) {
       const client = rawClient as ClientSocket;
       if (!client.state?.user) continue;
-      this.sendEvent(client, com, ...args);
+      this.sendEvent(client, com, payload);
     }
   }
 
@@ -245,36 +245,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private async dispatch(client: ClientSocket, com: string, args: any[]) {
-    if (com === 'auth:login') return this.chatService.authLogin(client.state, args[0]);
-    if (com === 'auth:session') return this.chatService.authSession(client.state, args[0]);
+  private async dispatch(client: ClientSocket, com: string, args: Record<string, any>) {
+    if (com === 'auth:login') return this.chatService.authLogin(client.state, args);
+    if (com === 'auth:session') return this.chatService.authSession(client.state, args.token);
     if (com === 'auth:me') return this.chatService.authMe(client.state);
     if (com === 'auth:logout') {
       const result = await this.chatService.authLogout(client.state);
       this.unsubscribe(client);
       return result;
     }
-    if (com === 'auth:updateProfile') return this.chatService.authUpdateProfile(client.state, args[0]);
-    if (com === 'auth:changePassword') return this.chatService.authChangePassword(client.state, args[0]);
+    if (com === 'auth:updateProfile') return this.chatService.authUpdateProfile(client.state, args);
+    if (com === 'auth:changePassword') return this.chatService.authChangePassword(client.state, args);
 
-    if (com === 'users:list') return this.chatService.usersList(client.state);
+    if (com === 'user:list') return this.chatService.usersList(client.state);
 
     if (com === 'invites:list') return this.chatService.invitesList(client.state);
     if (com === 'invites:create') return this.chatService.invitesCreate(client.state);
-    if (com === 'invites:check') return this.chatService.invitesCheck(client.state, args[0]);
-    if (com === 'invites:redeem') return this.chatService.invitesRedeem(client.state, args[0]);
+    if (com === 'invites:check') return this.chatService.invitesCheck(client.state, args);
+    if (com === 'invites:redeem') return this.chatService.invitesRedeem(client.state, args);
     if (com === 'public:vpnInfo') return this.chatService.publicVpnInfo(client.state);
     if (com === 'public:vpnProvision') return this.chatService.publicVpnProvision(client.state);
     if (com === 'public:vpnDonation') {
-      const result = await this.chatService.publicVpnDonation(client.state, args[0]);
+      const result = await this.chatService.publicVpnDonation(client.state, args);
       if ((result as any)?.ok && (result as any)?.user) {
-        this.broadcastToAuthorized('users:updated', (result as any).user);
+        this.broadcastToAuthorized('user:updated', (result as any).user);
       }
       return result;
     }
 
-    if (com === 'games:solo:create') {
-      const result = await this.chatService.gamesSoloCreate(client.state, args[0]);
+    if (com === 'game:session:create-solo') {
+      const result = await this.chatService.gamesSoloCreate(client.state, args);
       if ((result as any)?.ok) {
         const roomId = Number((result as any).roomId || 0);
         if (Number.isFinite(roomId) && roomId > 0) {
@@ -283,7 +283,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           if (room) {
             const messages = Array.isArray((result as any).messages) ? (result as any).messages : [];
             for (const message of messages) {
-              this.broadcast(roomId, 'chat:message', message);
+              this.broadcast(roomId, 'message:created', message);
               await this.chatService.scriptableNotifyRoomEvent({
                 roomId,
                 eventType: 'message_created',
@@ -295,10 +295,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 },
               });
             }
-            this.broadcast(roomId, 'games:session', (result as any).session);
+            this.broadcast(roomId, 'game:session:updated', (result as any).session);
             const events = Array.isArray((result as any).events) ? (result as any).events : [];
             for (const event of events) {
-              this.broadcast(roomId, 'games:event', {
+              this.broadcast(roomId, 'game:event', {
                 sessionId: (result as any).sessionId,
                 event,
               });
@@ -309,8 +309,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'games:session:get') {
-      const result = await this.chatService.gamesSessionGet(client.state, args[0]);
+    if (com === 'game:session:get') {
+      const result = await this.chatService.gamesSessionGet(client.state, args.sessionId);
       if ((result as any)?.ok) {
         const roomId = Number((result as any).roomId || 0);
         if (Number.isFinite(roomId) && roomId > 0) {
@@ -320,8 +320,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'games:action') {
-      const result = await this.chatService.gamesAction(client.state, args[0]);
+    if (com === 'game:session:action') {
+      const result = await this.chatService.gamesAction(client.state, args);
       if ((result as any)?.ok) {
         const roomId = Number((result as any).roomId || 0);
         const room = Number.isFinite(roomId) && roomId > 0
@@ -331,7 +331,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (room) {
           const messages = Array.isArray((result as any).messages) ? (result as any).messages : [];
           for (const message of messages) {
-            this.broadcast(roomId, 'chat:message', message);
+            this.broadcast(roomId, 'message:created', message);
             await this.chatService.scriptableNotifyRoomEvent({
               roomId,
               eventType: 'message_created',
@@ -346,13 +346,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
           const events = Array.isArray((result as any).events) ? (result as any).events : [];
           for (const event of events) {
-            this.broadcast(roomId, 'games:event', {
+            this.broadcast(roomId, 'game:event', {
               sessionId: (result as any).sessionId,
               event,
             });
           }
 
-          this.broadcast(roomId, 'games:state', {
+          this.broadcast(roomId, 'game:state:updated', {
             sessionId: (result as any).sessionId,
             state: (result as any)?.session?.state,
             actions: (result as any)?.session?.actions || [],
@@ -363,19 +363,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'dialogs:general') return this.chatService.dialogsGeneral(client.state);
-    if (com === 'dialogs:private') return this.chatService.dialogsPrivate(client.state, args[0]);
-    if (com === 'dialogs:directs') return this.chatService.dialogsDirects(client.state);
-    if (com === 'dialogs:messages') return this.chatService.dialogsMessages(client.state, args[0], args[1], args[2]);
-    if (com === 'dialogs:delete') {
-      const roomId = Number.parseInt(String(args[0] ?? ''), 10);
+    if (com === 'room:group:get-default') return this.chatService.dialogsGeneral(client.state);
+    if (com === 'room:direct:get-or-create') return this.chatService.dialogsPrivate(client.state, args.userId);
+    if (com === 'room:list') {
+      const kind = String(args.kind || '').trim().toLowerCase();
+      if (kind === 'direct') return this.chatService.dialogsDirects(client.state);
+      if (kind === 'group') {
+        const result = await this.chatService.dialogsGeneral(client.state);
+        if ((result as any)?.ok === false) return result;
+        return [result];
+      }
+      return {ok: false, error: 'invalid_room_kind'};
+    }
+    if (com === 'message:list') return this.chatService.dialogsMessages(client.state, args.roomId, args.limit, args.beforeMessageId);
+    if (com === 'room:delete') {
+      const roomId = Number.parseInt(String(args.roomId ?? ''), 10);
       const roomBeforeDelete = Number.isFinite(roomId) && roomId > 0
         ? await getRoomById(roomId)
         : null;
-      const result = await this.chatService.dialogsDelete(client.state, args[0], args[1]);
+      const result = await this.chatService.dialogsDelete(client.state, args.roomId, args);
       if ((result as any)?.ok && (result as any)?.changed) {
         if (roomBeforeDelete) {
-          this.broadcastToRoomMembers(roomBeforeDelete, 'dialogs:deleted', {
+          this.broadcastToRoomMembers(roomBeforeDelete, 'room:deleted', {
             roomId: (result as any).roomId,
             dialogId: (result as any).roomId,
             kind: (result as any).kind,
@@ -386,20 +395,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'chat:join') {
-      const result = await this.chatService.chatJoin(client.state, args[0]);
+    if (com === 'room:get') {
+      const result = await this.chatService.chatJoin(client.state, args.roomId);
       if ((result as any)?.ok) {
         this.subscribe(client, (result as any).roomId);
       }
       return result;
     }
 
-    if (com === 'rooms:create') {
-      return this.chatService.roomsCreate(client.state, args[0]);
+    if (com === 'room:create') {
+      return this.chatService.roomsCreate(client.state, args);
     }
 
-    if (com === 'rooms:surface:configure') {
-      const result = await this.chatService.roomsSurfaceConfigure(client.state, args[0], args[1]);
+    if (com === 'room:surface:set') {
+      const result = await this.chatService.roomsSurfaceConfigure(client.state, args.roomId, args);
       if ((result as any)?.ok) {
         const room = await getRoomById((result as any).roomId);
         const roomPayload = {
@@ -419,47 +428,47 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         };
 
         if (room) {
-          this.broadcastToRoomMembers(room, 'chat:room-updated', roomPayload);
-          this.broadcastToRoomMembers(room, 'chat:pinned', pinPayload);
+          this.broadcastToRoomMembers(room, 'room:updated', roomPayload);
+          this.broadcastToRoomMembers(room, 'room:pin:updated', pinPayload);
         } else {
-          this.broadcast((result as any).roomId, 'chat:room-updated', roomPayload);
-          this.broadcast((result as any).roomId, 'chat:pinned', pinPayload);
+          this.broadcast((result as any).roomId, 'room:updated', roomPayload);
+          this.broadcast((result as any).roomId, 'room:pin:updated', pinPayload);
         }
       }
       return result;
     }
 
-    if (com === 'messages:discussion:get') {
-      return this.chatService.messagesDiscussionGet(client.state, args[0]);
+    if (com === 'message:comment-room:get') {
+      return this.chatService.messagesDiscussionGet(client.state, args.messageId);
     }
 
-    if (com === 'messages:discussion:create') {
-      const result = await this.chatService.messagesDiscussionCreate(client.state, args[0]);
+    if (com === 'message:comment-room:create') {
+      const result = await this.chatService.messagesDiscussionCreate(client.state, args.messageId);
       if ((result as any)?.ok && (result as any)?.message) {
         const sourceRoomId = Number((result as any).sourceRoomId || 0);
         const room = Number.isFinite(sourceRoomId) && sourceRoomId > 0
           ? await getRoomById(sourceRoomId)
           : null;
         if (room) {
-          this.broadcastToRoomMembers(room, 'chat:message-updated', (result as any).message);
+          this.broadcastToRoomMembers(room, 'message:updated', (result as any).message);
         } else if (Number.isFinite(sourceRoomId) && sourceRoomId > 0) {
-          this.broadcast(sourceRoomId, 'chat:message-updated', (result as any).message);
+          this.broadcast(sourceRoomId, 'message:updated', (result as any).message);
         }
       }
       return result;
     }
 
-    if (com === 'chat:send') {
-      const sendOptions = args[2] && typeof args[2] === 'object'
-        ? args[2]
-        : {};
-      const result = await this.chatService.chatSend(client.state, args[0], args[1], sendOptions);
+    if (com === 'message:create') {
+      const kind = String(args.kind || 'text').trim().toLowerCase();
+      const result = kind === 'scriptable'
+        ? await this.chatService.scriptsCreateMessage(client.state, args.roomId, args)
+        : await this.chatService.chatSend(client.state, args.roomId, args.text ?? args.body, args);
       if ((result as any)?.ok && (result as any)?.message) {
         const room = await getRoomById((result as any).message.roomId);
-        const silentRequested = Boolean((sendOptions as any)?.silent);
+        const silentRequested = Boolean(args.silent);
         const skipPush = silentRequested && client.state?.user?.nickname === SYSTEM_NICKNAME;
         if (room) {
-          this.broadcastToRoomMembers(room, 'chat:message', (result as any).message);
+          this.broadcastToRoomMembers(room, 'message:created', (result as any).message);
           if (!skipPush) {
             void this.webPushService.sendChatMessagePush({
               room,
@@ -469,7 +478,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             });
           }
         } else {
-          this.broadcast((result as any).message.roomId, 'chat:message', (result as any).message);
+          this.broadcast((result as any).message.roomId, 'message:created', (result as any).message);
         }
 
         await this.chatService.scriptableNotifyRoomEvent({
@@ -486,33 +495,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'scripts:create-message') {
-      const result = await this.chatService.scriptsCreateMessage(client.state, args[0], args[1]);
-      if ((result as any)?.ok && (result as any)?.message) {
-        const roomId = Number((result as any).message.roomId || 0);
-        const room = Number.isFinite(roomId) && roomId > 0 ? await getRoomById(roomId) : null;
-        if (room) {
-          this.broadcastToRoomMembers(room, 'chat:message', (result as any).message);
-        } else if (Number.isFinite(roomId) && roomId > 0) {
-          this.broadcast(roomId, 'chat:message', (result as any).message);
-        }
-
-        await this.chatService.scriptableNotifyRoomEvent({
-          roomId,
-          eventType: 'message_created',
-          eventPayload: {
-            id: Number((result as any).message.id || 0),
-            kind: String((result as any).message.kind || 'scriptable'),
-            authorId: Number((result as any).message.authorId || 0),
-            authorNickname: String((result as any).message.authorNickname || ''),
-          },
-        });
-      }
-      return result;
-    }
-
-    if (com === 'scripts:action') {
-      const result = await this.chatService.scriptsAction(client.state, args[0]);
+    if (com === 'runtime:action') {
+      const result = await this.chatService.scriptsAction(client.state, args);
       if ((result as any)?.ok) {
         await this.chatService.scriptableNotifyRoomEvent({
           roomId: Number((result as any).roomId || 0),
@@ -520,7 +504,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           eventPayload: {
             nodeType: String((result as any).nodeType || ''),
             nodeId: Number((result as any).nodeId || 0),
-            actionType: String((args[0] as any)?.actionType || ''),
+            actionType: String(args.actionType || ''),
             actorId: Number(client.state?.user?.id || 0),
             actorNickname: String(client.state?.user?.nickname || ''),
           },
@@ -529,25 +513,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'scripts:room:get') {
-      return this.chatService.scriptsRoomGet(client.state, args[0]);
+    if (com === 'room:runtime:get') {
+      return this.chatService.scriptsRoomGet(client.state, args.roomId);
     }
 
-    if (com === 'chat:edit') {
-      const result = await this.chatService.chatEdit(client.state, args[0], args[1]);
+    if (com === 'message:update') {
+      const result = await this.chatService.chatEdit(client.state, args.messageId, args.text ?? args.body);
       if ((result as any)?.ok && (result as any)?.changed && (result as any)?.message) {
         const room = await getRoomById((result as any).message.roomId);
         if (room) {
-          this.broadcastToRoomMembers(room, 'chat:message-updated', (result as any).message);
+          this.broadcastToRoomMembers(room, 'message:updated', (result as any).message);
         } else {
-          this.broadcast((result as any).message.roomId, 'chat:message-updated', (result as any).message);
+          this.broadcast((result as any).message.roomId, 'message:updated', (result as any).message);
         }
       }
       return result;
     }
 
-    if (com === 'chat:delete') {
-      const result = await this.chatService.chatDelete(client.state, args[0]);
+    if (com === 'message:delete') {
+      const result = await this.chatService.chatDelete(client.state, args.messageId);
       if ((result as any)?.ok && (result as any)?.changed) {
         const room = await getRoomById((result as any).roomId);
         const payload = {
@@ -557,9 +541,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         };
 
         if (room) {
-          this.broadcastToRoomMembers(room, 'chat:message-deleted', payload);
+          this.broadcastToRoomMembers(room, 'message:deleted', payload);
           if ((result as any).pinnedCleared) {
-            this.broadcastToRoomMembers(room, 'chat:pinned', {
+            this.broadcastToRoomMembers(room, 'room:pin:updated', {
               roomId: (result as any).roomId,
               dialogId: (result as any).roomId,
               pinnedNodeId: null,
@@ -567,9 +551,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             });
           }
         } else {
-          this.broadcast((result as any).roomId, 'chat:message-deleted', payload);
+          this.broadcast((result as any).roomId, 'message:deleted', payload);
           if ((result as any).pinnedCleared) {
-            this.broadcast((result as any).roomId, 'chat:pinned', {
+            this.broadcast((result as any).roomId, 'room:pin:updated', {
               roomId: (result as any).roomId,
               dialogId: (result as any).roomId,
               pinnedNodeId: null,
@@ -581,8 +565,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'chat:pin') {
-      const result = await this.chatService.chatPin(client.state, args[0], args[1]);
+    if (com === 'room:pin:set') {
+      const result = await this.chatService.chatPin(client.state, args.roomId, args.nodeId);
       if ((result as any)?.ok && (result as any)?.changed) {
         const room = await getRoomById((result as any).roomId);
         const payload = {
@@ -593,16 +577,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         };
 
         if (room) {
-          this.broadcastToRoomMembers(room, 'chat:pinned', payload);
+          this.broadcastToRoomMembers(room, 'room:pin:updated', payload);
         } else {
-          this.broadcast((result as any).roomId, 'chat:pinned', payload);
+          this.broadcast((result as any).roomId, 'room:pin:updated', payload);
         }
       }
       return result;
     }
 
-    if (com === 'chat:unpin') {
-      const result = await this.chatService.chatUnpin(client.state, args[0]);
+    if (com === 'room:pin:clear') {
+      const result = await this.chatService.chatUnpin(client.state, args.roomId);
       if ((result as any)?.ok && (result as any)?.changed) {
         const room = await getRoomById((result as any).roomId);
         const payload = {
@@ -613,16 +597,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         };
 
         if (room) {
-          this.broadcastToRoomMembers(room, 'chat:pinned', payload);
+          this.broadcastToRoomMembers(room, 'room:pin:updated', payload);
         } else {
-          this.broadcast((result as any).roomId, 'chat:pinned', payload);
+          this.broadcast((result as any).roomId, 'room:pin:updated', payload);
         }
       }
       return result;
     }
 
-    if (com === 'chat:react') {
-      const result = await this.chatService.chatReact(client.state, args[0], args[1]);
+    if (com === 'message:reaction:set') {
+      const result = await this.chatService.chatReact(client.state, args.messageId, args.emoji ?? null);
       if ((result as any)?.ok && (result as any)?.changed) {
         const room = await getRoomById((result as any).roomId);
         const payload = {
@@ -633,13 +617,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         };
 
         if (room) {
-          this.broadcastToRoomMembers(room, 'chat:reactions', payload);
+          this.broadcastToRoomMembers(room, 'message:reactions:updated', payload);
         } else {
-          this.broadcast((result as any).roomId, 'chat:reactions', payload);
+          this.broadcast((result as any).roomId, 'message:reactions:updated', payload);
         }
 
         if ((result as any).notify) {
-          this.sendToUser((result as any).notify.userId, 'chat:reaction-notify', (result as any).notify);
+          this.sendToUser((result as any).notify.userId, 'message:reaction:notify', (result as any).notify);
         }
       }
       return result;

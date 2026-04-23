@@ -6,12 +6,16 @@ export class WsClient {
   private readonly requests: Record<string, (result: any) => void> = {};
   private lastUrl = '';
 
-  private parsePacket(raw: string): [string, any[], string, string, string?] | null {
+  private parsePacket(raw: string): [string, Record<string, any> | any[], string, string, string?] | null {
     try {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed) || parsed.length < 4) return null;
       const com = typeof parsed[0] === 'string' ? parsed[0] : '';
-      const args = Array.isArray(parsed[1]) ? parsed[1] : [];
+      const args = Array.isArray(parsed[1])
+        ? parsed[1]
+        : parsed[1] && typeof parsed[1] === 'object'
+          ? parsed[1]
+          : {};
       const senderId = typeof parsed[2] === 'string' ? parsed[2] : '';
       const recipientId = typeof parsed[3] === 'string' ? parsed[3] : '';
       const requestId = typeof parsed[4] === 'string' ? parsed[4] : undefined;
@@ -51,12 +55,12 @@ export class WsClient {
 
         if (com === '[res]') {
           if (!requestId || !this.requests[requestId]) return;
-          this.requests[requestId](args[0]);
+          this.requests[requestId](Array.isArray(args) ? args[0] : undefined);
           delete this.requests[requestId];
           return;
         }
 
-        emit(com, ...args, senderId);
+        emit(com, Array.isArray(args) ? {} : args, senderId);
       };
 
       socket.onerror = () => {
@@ -86,7 +90,7 @@ export class WsClient {
     this.socket = null;
   }
 
-  async request(com: string, ...args: any[]) {
+  async request(com: string, args: Record<string, any> = {}) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       if (!this.lastUrl) {
         return {ok: false, error: 'not_connected'};
@@ -106,7 +110,7 @@ export class WsClient {
     }
 
     const requestId = this.genId();
-    const packet: [string, any[], string, string, string] = [
+    const packet: [string, Record<string, any>, string, string, string] = [
       com,
       args,
       'frontend',
@@ -128,9 +132,9 @@ export class WsClient {
     });
   }
 
-  send(com: string, ...args: any[]) {
+  send(com: string, args: Record<string, any> = {}) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-    const packet: [string, any[], string, string] = [com, args, 'frontend', 'backend'];
+    const packet: [string, Record<string, any>, string, string] = [com, args, 'frontend', 'backend'];
     this.socket.send(JSON.stringify(packet));
   }
 }

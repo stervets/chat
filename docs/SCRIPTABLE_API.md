@@ -10,28 +10,31 @@ Scriptable runtime работает только через node:
 
 ## WS команды
 
-### `scripts:create-message`
+### `message:create`
 
-Создаёт scriptable message-node.
+Создаёт scriptable message-node обычной message-командой:
 
 ```json
-["scripts:create-message", [roomId, {
-  "scriptId": "demo:guess_word",
-  "config": {}
-}], "frontend", "backend", "rid"]
+["message:create", {
+  "roomId": 1,
+  "kind": "scriptable",
+  "clientScript": "demo:guess_word",
+  "serverScript": "demo:guess_word",
+  "data": {"config": {}}
+}, "frontend", "backend", "rid"]
 ```
 
-### `scripts:action`
+### `runtime:action`
 
-Shared action для message/room runtime.
+Action для message/room runtime:
 
 ```json
-["scripts:action", [{
+["runtime:action", {
   "nodeType": "message",
   "nodeId": 123,
   "actionType": "submit_guess",
   "payload": {"guess": "marx"}
-}], "frontend", "backend", "rid"]
+}, "frontend", "backend", "rid"]
 ```
 
 Ответ:
@@ -40,7 +43,7 @@ Shared action для message/room runtime.
 {"ok": true, "roomId": 1, "nodeType": "message", "nodeId": 123, "data": {}}
 ```
 
-### `scripts:room:get`
+### `room:runtime:get`
 
 Возвращает runtime snapshot комнаты:
 
@@ -55,7 +58,7 @@ Shared action для message/room runtime.
 }}
 ```
 
-## Event `scripts:state`
+## Event `runtime:data:updated`
 
 ```json
 {

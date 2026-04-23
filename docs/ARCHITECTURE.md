@@ -96,13 +96,43 @@ Runtime определяется только полями node:
 
 Основные команды:
 
-- `dialogs:*`
-- `chat:*`
-- `messages:discussion:*`
-- `rooms:create`
-- `rooms:surface:configure`
-- `scripts:*`
-- `games:*`
+- `room:group:get-default`
+- `room:list`
+- `room:direct:get-or-create`
+- `room:get`
+- `room:create`
+- `room:delete`
+- `room:surface:set`
+- `room:pin:set`
+- `room:pin:clear`
+- `room:runtime:get`
+- `message:list`
+- `message:create`
+- `message:update`
+- `message:delete`
+- `message:reaction:set`
+- `message:comment-room:get`
+- `message:comment-room:create`
+- `runtime:action`
+- `game:session:create-solo`
+- `game:session:get`
+- `game:session:action`
+
+Основные events:
+
+- `message:created`
+- `message:updated`
+- `message:deleted`
+- `message:reactions:updated`
+- `message:reaction:notify`
+- `room:updated`
+- `room:deleted`
+- `room:pin:updated`
+- `runtime:data:updated`
+- `user:updated`
+- `game:session:updated`
+- `game:event`
+- `game:state:updated`
 
 ## Миграция живой БД
 

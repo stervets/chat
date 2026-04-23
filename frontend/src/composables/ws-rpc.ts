@@ -54,7 +54,7 @@ async function joinActiveRoomAfterReconnect() {
   const roomId = parseReconnectRoomId();
   if (!roomId) return null;
 
-  const result = await ws.request('chat:join', roomId);
+  const result = await ws.request('room:get', {roomId});
   if (!(result as any)?.ok) return null;
   return roomId;
 }
@@ -79,7 +79,7 @@ async function connectToAnyWsUrl() {
 }
 
 async function authSessionByToken(token: string) {
-  const result = await ws.request('auth:session', token);
+  const result = await ws.request('auth:session', {token});
   if ((result as any)?.ok) return result;
   if ((result as any)?.error === 'unauthorized') {
     clearSessionToken();
@@ -290,17 +290,17 @@ export async function wsProvisionVpn() {
 export async function wsGamesSoloCreate(moduleKey = 'king') {
   const session = await restoreSession();
   if (!(session as any)?.ok) return session;
-  return ws.request('games:solo:create', {moduleKey});
+  return ws.request('game:session:create-solo', {moduleKey});
 }
 
 export async function wsGamesSessionGet(sessionId: number) {
   const session = await restoreSession();
   if (!(session as any)?.ok) return session;
-  return ws.request('games:session:get', sessionId);
+  return ws.request('game:session:get', {sessionId});
 }
 
 export async function wsGamesAction(sessionId: number, action: {type: string; payload?: any}) {
   const session = await restoreSession();
   if (!(session as any)?.ok) return session;
-  return ws.request('games:action', {sessionId, action});
+  return ws.request('game:session:action', {sessionId, action});
 }

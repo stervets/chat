@@ -3,8 +3,8 @@ import type {ChatContextMessagePayload} from '../ws/chat/chat-context.js';
 import type {ScriptStateEventPayload} from './types.js';
 
 export type ScriptableEvents = {
-  'scripts:state': ScriptStateEventPayload;
-  'scripts:message': ChatContextMessagePayload;
+  'runtime:data:updated': ScriptStateEventPayload;
+  'runtime:message:created': ChatContextMessagePayload;
 };
 
 type EventName = keyof ScriptableEvents;
