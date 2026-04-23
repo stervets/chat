@@ -22,25 +22,25 @@ function asRecord(raw: unknown) {
   return cloneJson(raw as Record<string, any>);
 }
 
-function readRuntimeConfig(dataRaw: unknown) {
-  return asRecord(asRecord(dataRaw).scriptConfig);
+function readConfig(dataRaw: unknown) {
+  return asRecord(asRecord(dataRaw).config);
 }
 
-function readRuntimeState(dataRaw: unknown) {
-  return asRecord(asRecord(dataRaw).scriptState);
+function readState(dataRaw: unknown) {
+  return asRecord(asRecord(dataRaw).state);
 }
 
-function withRuntimeState(dataRaw: unknown, nextState: unknown) {
+function withState(dataRaw: unknown, nextState: unknown) {
   return {
     ...asRecord(dataRaw),
-    scriptState: asRecord(nextState),
+    state: asRecord(nextState),
   };
 }
 
-function withRuntimeData(configRaw: unknown, stateRaw: unknown) {
+function withData(configRaw: unknown, stateRaw: unknown) {
   return {
-    scriptConfig: asRecord(configRaw),
-    scriptState: asRecord(stateRaw),
+    config: asRecord(configRaw),
+    state: asRecord(stateRaw),
   };
 }
 
@@ -51,8 +51,8 @@ function reduceGuessWordAction(input: ScriptActionInput): ScriptActionResult {
   }
 
   const guess = String(input.payload?.guess || '').trim().toLowerCase();
-  const config = readRuntimeConfig(input.data);
-  const state = readRuntimeState(input.data);
+  const config = readConfig(input.data);
+  const state = readState(input.data);
   const answer = String(config.answer || '').trim().toLowerCase();
   const winners = Array.isArray(state?.winners) ? state.winners : [];
   const nowIso = new Date().toISOString();
@@ -74,7 +74,7 @@ function reduceGuessWordAction(input: ScriptActionInput): ScriptActionResult {
   const attempts = Math.max(0, Number(state?.attempts || 0)) + 1;
 
   return {
-    nextData: withRuntimeState(input.data, {
+    nextData: withState(input.data, {
       ...state,
       status: 'active',
       attempts,
@@ -136,18 +136,18 @@ function buildPollState(stateRaw: unknown, optionsRaw: unknown) {
 
 function reducePollAction(input: ScriptActionInput): ScriptActionResult {
   const actionType = String(input.actionType || '').trim().toLowerCase();
-  const config = readRuntimeConfig(input.data);
-  const state = readRuntimeState(input.data);
+  const config = readConfig(input.data);
+  const state = readState(input.data);
   const options = normalizePollOptions(config.options);
   const normalizedState = buildPollState(state, options);
 
   if (actionType !== 'vote') {
-    return {nextData: withRuntimeState(input.data, normalizedState)};
+    return {nextData: withState(input.data, normalizedState)};
   }
 
   const optionIndex = Number(input.payload?.optionIndex);
   if (!Number.isFinite(optionIndex) || optionIndex < 0 || optionIndex >= options.length) {
-    return {nextData: withRuntimeState(input.data, normalizedState)};
+    return {nextData: withState(input.data, normalizedState)};
   }
 
   const votesByUser = {
@@ -156,7 +156,7 @@ function reducePollAction(input: ScriptActionInput): ScriptActionResult {
   };
 
   return {
-    nextData: withRuntimeState(input.data, buildPollState(
+    nextData: withState(input.data, buildPollState(
       {
         ...normalizedState,
         votesByUser,
@@ -175,7 +175,7 @@ function clampBotLevel(raw: unknown) {
 
 function reduceBotControlAction(input: ScriptActionInput): ScriptActionResult {
   const actionType = String(input.actionType || '').trim().toLowerCase();
-  const prevState = readRuntimeState(input.data);
+  const prevState = readState(input.data);
   const nextState = {
     enabled: !!prevState.enabled,
     level: clampBotLevel(prevState.level),
@@ -191,7 +191,7 @@ function reduceBotControlAction(input: ScriptActionInput): ScriptActionResult {
   } else if (actionType === 'set_level') {
     nextState.level = clampBotLevel(input.payload?.level);
   } else {
-    return {nextData: withRuntimeState(input.data, nextState)};
+    return {nextData: withState(input.data, nextState)};
   }
 
   nextState.updatedAt = new Date().toISOString();
@@ -203,7 +203,7 @@ function reduceBotControlAction(input: ScriptActionInput): ScriptActionResult {
   };
 
   return {
-    nextData: withRuntimeState(input.data, nextState),
+    nextData: withState(input.data, nextState),
   };
 }
 
@@ -214,7 +214,7 @@ const definitions: ScriptDefinition[] = [
     clientScript: 'demo:fart_button',
     serverScript: null,
     createData(input) {
-      return withRuntimeData({
+      return withData({
         title: String(input?.title || 'Локальная кнопка'),
         buttonLabel: String(input?.buttonLabel || 'Пукнуть'),
         soundUrl: String(input?.soundUrl || '/ping.mp3'),
@@ -233,7 +233,7 @@ const definitions: ScriptDefinition[] = [
         answer,
         hint: String(input?.hint || `Слово из ${Math.max(1, answer.length)} букв`),
       };
-      return withRuntimeData(config, {
+      return withData(config, {
         status: 'active',
         mask: '*'.repeat(Math.max(1, answer.length)),
         attempts: 0,
@@ -255,7 +255,7 @@ const definitions: ScriptDefinition[] = [
         question: String(input?.question || 'Выберите вариант'),
         options,
       };
-      return withRuntimeData(config, buildPollState({}, config.options));
+      return withData(config, buildPollState({}, config.options));
     },
     reduceAction: reducePollAction,
   },
@@ -268,7 +268,7 @@ const definitions: ScriptDefinition[] = [
       const config = {
         title: String(input?.title || 'Bot control'),
       };
-      return withRuntimeData(config, {
+      return withData(config, {
         enabled: !!input?.initialEnabled,
         level: clampBotLevel(input?.initialLevel),
         updatedAt: null,
@@ -285,7 +285,7 @@ const definitions: ScriptDefinition[] = [
   //   serverScript: 'demo:room_meter',
   //   createData(input) {
   //     const announceEvery = Number.parseInt(String(input?.announceEvery ?? '5'), 10);
-  //     return withRuntimeData({
+  //     return withData({
   //       title: String(input?.title || 'Счётчик комнаты'),
   //       announceEvery: Number.isFinite(announceEvery) && announceEvery > 0 ? announceEvery : 5,
   //     }, {

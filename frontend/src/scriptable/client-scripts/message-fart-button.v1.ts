@@ -15,10 +15,10 @@ export const messageFartButtonV1: ScriptWorkerFactory = {
 
         api.setViewModel({
           kind: 'button_sound',
-          title: String(api.getData()?.scriptConfig?.title || 'Локальная кнопка'),
-          buttonLabel: String(api.getData()?.scriptConfig?.buttonLabel || 'Пукнуть'),
+          title: String(api.getData()?.config?.title || 'Локальная кнопка'),
+          buttonLabel: String(api.getData()?.config?.buttonLabel || 'Пукнуть'),
           clicks: Number(api.getLocalState()?.clicks || 0),
-          soundUrl: String(api.getData()?.scriptConfig?.soundUrl || '/ping.mp3'),
+          soundUrl: String(api.getData()?.config?.soundUrl || '/ping.mp3'),
           pulse: false,
         });
       },
@@ -40,10 +40,10 @@ export const messageFartButtonV1: ScriptWorkerFactory = {
 
         api.setViewModel({
           kind: 'button_sound',
-          title: String(api.getData()?.scriptConfig?.title || 'Локальная кнопка'),
-          buttonLabel: String(api.getData()?.scriptConfig?.buttonLabel || 'Пукнуть'),
+          title: String(api.getData()?.config?.title || 'Локальная кнопка'),
+          buttonLabel: String(api.getData()?.config?.buttonLabel || 'Пукнуть'),
           clicks,
-          soundUrl: String(api.getData()?.scriptConfig?.soundUrl || '/ping.mp3'),
+          soundUrl: String(api.getData()?.config?.soundUrl || '/ping.mp3'),
           pulse: true,
           soundTick,
         });

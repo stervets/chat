@@ -25,7 +25,7 @@
 Scriptable/runtime:
 - runtime поля: `nodes.client_script`, `nodes.server_script`, `nodes.data`;
 - runtime читает весь `nodes.data` целиком;
-- `scriptState` / `scriptConfig` внутри `nodes.data` — только обычные ключи конкретного script, не отдельный protocol;
+- если runtime делит данные на части, используй нейтральные ключи вроде `data.config` и `data.state`, без legacy-терминов;
 - room surface: `nodes.data.roomSurface`;
 - один runtime на `message:<id>` или `room:<id>`; pinned не создаёт второй runtime.
 

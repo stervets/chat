@@ -37,7 +37,7 @@ Shared action для message/room runtime.
 Ответ:
 
 ```json
-{"ok": true, "roomId": 1, "nodeType": "message", "nodeId": 123, "state": {}}
+{"ok": true, "roomId": 1, "nodeType": "message", "nodeId": 123, "data": {}}
 ```
 
 ### `scripts:room:get`
@@ -86,7 +86,7 @@ type ScriptRuntimeEvent = {
 
 ## Правила
 
-- shared state хранится в `nodes.data.scriptState`;
-- config хранится в `nodes.data.scriptConfig`;
+- persistent runtime data хранится в `nodes.data`;
+- если конкретному script нужно разделение, используй нейтральные ключи `nodes.data.config` и `nodes.data.state`;
 - local state живёт только в worker;
 - side-effects не дублируются между timeline/pinned views.

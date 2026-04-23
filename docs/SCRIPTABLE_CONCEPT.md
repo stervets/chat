@@ -40,7 +40,7 @@ type ScriptRuntimeEvent = {
 ## Data model
 
 - persistent runtime data лежит в `nodes.data`;
-- `scriptState` и `scriptConfig` могут использоваться как обычные ключи внутри `data`, если конкретному script это нужно;
+- если runtime делит данные на части, используй нейтральные ключи `data.config` и `data.state`;
 - local state: только worker
 - effects (звук/вибрация/одноразовые вещи): не хранить в persistent runtime data
 

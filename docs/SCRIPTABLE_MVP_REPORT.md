@@ -12,8 +12,8 @@
 
 - Нет отдельного graph/spaces/script storage слоя.
 - Runtime identity и lifecycle едины для timeline/pinned.
-- Persistent/shared state живёт в `nodes.data.scriptState`.
-- Runtime config живёт в `nodes.data.scriptConfig`.
+- Persistent runtime data живёт в `nodes.data`.
+- Demo-runtime использует нейтральные ключи `nodes.data.config` и `nodes.data.state`.
 
 ## Что сознательно не делали
 

@@ -7,8 +7,8 @@ function clampLevel(raw: unknown) {
 }
 
 function buildView(data: Record<string, any>, local: Record<string, any>) {
-  const config = data?.scriptConfig && typeof data.scriptConfig === 'object' ? data.scriptConfig : {};
-  const state = data?.scriptState && typeof data.scriptState === 'object' ? data.scriptState : {};
+  const config = data?.config && typeof data.config === 'object' ? data.config : {};
+  const state = data?.state && typeof data.state === 'object' ? data.state : {};
   return {
     kind: 'bot_control_surface',
     title: String(config?.title || 'Bot control'),

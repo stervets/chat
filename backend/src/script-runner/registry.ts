@@ -23,8 +23,8 @@ function cloneJson<T>(value: T): T {
 
 function createRoomMeterResult(request: RunnerRequest): RunnerScriptResult {
   const data = cloneJson(request.payload.data || {});
-  const state = cloneJson(data?.scriptState || {});
-  const config = cloneJson(data?.scriptConfig || {});
+  const state = cloneJson(data?.state || {});
+  const config = cloneJson(data?.config || {});
   const announceEvery = Math.max(1, Number(config?.announceEvery || 5));
   const eventType = String(request.payload.eventType || '').trim().toLowerCase();
   const eventPayload = cloneJson(request.payload.eventPayload || {});
@@ -54,7 +54,7 @@ function createRoomMeterResult(request: RunnerRequest): RunnerScriptResult {
   return {
     data: {
       ...data,
-      scriptState: nextState,
+      state: nextState,
     },
     sideEffects,
   };

@@ -1,8 +1,8 @@
 import type {ScriptWorkerFactory} from '../runtime/types';
 
 function toRoomView(data: Record<string, any>) {
-  const config = data?.scriptConfig && typeof data.scriptConfig === 'object' ? data.scriptConfig : {};
-  const state = data?.scriptState && typeof data.scriptState === 'object' ? data.scriptState : {};
+  const config = data?.config && typeof data.config === 'object' ? data.config : {};
+  const state = data?.state && typeof data.state === 'object' ? data.state : {};
   const totalMessages = Math.max(0, Number(state?.totalMessages || 0));
   const lastAuthorNickname = String(state?.lastAuthorNickname || '').trim();
 

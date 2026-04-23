@@ -1,8 +1,8 @@
 import type {ScriptWorkerFactory} from '../runtime/types';
 
 function buildView(data: Record<string, any>, local: Record<string, any>) {
-  const config = data?.scriptConfig && typeof data.scriptConfig === 'object' ? data.scriptConfig : {};
-  const state = data?.scriptState && typeof data.scriptState === 'object' ? data.scriptState : {};
+  const config = data?.config && typeof data.config === 'object' ? data.config : {};
+  const state = data?.state && typeof data.state === 'object' ? data.state : {};
   const winners = Array.isArray(state?.winners) ? state.winners : [];
   const lastGuess = state?.lastGuess && typeof state.lastGuess === 'object'
     ? state.lastGuess

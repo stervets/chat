@@ -63,7 +63,7 @@ Runtime определяется только полями node:
 
 - `client_script` -> клиентский runtime;
 - `server_script` -> серверный runtime;
-- `nodes.data` -> runtime данные (включая `scriptConfig`, `scriptState`, `roomSurface`).
+- `nodes.data` -> runtime данные (например `config`, `state`, `roomSurface`).
 
 Наружный runtime snapshot:
 

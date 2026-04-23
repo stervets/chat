@@ -211,9 +211,9 @@ async function migrateData(client: Client) {
               when coalesce(r.script_revision, 0) > 0 then r.script_revision
               else null
             end,
-            'scriptConfig',
+            'config',
             coalesce(r.script_config_json, '{}'::jsonb),
-            'scriptState',
+            'state',
             coalesce(r.script_state_json, '{}'::jsonb),
             'roomSurface',
             case
@@ -286,9 +286,9 @@ async function migrateData(client: Client) {
               when coalesce(m.script_revision, 0) > 0 then m.script_revision
               else null
             end,
-            'scriptConfig',
+            'config',
             coalesce(m.script_config_json, '{}'::jsonb),
-            'scriptState',
+            'state',
             coalesce(m.script_state_json, '{}'::jsonb)
           )
         ) as node_data
