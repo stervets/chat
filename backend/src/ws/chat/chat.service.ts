@@ -17,7 +17,7 @@ export class ChatService implements OnApplicationShutdown {
   private readonly usersService = new ChatUsersService(this.ctx);
   private readonly invitesService = new ChatInvitesService(this.ctx);
   private readonly gamesService = new ChatGamesService(this.ctx);
-  private readonly dialogsService = new ChatDialogsService(this.ctx);
+  private readonly roomsService = new ChatDialogsService(this.ctx);
   private readonly messagesService = new ChatMessagesService(this.ctx);
   private readonly reactionsService = new ChatReactionsService(this.ctx);
   private readonly scriptableService = new ScriptableService(this.ctx);
@@ -98,79 +98,79 @@ export class ChatService implements OnApplicationShutdown {
     return this.gamesService.gamesAction(state, payload);
   }
 
-  dialogsGeneral(state: SocketState) {
-    return this.dialogsService.dialogsGeneral(state);
+  roomGetDefaultGroup(state: SocketState) {
+    return this.roomsService.roomGetDefaultGroup(state);
   }
 
-  dialogsPrivate(state: SocketState, userIdRaw: unknown) {
-    return this.dialogsService.dialogsPrivate(state, userIdRaw);
+  roomDirectGetOrCreate(state: SocketState, userIdRaw: unknown) {
+    return this.roomsService.roomDirectGetOrCreate(state, userIdRaw);
   }
 
-  dialogsDirects(state: SocketState) {
-    return this.dialogsService.dialogsDirects(state);
+  roomListDirect(state: SocketState) {
+    return this.roomsService.roomListDirect(state);
   }
 
-  dialogsMessages(state: SocketState, roomIdRaw: unknown, limitRaw?: unknown, beforeMessageIdRaw?: unknown) {
-    return this.dialogsService.dialogsMessages(state, roomIdRaw, limitRaw, beforeMessageIdRaw);
+  messageList(state: SocketState, roomIdRaw: unknown, limitRaw?: unknown, beforeMessageIdRaw?: unknown) {
+    return this.roomsService.messageList(state, roomIdRaw, limitRaw, beforeMessageIdRaw);
   }
 
-  chatJoin(state: SocketState, roomIdRaw: unknown) {
-    return this.dialogsService.chatJoin(state, roomIdRaw);
+  roomGet(state: SocketState, roomIdRaw: unknown) {
+    return this.roomsService.roomGet(state, roomIdRaw);
   }
 
-  roomsCreate(state: SocketState, payloadRaw: any) {
-    return this.dialogsService.roomsCreate(state, payloadRaw);
+  roomCreate(state: SocketState, payloadRaw: any) {
+    return this.roomsService.roomCreate(state, payloadRaw);
   }
 
-  roomsSurfaceConfigure(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
-    return this.dialogsService.roomsSurfaceConfigure(state, roomIdRaw, payloadRaw);
+  roomSurfaceSet(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
+    return this.roomsService.roomSurfaceSet(state, roomIdRaw, payloadRaw);
   }
 
-  dialogsDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any) {
-    return this.dialogsService.dialogsDelete(state, roomIdRaw, optionsRaw);
+  roomDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any) {
+    return this.roomsService.roomDelete(state, roomIdRaw, optionsRaw);
   }
 
-  chatSend(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown, optionsRaw?: any) {
-    return this.messagesService.chatSend(state, roomIdRaw, bodyRaw, optionsRaw);
+  messageCreate(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown, optionsRaw?: any) {
+    return this.messagesService.messageCreate(state, roomIdRaw, bodyRaw, optionsRaw);
   }
 
-  chatEdit(state: SocketState, messageIdRaw: unknown, bodyRaw: unknown) {
-    return this.messagesService.chatEdit(state, messageIdRaw, bodyRaw);
+  messageUpdate(state: SocketState, messageIdRaw: unknown, bodyRaw: unknown) {
+    return this.messagesService.messageUpdate(state, messageIdRaw, bodyRaw);
   }
 
-  chatDelete(state: SocketState, messageIdRaw: unknown) {
-    return this.messagesService.chatDelete(state, messageIdRaw);
+  messageDelete(state: SocketState, messageIdRaw: unknown) {
+    return this.messagesService.messageDelete(state, messageIdRaw);
   }
 
-  chatPin(state: SocketState, roomIdRaw: unknown, messageIdRaw: unknown) {
-    return this.messagesService.chatPin(state, roomIdRaw, messageIdRaw);
+  roomPinSet(state: SocketState, roomIdRaw: unknown, messageIdRaw: unknown) {
+    return this.messagesService.roomPinSet(state, roomIdRaw, messageIdRaw);
   }
 
-  chatUnpin(state: SocketState, roomIdRaw: unknown) {
-    return this.messagesService.chatUnpin(state, roomIdRaw);
+  roomPinClear(state: SocketState, roomIdRaw: unknown) {
+    return this.messagesService.roomPinClear(state, roomIdRaw);
   }
 
-  messagesDiscussionGet(state: SocketState, messageIdRaw: unknown) {
-    return this.messagesService.messagesDiscussionGet(state, messageIdRaw);
+  messageCommentRoomGet(state: SocketState, messageIdRaw: unknown) {
+    return this.messagesService.messageCommentRoomGet(state, messageIdRaw);
   }
 
-  messagesDiscussionCreate(state: SocketState, messageIdRaw: unknown) {
-    return this.messagesService.messagesDiscussionCreate(state, messageIdRaw);
+  messageCommentRoomCreate(state: SocketState, messageIdRaw: unknown) {
+    return this.messagesService.messageCommentRoomCreate(state, messageIdRaw);
   }
 
-  chatReact(state: SocketState, messageIdRaw: unknown, reactionRaw: unknown) {
-    return this.reactionsService.chatReact(state, messageIdRaw, reactionRaw);
+  messageReactionSet(state: SocketState, messageIdRaw: unknown, reactionRaw: unknown) {
+    return this.reactionsService.messageReactionSet(state, messageIdRaw, reactionRaw);
   }
 
-  scriptsCreateMessage(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
+  messageCreateScriptable(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
     return this.scriptableService.createScriptableMessage(state, roomIdRaw, payloadRaw);
   }
 
-  scriptsAction(state: SocketState, payloadRaw: any) {
+  runtimeAction(state: SocketState, payloadRaw: any) {
     return this.scriptableService.applyScriptAction(state, payloadRaw);
   }
 
-  scriptsRoomGet(state: SocketState, roomIdRaw: unknown) {
+  roomRuntimeGet(state: SocketState, roomIdRaw: unknown) {
     return this.scriptableService.getRoomScriptEntity(state, roomIdRaw);
   }
 

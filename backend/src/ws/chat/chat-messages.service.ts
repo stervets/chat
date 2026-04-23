@@ -33,19 +33,19 @@ export class ChatMessagesService {
     return title.length > 120 ? title.slice(0, 120) : title;
   }
 
-  private parseChatSendOptions(raw: unknown) {
+  private parseMessageCreateOptions(raw: unknown) {
     const options = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
     return {
       anonymous: !!options.anonymous,
     };
   }
 
-  async chatSend(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown, optionsRaw?: unknown): Promise<ApiError | ApiOk<{
+  async messageCreate(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown, optionsRaw?: unknown): Promise<ApiError | ApiOk<{
     message: ChatContextMessagePayload;
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
-    const options = this.parseChatSendOptions(optionsRaw);
+    const options = this.parseMessageCreateOptions(optionsRaw);
 
     const roomId = this.ctx.parseRoomId(roomIdRaw);
     if (!roomId) {
@@ -107,7 +107,7 @@ export class ChatMessagesService {
     };
   }
 
-  async chatEdit(state: SocketState, messageIdRaw: unknown, bodyRaw: unknown): Promise<ApiError | ApiOk<{
+  async messageUpdate(state: SocketState, messageIdRaw: unknown, bodyRaw: unknown): Promise<ApiError | ApiOk<{
     changed: boolean;
     message: ChatContextMessagePayload;
   }>> {
@@ -189,7 +189,7 @@ export class ChatMessagesService {
     };
   }
 
-  async chatDelete(state: SocketState, messageIdRaw: unknown): Promise<ApiError | ApiOk<{
+  async messageDelete(state: SocketState, messageIdRaw: unknown): Promise<ApiError | ApiOk<{
     changed: boolean;
     roomId: number;
     dialogId: number;
@@ -253,7 +253,7 @@ export class ChatMessagesService {
     };
   }
 
-  async messagesDiscussionGet(
+  async messageCommentRoomGet(
     state: SocketState,
     messageIdRaw: unknown,
   ): Promise<ApiError | ApiOk<{
@@ -315,7 +315,7 @@ export class ChatMessagesService {
     };
   }
 
-  async messagesDiscussionCreate(
+  async messageCommentRoomCreate(
     state: SocketState,
     messageIdRaw: unknown,
   ): Promise<ApiError | ApiOk<{
@@ -482,7 +482,7 @@ export class ChatMessagesService {
     };
   }
 
-  async chatPin(state: SocketState, roomIdRaw: unknown, messageIdRaw: unknown): Promise<ApiError | ApiOk<{
+  async roomPinSet(state: SocketState, roomIdRaw: unknown, messageIdRaw: unknown): Promise<ApiError | ApiOk<{
     changed: boolean;
     roomId: number;
     dialogId: number;
@@ -560,7 +560,7 @@ export class ChatMessagesService {
     };
   }
 
-  async chatUnpin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
+  async roomPinClear(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
     changed: boolean;
     roomId: number;
     dialogId: number;

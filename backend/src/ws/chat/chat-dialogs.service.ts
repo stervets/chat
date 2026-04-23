@@ -205,7 +205,7 @@ export class ChatDialogsService {
     };
   }
 
-  async dialogsGeneral(state: SocketState): Promise<ApiError | {
+  async roomGetDefaultGroup(state: SocketState): Promise<ApiError | {
     roomId: number;
     dialogId: number;
     type: 'group';
@@ -231,7 +231,7 @@ export class ChatDialogsService {
     };
   }
 
-  async dialogsPrivate(state: SocketState, userIdRaw: unknown): Promise<ApiError | {
+  async roomDirectGetOrCreate(state: SocketState, userIdRaw: unknown): Promise<ApiError | {
     roomId: number;
     dialogId: number;
     type: 'direct';
@@ -279,7 +279,7 @@ export class ChatDialogsService {
     };
   }
 
-  async dialogsDirects(state: SocketState): Promise<ApiError | Array<{
+  async roomListDirect(state: SocketState): Promise<ApiError | Array<{
     roomId: number;
     dialogId: number;
     targetUser: PublicUser;
@@ -411,7 +411,7 @@ export class ChatDialogsService {
     return mapped;
   }
 
-  async dialogsMessages(
+  async messageList(
     state: SocketState,
     roomIdRaw: unknown,
     limitRaw?: unknown,
@@ -547,7 +547,7 @@ export class ChatDialogsService {
     return this.ctx.attachMessageReactions(ordered);
   }
 
-  async chatJoin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
+  async roomGet(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
     roomId: number;
     dialogId: number;
     kind: 'group' | 'direct' | 'game' | 'comment';
@@ -608,7 +608,7 @@ export class ChatDialogsService {
     };
   }
 
-  async roomsCreate(state: SocketState, payloadRaw: any): Promise<ApiError | ApiOk<{
+  async roomCreate(state: SocketState, payloadRaw: any): Promise<ApiError | ApiOk<{
     roomId: number;
     dialogId: number;
     kind: 'group';
@@ -635,7 +635,7 @@ export class ChatDialogsService {
     };
   }
 
-  async roomsSurfaceConfigure(
+  async roomSurfaceSet(
     state: SocketState,
     roomIdRaw: unknown,
     payloadRaw: any,
@@ -816,7 +816,7 @@ export class ChatDialogsService {
     };
   }
 
-  async dialogsDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any): Promise<ApiError | ApiOk<{
+  async roomDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any): Promise<ApiError | ApiOk<{
     changed: boolean;
     roomId: number;
     dialogId: number;

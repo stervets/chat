@@ -6,7 +6,7 @@ import type {SocketState} from '../protocol.js';
 export class ChatReactionsService {
   constructor(private readonly ctx: ChatContext) {}
 
-  async chatReact(state: SocketState, messageIdRaw: unknown, reactionRaw: unknown): Promise<ApiError | ApiOk<{
+  async messageReactionSet(state: SocketState, messageIdRaw: unknown, reactionRaw: unknown): Promise<ApiError | ApiOk<{
     roomId: number;
     dialogId: number;
     messageId: number;

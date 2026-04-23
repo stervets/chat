@@ -363,25 +363,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return result;
     }
 
-    if (com === 'room:group:get-default') return this.chatService.dialogsGeneral(client.state);
-    if (com === 'room:direct:get-or-create') return this.chatService.dialogsPrivate(client.state, args.userId);
+    if (com === 'room:group:get-default') return this.chatService.roomGetDefaultGroup(client.state);
+    if (com === 'room:direct:get-or-create') return this.chatService.roomDirectGetOrCreate(client.state, args.userId);
     if (com === 'room:list') {
       const kind = String(args.kind || '').trim().toLowerCase();
-      if (kind === 'direct') return this.chatService.dialogsDirects(client.state);
+      if (kind === 'direct') return this.chatService.roomListDirect(client.state);
       if (kind === 'group') {
-        const result = await this.chatService.dialogsGeneral(client.state);
+        const result = await this.chatService.roomGetDefaultGroup(client.state);
         if ((result as any)?.ok === false) return result;
         return [result];
       }
       return {ok: false, error: 'invalid_room_kind'};
     }
-    if (com === 'message:list') return this.chatService.dialogsMessages(client.state, args.roomId, args.limit, args.beforeMessageId);
+    if (com === 'message:list') return this.chatService.messageList(client.state, args.roomId, args.limit, args.beforeMessageId);
     if (com === 'room:delete') {
       const roomId = Number.parseInt(String(args.roomId ?? ''), 10);
       const roomBeforeDelete = Number.isFinite(roomId) && roomId > 0
         ? await getRoomById(roomId)
         : null;
-      const result = await this.chatService.dialogsDelete(client.state, args.roomId, args);
+      const result = await this.chatService.roomDelete(client.state, args.roomId, args);
       if ((result as any)?.ok && (result as any)?.changed) {
         if (roomBeforeDelete) {
           this.broadcastToRoomMembers(roomBeforeDelete, 'room:deleted', {
@@ -396,7 +396,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'room:get') {
-      const result = await this.chatService.chatJoin(client.state, args.roomId);
+      const result = await this.chatService.roomGet(client.state, args.roomId);
       if ((result as any)?.ok) {
         this.subscribe(client, (result as any).roomId);
       }
@@ -404,11 +404,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'room:create') {
-      return this.chatService.roomsCreate(client.state, args);
+      return this.chatService.roomCreate(client.state, args);
     }
 
     if (com === 'room:surface:set') {
-      const result = await this.chatService.roomsSurfaceConfigure(client.state, args.roomId, args);
+      const result = await this.chatService.roomSurfaceSet(client.state, args.roomId, args);
       if ((result as any)?.ok) {
         const room = await getRoomById((result as any).roomId);
         const roomPayload = {
@@ -439,11 +439,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'message:comment-room:get') {
-      return this.chatService.messagesDiscussionGet(client.state, args.messageId);
+      return this.chatService.messageCommentRoomGet(client.state, args.messageId);
     }
 
     if (com === 'message:comment-room:create') {
-      const result = await this.chatService.messagesDiscussionCreate(client.state, args.messageId);
+      const result = await this.chatService.messageCommentRoomCreate(client.state, args.messageId);
       if ((result as any)?.ok && (result as any)?.message) {
         const sourceRoomId = Number((result as any).sourceRoomId || 0);
         const room = Number.isFinite(sourceRoomId) && sourceRoomId > 0
@@ -461,8 +461,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (com === 'message:create') {
       const kind = String(args.kind || 'text').trim().toLowerCase();
       const result = kind === 'scriptable'
-        ? await this.chatService.scriptsCreateMessage(client.state, args.roomId, args)
-        : await this.chatService.chatSend(client.state, args.roomId, args.text ?? args.body, args);
+        ? await this.chatService.messageCreateScriptable(client.state, args.roomId, args)
+        : await this.chatService.messageCreate(client.state, args.roomId, args.text ?? args.body, args);
       if ((result as any)?.ok && (result as any)?.message) {
         const room = await getRoomById((result as any).message.roomId);
         const silentRequested = Boolean(args.silent);
@@ -496,7 +496,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'runtime:action') {
-      const result = await this.chatService.scriptsAction(client.state, args);
+      const result = await this.chatService.runtimeAction(client.state, args);
       if ((result as any)?.ok) {
         await this.chatService.scriptableNotifyRoomEvent({
           roomId: Number((result as any).roomId || 0),
@@ -514,11 +514,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'room:runtime:get') {
-      return this.chatService.scriptsRoomGet(client.state, args.roomId);
+      return this.chatService.roomRuntimeGet(client.state, args.roomId);
     }
 
     if (com === 'message:update') {
-      const result = await this.chatService.chatEdit(client.state, args.messageId, args.text ?? args.body);
+      const result = await this.chatService.messageUpdate(client.state, args.messageId, args.text ?? args.body);
       if ((result as any)?.ok && (result as any)?.changed && (result as any)?.message) {
         const room = await getRoomById((result as any).message.roomId);
         if (room) {
@@ -531,7 +531,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'message:delete') {
-      const result = await this.chatService.chatDelete(client.state, args.messageId);
+      const result = await this.chatService.messageDelete(client.state, args.messageId);
       if ((result as any)?.ok && (result as any)?.changed) {
         const room = await getRoomById((result as any).roomId);
         const payload = {
@@ -566,7 +566,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'room:pin:set') {
-      const result = await this.chatService.chatPin(client.state, args.roomId, args.nodeId);
+      const result = await this.chatService.roomPinSet(client.state, args.roomId, args.nodeId);
       if ((result as any)?.ok && (result as any)?.changed) {
         const room = await getRoomById((result as any).roomId);
         const payload = {
@@ -586,7 +586,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'room:pin:clear') {
-      const result = await this.chatService.chatUnpin(client.state, args.roomId);
+      const result = await this.chatService.roomPinClear(client.state, args.roomId);
       if ((result as any)?.ok && (result as any)?.changed) {
         const room = await getRoomById((result as any).roomId);
         const payload = {
@@ -606,7 +606,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     if (com === 'message:reaction:set') {
-      const result = await this.chatService.chatReact(client.state, args.messageId, args.emoji ?? null);
+      const result = await this.chatService.messageReactionSet(client.state, args.messageId, args.emoji ?? null);
       if ((result as any)?.ok && (result as any)?.changed) {
         const room = await getRoomById((result as any).roomId);
         const payload = {
