@@ -4,7 +4,6 @@ import {db} from '../db.js';
 export type NodeType = 'room' | 'message';
 export type RoomKind = 'group' | 'direct' | 'game' | 'comment';
 export type RoomSurfaceType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
-export type ScriptExecutionMode = 'client' | 'client_server' | 'client_runner';
 export type NodeRuntimeSnapshot = {
   clientScript: string | null;
   serverScript: string | null;
@@ -75,10 +74,6 @@ export function readNodeRuntime(nodeRaw: {clientScript?: unknown; serverScript?:
   };
 }
 
-export function readNodeScriptId(nodeRaw: {clientScript?: unknown; serverScript?: unknown}) {
-  return String(nodeRaw.clientScript || nodeRaw.serverScript || '').trim().toLowerCase() || null;
-}
-
 export function hasNodeClientRuntime(nodeRaw: {clientScript?: unknown}) {
   return !!String(nodeRaw?.clientScript || '').trim();
 }
@@ -87,21 +82,8 @@ export function hasNodeServerRuntime(nodeRaw: {serverScript?: unknown}) {
   return !!String(nodeRaw?.serverScript || '').trim();
 }
 
-export function resolveNodeRuntimeMode(nodeRaw: {clientScript?: unknown; serverScript?: unknown}): ScriptExecutionMode | null {
-  const hasClient = hasNodeClientRuntime(nodeRaw);
-  const hasServer = hasNodeServerRuntime(nodeRaw);
-  if (hasClient && hasServer) return 'client_server';
-  if (!hasClient && hasServer) return 'client_runner';
-  if (hasClient) return 'client';
-  return null;
-}
-
-export function readNodeScriptConfigData(nodeRaw: {data?: unknown}) {
-  return asRecord(asRecord(nodeRaw.data).scriptConfig);
-}
-
-export function readNodeScriptStateData(nodeRaw: {data?: unknown}) {
-  return asRecord(asRecord(nodeRaw.data).scriptState);
+export function hasNodeRuntime(nodeRaw: {clientScript?: unknown; serverScript?: unknown}) {
+  return hasNodeClientRuntime(nodeRaw) || hasNodeServerRuntime(nodeRaw);
 }
 
 export function readRoomSurface(nodeRaw: {data?: unknown}) {
@@ -116,8 +98,6 @@ export function readRoomSurface(nodeRaw: {data?: unknown}) {
 export function mergeNodeData(input: {
   current?: unknown;
   patch?: unknown;
-  scriptConfig?: unknown;
-  scriptState?: unknown;
   roomSurface?: {
     enabled: boolean;
     type: RoomSurfaceType | null;
@@ -128,14 +108,6 @@ export function mergeNodeData(input: {
 
   if (input.patch !== undefined) {
     Object.assign(next, asRecord(input.patch));
-  }
-
-  if (input.scriptConfig !== undefined) {
-    next.scriptConfig = asRecord(input.scriptConfig);
-  }
-
-  if (input.scriptState !== undefined) {
-    next.scriptState = asRecord(input.scriptState);
   }
 
   if (input.roomSurface !== undefined) {

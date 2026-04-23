@@ -11,12 +11,12 @@ import {
   type RoomRow,
 } from '../../common/rooms.js';
 import {
+  hasNodeRuntime,
   cloneJson,
   mergeNodeData,
   normalizeRoomSurfaceType,
   readNodeRuntime,
   readRoomSurface,
-  resolveNodeRuntimeMode,
 } from '../../common/nodes.js';
 import {
   ChatContext,
@@ -74,7 +74,7 @@ export class ChatDialogsService {
 
   private hasRoomRuntime(roomRuntime: RoomRuntimeRow | null) {
     if (!roomRuntime) return false;
-    return !!resolveNodeRuntimeMode(roomRuntime.node);
+    return hasNodeRuntime(roomRuntime.node);
   }
 
   private toRoomRuntimePayload(roomId: number, roomRuntime: RoomRuntimeRow | null) {

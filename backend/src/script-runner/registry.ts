@@ -2,13 +2,12 @@ import type {RunnerRequest, RunnerResponse} from '../scriptable/runner-protocol.
 import type {ScriptSideEffect} from '../scriptable/types.js';
 
 type RunnerScriptResult = {
-  state: any;
+  data: any;
   sideEffects?: ScriptSideEffect[];
 };
 
 type RunnerScriptHandler = {
-  scriptId: string;
-  revision: number;
+  serverScript: string;
   nodeType: 'message' | 'room';
   onRoomEvent?: (request: RunnerRequest) => RunnerScriptResult;
   onEntityAction?: (request: RunnerRequest) => RunnerScriptResult;
@@ -23,14 +22,15 @@ function cloneJson<T>(value: T): T {
 }
 
 function createRoomMeterResult(request: RunnerRequest): RunnerScriptResult {
-  const state = cloneJson(request.payload.state || {});
-  const config = cloneJson(request.payload.config || {});
+  const data = cloneJson(request.payload.data || {});
+  const state = cloneJson(data?.scriptState || {});
+  const config = cloneJson(data?.scriptConfig || {});
   const announceEvery = Math.max(1, Number(config?.announceEvery || 5));
   const eventType = String(request.payload.eventType || '').trim().toLowerCase();
   const eventPayload = cloneJson(request.payload.eventPayload || {});
 
   if (eventType !== 'message_created') {
-    return {state};
+    return {data};
   }
 
   const totalMessages = Math.max(0, Number(state?.totalMessages || 0)) + 1;
@@ -52,7 +52,10 @@ function createRoomMeterResult(request: RunnerRequest): RunnerScriptResult {
   }
 
   return {
-    state: nextState,
+    data: {
+      ...data,
+      scriptState: nextState,
+    },
     sideEffects,
   };
 }
@@ -60,8 +63,7 @@ function createRoomMeterResult(request: RunnerRequest): RunnerScriptResult {
 const scripts: RunnerScriptHandler[] = [
   // Временно отключено: скрипт "Счётчик комнаты" (demo:room_meter).
   // {
-  //   scriptId: 'demo:room_meter',
-  //   revision: 1,
+  //   serverScript: 'demo:room_meter',
   //   nodeType: 'room',
   //   onRoomEvent: createRoomMeterResult,
   //   onEntityAction: createRoomMeterResult,
@@ -70,12 +72,14 @@ const scripts: RunnerScriptHandler[] = [
 
 const scriptMap = new Map<string, RunnerScriptHandler>();
 scripts.forEach((script) => {
-  scriptMap.set(`${script.nodeType}:${script.scriptId}:${script.revision}`, script);
+  scriptMap.set(`${script.nodeType}:${script.serverScript}`, script);
 });
 
 function findScript(request: RunnerRequest) {
+  const serverScript = String(request.payload.serverScript || '').trim().toLowerCase();
+  if (!serverScript) return null;
   return scriptMap.get(
-    `${request.payload.nodeType}:${request.payload.scriptId}:${request.payload.runtimeRevision}`,
+    `${request.payload.nodeType}:${serverScript}`,
   ) || null;
 }
 
@@ -103,7 +107,7 @@ export function handleRunnerRequest(request: RunnerRequest): RunnerResponse {
   return {
     id: request.id,
     ok: true,
-    state: cloneJson(result.state || {}),
+    data: cloneJson(result.data || {}),
     sideEffects: cloneJson(result.sideEffects || []),
   };
 }

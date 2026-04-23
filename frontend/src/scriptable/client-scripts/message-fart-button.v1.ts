@@ -2,7 +2,6 @@ import type {ScriptWorkerFactory} from '../runtime/types';
 
 export const messageFartButtonV1: ScriptWorkerFactory = {
   scriptId: 'demo:fart_button',
-  revision: 1,
   nodeType: 'message',
 
   create(api) {
@@ -16,10 +15,10 @@ export const messageFartButtonV1: ScriptWorkerFactory = {
 
         api.setViewModel({
           kind: 'button_sound',
-          title: String(api.getConfig()?.title || 'Локальная кнопка'),
-          buttonLabel: String(api.getConfig()?.buttonLabel || 'Пукнуть'),
+          title: String(api.getData()?.scriptConfig?.title || 'Локальная кнопка'),
+          buttonLabel: String(api.getData()?.scriptConfig?.buttonLabel || 'Пукнуть'),
           clicks: Number(api.getLocalState()?.clicks || 0),
-          soundUrl: String(api.getConfig()?.soundUrl || '/ping.mp3'),
+          soundUrl: String(api.getData()?.scriptConfig?.soundUrl || '/ping.mp3'),
           pulse: false,
         });
       },
@@ -41,10 +40,10 @@ export const messageFartButtonV1: ScriptWorkerFactory = {
 
         api.setViewModel({
           kind: 'button_sound',
-          title: String(api.getConfig()?.title || 'Локальная кнопка'),
-          buttonLabel: String(api.getConfig()?.buttonLabel || 'Пукнуть'),
+          title: String(api.getData()?.scriptConfig?.title || 'Локальная кнопка'),
+          buttonLabel: String(api.getData()?.scriptConfig?.buttonLabel || 'Пукнуть'),
           clicks,
-          soundUrl: String(api.getConfig()?.soundUrl || '/ping.mp3'),
+          soundUrl: String(api.getData()?.scriptConfig?.soundUrl || '/ping.mp3'),
           pulse: true,
           soundTick,
         });

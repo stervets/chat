@@ -1,71 +1,63 @@
 # Scriptable Dev Flow
 
-## Где лежат скрипты
+## Где лежит runtime
 
-### Backend
-
-- registry: `backend/src/scriptable/registry.ts`
-- shared-state/service: `backend/src/scriptable/service.ts`
-- runner-client: `backend/src/scriptable/runner-client.ts`
-
-### Runner
-
-- runner entry: `backend/src/script-runner/main.ts`
-- runner registry: `backend/src/script-runner/registry.ts`
-
-### Frontend
-
-- client scripts registry: `frontend/src/scriptable/registry.ts`
-- client scripts: `frontend/src/scriptable/client-scripts/*`
-- worker runtime: `frontend/src/scriptable/runtime/*`
+- node runtime живёт только в `nodes.client_script`, `nodes.server_script`, `nodes.data`;
+- message runtime создаётся в `backend/src/scriptable/service.ts`;
+- backend registry: `backend/src/scriptable/registry.ts`;
+- runner registry: `backend/src/script-runner/registry.ts`;
+- frontend registry: `frontend/src/scriptable/registry.ts`;
+- frontend worker runtime: `frontend/src/scriptable/runtime/*`;
+- client scripts: `frontend/src/scriptable/client-scripts/*`.
 
 ## Как добавить новый script
 
-1. Добавь backend definition в `backend/src/scriptable/registry.ts`.
-2. Для `client_server` добавь `reduceAction`.
-3. Для `client_runner` добавь обработчик в `backend/src/script-runner/registry.ts`.
-4. Добавь frontend worker script в `frontend/src/scriptable/client-scripts/*`.
-5. Зарегистрируй его в `frontend/src/scriptable/registry.ts`.
+1. Добавь definition в `backend/src/scriptable/registry.ts`.
+2. Укажи `scriptId`, `nodeType`, `clientScript`, `serverScript`.
+3. Если script обрабатывает action прямо в backend, добавь `reduceAction`.
+4. Если script обрабатывает action в runner, добавь handler в `backend/src/script-runner/registry.ts`.
+5. Если нужен UI, добавь client worker script в `frontend/src/scriptable/client-scripts/*`.
+6. Зарегистрируй client script в `frontend/src/scriptable/registry.ts`.
 
-## Как регистрировать `scriptId` и `revision`
+## Как устроен runtime snapshot
 
-- `scriptId` фиксированный строковый ключ (например `demo:poll`).
-- `revision` — integer.
-- При несовместимой правке UI/runtime подними `revision`.
-- Frontend сам перезапустит worker runtime при смене `revision`.
+Runner и frontend worker работают с одним и тем же простым payload:
 
-## Hot reload / rollout
+```ts
+{
+  nodeType,
+  nodeId,
+  roomId,
+  clientScript,
+  serverScript,
+  data
+}
+```
 
-В runtime:
+- `clientScript` включает client runtime;
+- `serverScript` включает server runtime;
+- `data` хранит весь runtime state и config;
+- отдельного режима исполнения, версии runtime и выделенных protocol-полей под config/state в контракте нет.
 
-- новый `revision` приходит в message/room payload или `scripts:state`;
-- manager перезапускает worker для этой сущности;
-- local state переносится в новый runtime (best effort).
+## Runtime actions
 
-## Как отлаживать client scripts
+- client script вызывает `requestRuntimeAction(actionType, payload)`;
+- backend обрабатывает action либо через `reduceAction`, либо через runner;
+- новое `data` сохраняется в `nodes.data`;
+- обновление прилетает через `scripts:state` и прокидывается в worker как `data:update`.
 
-1. Запусти frontend `yarn run frontend:dev`.
-2. В чате создай scriptable message через demo-кнопку.
-3. Ошибки worker попадают в UI как `Script runtime error: ...`.
-4. Проверяй `viewModel` в DOM (`.scriptable-*`).
+## Отладка
 
-## Как отлаживать runner scripts
+### Frontend
 
-1. Запусти runner: `yarn run backend:runner:dev`.
-2. Запусти backend: `yarn run backend:dev`.
-3. Проверяй room-level поведение в чате.
-4. Останови runner и проверь деградацию (`runner_not_connected`).
+1. Запусти `yarn run frontend:dev`.
+2. Создай scriptable message или room runtime.
+3. Ошибки worker попадут в UI как `Script runtime error: ...`.
+4. Проверяй `viewModel` и события `data:update`.
 
-## Как сделать shared-state message
+### Backend / runner
 
-1. Выбери mode `client_server`.
-2. В backend definition добавь `reduceAction`.
-3. В client script вызывай `requestSharedAction(...)`.
-4. Обновление прилетит через `scripts:state`.
-
-## Как сделать room script
-
-1. Привяжи script к комнате (`rooms.script_*`).
-2. Для сложной логики используй mode `client_runner`.
-3. Обрабатывай `room_event` в runner script.
-4. Отрисовку room-level UI делай через room worker view model.
+1. Запусти `yarn run backend:runner:dev`.
+2. Запусти `yarn run backend:dev`.
+3. Проверь action flow и room events.
+4. Останови runner и убедись, что backend отвечает `runner_not_connected`.

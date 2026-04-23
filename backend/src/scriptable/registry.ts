@@ -9,12 +9,6 @@ function normalizeScriptId(scriptIdRaw: unknown) {
   return String(scriptIdRaw || '').trim().toLowerCase();
 }
 
-function normalizeRevision(revisionRaw: unknown, fallback = 1) {
-  const revision = Number.parseInt(String(revisionRaw ?? ''), 10);
-  if (!Number.isFinite(revision) || revision <= 0) return fallback;
-  return revision;
-}
-
 function cloneJson<T>(value: T): T {
   try {
     return JSON.parse(JSON.stringify(value)) as T;
@@ -23,15 +17,44 @@ function cloneJson<T>(value: T): T {
   }
 }
 
+function asRecord(raw: unknown) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  return cloneJson(raw as Record<string, any>);
+}
+
+function readRuntimeConfig(dataRaw: unknown) {
+  return asRecord(asRecord(dataRaw).scriptConfig);
+}
+
+function readRuntimeState(dataRaw: unknown) {
+  return asRecord(asRecord(dataRaw).scriptState);
+}
+
+function withRuntimeState(dataRaw: unknown, nextState: unknown) {
+  return {
+    ...asRecord(dataRaw),
+    scriptState: asRecord(nextState),
+  };
+}
+
+function withRuntimeData(configRaw: unknown, stateRaw: unknown) {
+  return {
+    scriptConfig: asRecord(configRaw),
+    scriptState: asRecord(stateRaw),
+  };
+}
+
 function reduceGuessWordAction(input: ScriptActionInput): ScriptActionResult {
   const actionType = String(input.actionType || '').trim().toLowerCase();
   if (actionType !== 'submit_guess') {
-    return {nextState: cloneJson(input.state || {})};
+    return {nextData: cloneJson(input.data || {})};
   }
 
   const guess = String(input.payload?.guess || '').trim().toLowerCase();
-  const answer = String(input.config?.answer || '').trim().toLowerCase();
-  const winners = Array.isArray(input.state?.winners) ? input.state.winners : [];
+  const config = readRuntimeConfig(input.data);
+  const state = readRuntimeState(input.data);
+  const answer = String(config.answer || '').trim().toLowerCase();
+  const winners = Array.isArray(state?.winners) ? state.winners : [];
   const nowIso = new Date().toISOString();
 
   const alreadyWinner = winners.some((winner: any) => Number(winner?.userId || 0) === input.actor.userId);
@@ -48,11 +71,11 @@ function reduceGuessWordAction(input: ScriptActionInput): ScriptActionResult {
     ]
     : winners;
 
-  const attempts = Math.max(0, Number(input.state?.attempts || 0)) + 1;
+  const attempts = Math.max(0, Number(state?.attempts || 0)) + 1;
 
   return {
-    nextState: {
-      ...cloneJson(input.state || {}),
+    nextData: withRuntimeState(input.data, {
+      ...state,
       status: 'active',
       attempts,
       winners: nextWinners,
@@ -63,7 +86,7 @@ function reduceGuessWordAction(input: ScriptActionInput): ScriptActionResult {
         isCorrect,
         at: nowIso,
       },
-    },
+    }),
   };
 }
 
@@ -113,32 +136,34 @@ function buildPollState(stateRaw: unknown, optionsRaw: unknown) {
 
 function reducePollAction(input: ScriptActionInput): ScriptActionResult {
   const actionType = String(input.actionType || '').trim().toLowerCase();
-  const options = normalizePollOptions(input.config?.options);
-  const state = buildPollState(input.state, options);
+  const config = readRuntimeConfig(input.data);
+  const state = readRuntimeState(input.data);
+  const options = normalizePollOptions(config.options);
+  const normalizedState = buildPollState(state, options);
 
   if (actionType !== 'vote') {
-    return {nextState: state};
+    return {nextData: withRuntimeState(input.data, normalizedState)};
   }
 
   const optionIndex = Number(input.payload?.optionIndex);
   if (!Number.isFinite(optionIndex) || optionIndex < 0 || optionIndex >= options.length) {
-    return {nextState: state};
+    return {nextData: withRuntimeState(input.data, normalizedState)};
   }
 
   const votesByUser = {
-    ...(state.votesByUser || {}),
+    ...(normalizedState.votesByUser || {}),
     [String(input.actor.userId)]: optionIndex,
   };
 
   return {
-    nextState: buildPollState(
+    nextData: withRuntimeState(input.data, buildPollState(
       {
-        ...state,
+        ...normalizedState,
         votesByUser,
         updatedAt: new Date().toISOString(),
       },
       options,
-    ),
+    )),
   };
 }
 
@@ -150,9 +175,7 @@ function clampBotLevel(raw: unknown) {
 
 function reduceBotControlAction(input: ScriptActionInput): ScriptActionResult {
   const actionType = String(input.actionType || '').trim().toLowerCase();
-  const prevState = input.state && typeof input.state === 'object'
-    ? cloneJson(input.state as Record<string, any>)
-    : {};
+  const prevState = readRuntimeState(input.data);
   const nextState = {
     enabled: !!prevState.enabled,
     level: clampBotLevel(prevState.level),
@@ -168,7 +191,7 @@ function reduceBotControlAction(input: ScriptActionInput): ScriptActionResult {
   } else if (actionType === 'set_level') {
     nextState.level = clampBotLevel(input.payload?.level);
   } else {
-    return {nextState};
+    return {nextData: withRuntimeState(input.data, nextState)};
   }
 
   nextState.updatedAt = new Date().toISOString();
@@ -180,144 +203,109 @@ function reduceBotControlAction(input: ScriptActionInput): ScriptActionResult {
   };
 
   return {
-    nextState,
+    nextData: withRuntimeState(input.data, nextState),
   };
 }
 
 const definitions: ScriptDefinition[] = [
   {
     scriptId: 'demo:fart_button',
-    revision: 1,
     nodeType: 'message',
-    mode: 'client',
-    title: 'Demo: local fart button',
-    makeInitialConfig(input) {
-      return {
+    clientScript: 'demo:fart_button',
+    serverScript: null,
+    createData(input) {
+      return withRuntimeData({
         title: String(input?.title || 'Локальная кнопка'),
         buttonLabel: String(input?.buttonLabel || 'Пукнуть'),
         soundUrl: String(input?.soundUrl || '/ping.mp3'),
-      };
-    },
-    makeInitialState() {
-      return {};
+      }, {});
     },
   },
   {
     scriptId: 'demo:guess_word',
-    revision: 1,
     nodeType: 'message',
-    mode: 'client_server',
-    title: 'Demo: guess word',
-    makeInitialConfig(input) {
+    clientScript: 'demo:guess_word',
+    serverScript: 'demo:guess_word',
+    createData(input) {
       const answer = String(input?.answer || 'marx').trim().toLowerCase();
-      return {
+      const config = {
         title: String(input?.title || 'Угадай слово'),
         answer,
         hint: String(input?.hint || `Слово из ${Math.max(1, answer.length)} букв`),
       };
-    },
-    makeInitialState(input) {
-      const answer = String(input?.config?.answer || 'marx').trim().toLowerCase();
-      return {
+      return withRuntimeData(config, {
         status: 'active',
         mask: '*'.repeat(Math.max(1, answer.length)),
         attempts: 0,
         winners: [],
         lastGuess: null,
-      };
+      });
     },
     reduceAction: reduceGuessWordAction,
   },
   {
     scriptId: 'demo:poll_surface',
-    revision: 1,
     nodeType: 'message',
-    mode: 'client_server',
-    title: 'Demo: poll surface',
-    makeInitialConfig(input) {
+    clientScript: 'demo:poll_surface',
+    serverScript: 'demo:poll_surface',
+    createData(input) {
       const options = normalizePollOptions(input?.options);
-      return {
+      const config = {
         title: String(input?.title || 'Голосование'),
         question: String(input?.question || 'Выберите вариант'),
         options,
       };
-    },
-    makeInitialState(input) {
-      return buildPollState({}, input?.config?.options);
+      return withRuntimeData(config, buildPollState({}, config.options));
     },
     reduceAction: reducePollAction,
   },
   {
     scriptId: 'demo:bot_control_surface',
-    revision: 1,
     nodeType: 'message',
-    mode: 'client_server',
-    title: 'Demo: bot control surface',
-    makeInitialConfig(input) {
-      return {
+    clientScript: 'demo:bot_control_surface',
+    serverScript: 'demo:bot_control_surface',
+    createData(input) {
+      const config = {
         title: String(input?.title || 'Bot control'),
       };
-    },
-    makeInitialState(input) {
-      return {
-        enabled: !!input?.config?.initialEnabled,
-        level: clampBotLevel(input?.config?.initialLevel),
+      return withRuntimeData(config, {
+        enabled: !!input?.initialEnabled,
+        level: clampBotLevel(input?.initialLevel),
         updatedAt: null,
         lastAction: null,
-      };
+      });
     },
     reduceAction: reduceBotControlAction,
   },
   // Временно отключено: скрипт "Счётчик комнаты" (demo:room_meter).
   // {
   //   scriptId: 'demo:room_meter',
-  //   revision: 1,
   //   nodeType: 'room',
-  //   mode: 'client_runner',
-  //   title: 'Demo: room meter',
-  //   makeInitialConfig(input) {
+  //   clientScript: null,
+  //   serverScript: 'demo:room_meter',
+  //   createData(input) {
   //     const announceEvery = Number.parseInt(String(input?.announceEvery ?? '5'), 10);
-  //     return {
+  //     return withRuntimeData({
   //       title: String(input?.title || 'Счётчик комнаты'),
   //       announceEvery: Number.isFinite(announceEvery) && announceEvery > 0 ? announceEvery : 5,
-  //     };
-  //   },
-  //   makeInitialState() {
-  //     return {
+  //     }, {
   //       totalMessages: 0,
   //       lastAuthorNickname: '',
   //       updatedAt: null,
-  //     };
+  //     });
   //   },
   // },
 ];
 
 const definitionMap = new Map<string, ScriptDefinition>();
 definitions.forEach((item) => {
-  definitionMap.set(`${item.nodeType}:${item.scriptId}:${item.revision}`, item);
+  definitionMap.set(`${item.nodeType}:${item.scriptId}`, item);
 });
 
-export function listScriptDefinitions() {
-  return [...definitions];
-}
-
-export function getScriptDefinition(nodeTypeRaw: unknown, scriptIdRaw: unknown, revisionRaw?: unknown) {
+export function getScriptDefinition(nodeTypeRaw: unknown, scriptIdRaw: unknown) {
   const nodeType = String(nodeTypeRaw || '').trim().toLowerCase() as ScriptNodeType;
   if (nodeType !== 'message' && nodeType !== 'room') return null;
   const scriptId = normalizeScriptId(scriptIdRaw);
   if (!scriptId) return null;
-  const revision = normalizeRevision(revisionRaw, 1);
-  return definitionMap.get(`${nodeType}:${scriptId}:${revision}`) || null;
-}
-
-export function getLatestScriptDefinition(nodeTypeRaw: unknown, scriptIdRaw: unknown) {
-  const nodeType = String(nodeTypeRaw || '').trim().toLowerCase() as ScriptNodeType;
-  if (nodeType !== 'message' && nodeType !== 'room') return null;
-  const scriptId = normalizeScriptId(scriptIdRaw);
-  if (!scriptId) return null;
-
-  const matched = definitions
-    .filter((item) => item.nodeType === nodeType && item.scriptId === scriptId)
-    .sort((left, right) => right.revision - left.revision);
-  return matched[0] || null;
+  return definitionMap.get(`${nodeType}:${scriptId}`) || null;
 }

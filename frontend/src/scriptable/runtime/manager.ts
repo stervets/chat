@@ -1,7 +1,7 @@
 import type {ScriptEntitySnapshot} from '@/composables/types';
 import type {ScriptRuntimeEventSource} from './types';
 
-type SharedActionRequest = {
+type RuntimeActionRequest = {
   actionType: string;
   payload?: any;
 };
@@ -19,9 +19,9 @@ type RuntimeRecord = {
 type RuntimeManagerOptions = {
   onViewModel: (nodeType: 'message' | 'room', nodeId: number, viewModel: Record<string, any>) => void;
   onError?: (nodeType: 'message' | 'room', nodeId: number, errorMessage: string) => void;
-  requestSharedAction: (snapshot: ScriptEntitySnapshot, request: SharedActionRequest) => Promise<{
+  requestRuntimeAction: (snapshot: ScriptEntitySnapshot, request: RuntimeActionRequest) => Promise<{
     ok: boolean;
-    state?: Record<string, any>;
+    data?: Record<string, any>;
   }>;
 };
 
@@ -35,18 +35,6 @@ function cloneJson<T>(value: T): T {
 
 function runtimeScriptId(snapshot: ScriptEntitySnapshot) {
   return String(snapshot.clientScript || '').trim().toLowerCase();
-}
-
-function runtimeConfig(snapshot: ScriptEntitySnapshot) {
-  const configRaw = snapshot?.data?.scriptConfig;
-  if (!configRaw || typeof configRaw !== 'object' || Array.isArray(configRaw)) return {};
-  return cloneJson(configRaw);
-}
-
-function runtimeState(snapshot: ScriptEntitySnapshot) {
-  const stateRaw = snapshot?.data?.scriptState;
-  if (!stateRaw || typeof stateRaw !== 'object' || Array.isArray(stateRaw)) return {};
-  return cloneJson(stateRaw);
 }
 
 function buildEntityKey(nodeType: 'message' | 'room', nodeId: number) {
@@ -87,18 +75,13 @@ function isSnapshotScriptable(snapshot: ScriptEntitySnapshot | null | undefined)
   return !!runtimeScriptId(snapshot);
 }
 
-function withSharedState(snapshot: ScriptEntitySnapshot, stateRaw: unknown) {
-  const state = stateRaw && typeof stateRaw === 'object' && !Array.isArray(stateRaw)
-    ? cloneJson(stateRaw)
+function withRuntimeData(snapshot: ScriptEntitySnapshot, dataRaw: unknown) {
+  const data = dataRaw && typeof dataRaw === 'object' && !Array.isArray(dataRaw)
+    ? cloneJson(dataRaw)
     : {};
   return {
     ...snapshot,
-    data: {
-      ...(snapshot?.data && typeof snapshot.data === 'object' && !Array.isArray(snapshot.data)
-        ? cloneJson(snapshot.data)
-        : {}),
-      scriptState: state,
-    },
+    data,
   } satisfies ScriptEntitySnapshot;
 }
 
@@ -202,30 +185,30 @@ export class ScriptRuntimeManager {
         return;
       }
 
-      if (message.type === 'request_shared_action') {
+      if (message.type === 'request_runtime_action') {
         const actionType = String(message.payload?.actionType || '').trim();
         if (!actionType) return;
 
-        void this.options.requestSharedAction(record.snapshot, {
+        void this.options.requestRuntimeAction(record.snapshot, {
           actionType,
           payload: cloneJson(message.payload?.payload),
         }).then((response) => {
           if (!record.alive) return;
           if (!response?.ok) {
-            this.emitRuntimeEvent(record, 'server', 'shared_action_error');
+            this.emitRuntimeEvent(record, 'server', 'runtime_action_error');
             return;
           }
-          if (response.state && typeof response.state === 'object') {
-            record.snapshot = withSharedState(record.snapshot, response.state);
+          if (response.data && typeof response.data === 'object') {
+            record.snapshot = withRuntimeData(record.snapshot, response.data);
             this.postToWorker(record, {
-              type: 'shared_state',
+              type: 'runtime_data',
               payload: {
-                state: runtimeState(record.snapshot),
+                data: cloneJson(record.snapshot.data || {}),
               },
             });
           }
         }).catch(() => {
-          this.emitRuntimeEvent(record, 'server', 'shared_action_error');
+          this.emitRuntimeEvent(record, 'server', 'runtime_action_error');
         });
       }
     };
@@ -274,9 +257,9 @@ export class ScriptRuntimeManager {
 
     existing.snapshot = cloneJson(snapshot);
     this.postToWorker(existing, {
-      type: 'shared_state',
+      type: 'runtime_data',
       payload: {
-        state: runtimeState(snapshot),
+        data: cloneJson(snapshot.data || {}),
       },
     });
   }
@@ -443,7 +426,7 @@ export class ScriptRuntimeManager {
     });
   }
 
-  pushSharedStateUpdate(payload: any) {
+  pushRuntimeDataUpdate(payload: any) {
     const nodeType = String(payload?.nodeType || '').trim().toLowerCase();
     const nodeId = Number(payload?.nodeId || 0);
     if ((nodeType !== 'message' && nodeType !== 'room') || !Number.isFinite(nodeId) || nodeId <= 0) {
@@ -483,9 +466,9 @@ export class ScriptRuntimeManager {
     }
 
     this.postToWorker(runtime, {
-      type: 'shared_state',
+      type: 'runtime_data',
       payload: {
-        state: runtimeState(runtime.snapshot),
+        data: cloneJson(runtime.snapshot.data || {}),
       },
     });
   }

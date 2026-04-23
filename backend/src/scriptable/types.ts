@@ -1,5 +1,4 @@
 export type ScriptNodeType = 'message' | 'room';
-export type ScriptExecutionMode = 'client' | 'client_server' | 'client_runner';
 
 export type ScriptActor = {
   userId: number;
@@ -14,8 +13,7 @@ export type ScriptActionInput = {
   actionType: string;
   payload: any;
   actor: ScriptActor;
-  state: any;
-  config: any;
+  data: any;
 };
 
 export type ScriptSideEffect = {
@@ -24,18 +22,16 @@ export type ScriptSideEffect = {
 };
 
 export type ScriptActionResult = {
-  nextState: any;
+  nextData: any;
   sideEffects?: ScriptSideEffect[];
 };
 
 export type ScriptDefinition = {
   scriptId: string;
-  revision: number;
   nodeType: ScriptNodeType;
-  mode: ScriptExecutionMode;
-  title: string;
-  makeInitialConfig?: (input?: any) => any;
-  makeInitialState?: (input?: {config: any}) => any;
+  clientScript: string | null;
+  serverScript: string | null;
+  createData?: (input?: any) => any;
   reduceAction?: (input: ScriptActionInput) => ScriptActionResult | Promise<ScriptActionResult>;
 };
 

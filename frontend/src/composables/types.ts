@@ -19,7 +19,6 @@ export type Invite = {
 };
 
 export type DialogKind = 'group' | 'direct' | 'game' | 'comment';
-export type ScriptExecutionMode = 'client' | 'client_server' | 'client_runner';
 export type RoomSurfaceType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
 
 export type RoomSurface = {

@@ -15,15 +15,13 @@ const scripts: ScriptWorkerFactory[] = [
 
 const scriptMap = new Map<string, ScriptWorkerFactory>();
 scripts.forEach((script) => {
-  scriptMap.set(`${script.nodeType}:${script.scriptId}:${script.revision}`, script);
+  scriptMap.set(`${script.nodeType}:${script.scriptId}`, script);
 });
 
-export function getClientScriptFactory(nodeTypeRaw: unknown, scriptIdRaw: unknown, revisionRaw?: unknown) {
+export function getClientScriptFactory(nodeTypeRaw: unknown, scriptIdRaw: unknown) {
   const nodeType = String(nodeTypeRaw || '').trim().toLowerCase();
   if (nodeType !== 'message' && nodeType !== 'room') return null;
   const scriptId = String(scriptIdRaw || '').trim().toLowerCase();
-  const revisionParsed = Number.parseInt(String(revisionRaw ?? ''), 10);
-  const revision = Number.isFinite(revisionParsed) && revisionParsed > 0 ? revisionParsed : 1;
   if (!scriptId) return null;
-  return scriptMap.get(`${nodeType}:${scriptId}:${revision}`) || null;
+  return scriptMap.get(`${nodeType}:${scriptId}`) || null;
 }

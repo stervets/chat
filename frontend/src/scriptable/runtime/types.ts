@@ -10,12 +10,11 @@ export type ScriptRuntimeEvent = {
 
 export type ScriptWorkerApi = {
   getSnapshot: () => ScriptEntitySnapshot;
-  getConfig: () => Record<string, any>;
-  getSharedState: () => Record<string, any>;
+  getData: () => Record<string, any>;
   getLocalState: () => Record<string, any>;
   setLocalState: (next: Record<string, any>) => void;
   setViewModel: (viewModel: Record<string, any>) => void;
-  requestSharedAction: (actionType: string, payload?: any) => void;
+  requestRuntimeAction: (actionType: string, payload?: any) => void;
 };
 
 export type ScriptWorkerInstance = {
@@ -26,7 +25,6 @@ export type ScriptWorkerInstance = {
 
 export type ScriptWorkerFactory = {
   scriptId: string;
-  revision: number;
   nodeType: 'message' | 'room';
   create: (api: ScriptWorkerApi) => ScriptWorkerInstance;
 };

@@ -13,10 +13,12 @@ function normalizeOptions(raw: unknown) {
   return options;
 }
 
-function buildView(config: Record<string, any>, shared: Record<string, any>, local: Record<string, any>) {
-  const options = normalizeOptions(shared?.options);
+function buildView(data: Record<string, any>, local: Record<string, any>) {
+  const config = data?.scriptConfig && typeof data.scriptConfig === 'object' ? data.scriptConfig : {};
+  const state = data?.scriptState && typeof data.scriptState === 'object' ? data.scriptState : {};
+  const options = normalizeOptions(state?.options);
   const pendingOptionIndex = Number(local?.pendingOptionIndex ?? -1);
-  const totalVotes = Math.max(0, Number(shared?.totalVotes || 0));
+  const totalVotes = Math.max(0, Number(state?.totalVotes || 0));
 
   return {
     kind: 'poll_surface',
@@ -32,7 +34,6 @@ function buildView(config: Record<string, any>, shared: Record<string, any>, loc
 
 export const messagePollSurfaceV1: ScriptWorkerFactory = {
   scriptId: 'demo:poll_surface',
-  revision: 1,
   nodeType: 'message',
 
   create(api) {
@@ -44,7 +45,7 @@ export const messagePollSurfaceV1: ScriptWorkerFactory = {
           chatEvents: 0,
         };
         api.setLocalState(local);
-        api.setViewModel(buildView(api.getConfig(), api.getSharedState(), local));
+        api.setViewModel(buildView(api.getData(), local));
       },
 
       onEvent(event) {
@@ -64,33 +65,33 @@ export const messagePollSurfaceV1: ScriptWorkerFactory = {
             pendingOptionIndex: optionIndex,
           };
           api.setLocalState(local);
-          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), local));
-          api.requestSharedAction('vote', {optionIndex});
+          api.setViewModel(buildView(api.getData(), local));
+          api.requestRuntimeAction('vote', {optionIndex});
           return;
         }
 
-        if (source === 'server' && eventType === 'state:update') {
-          const nextState = event?.payload?.state && typeof event.payload.state === 'object'
-            ? event.payload.state
-            : api.getSharedState();
+        if (source === 'server' && eventType === 'data:update') {
+          const nextData = event?.payload?.data && typeof event.payload.data === 'object'
+            ? event.payload.data
+            : api.getData();
           const local = {
             ...api.getLocalState(),
             pending: false,
             pendingOptionIndex: -1,
           };
           api.setLocalState(local);
-          api.setViewModel(buildView(api.getConfig(), nextState, local));
+          api.setViewModel(buildView(nextData, local));
           return;
         }
 
-        if (source === 'server' && eventType === 'shared_action_error') {
+        if (source === 'server' && eventType === 'runtime_action_error') {
           const local = {
             ...api.getLocalState(),
             pending: false,
             pendingOptionIndex: -1,
           };
           api.setLocalState(local);
-          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), local));
+          api.setViewModel(buildView(api.getData(), local));
           return;
         }
 
@@ -100,7 +101,7 @@ export const messagePollSurfaceV1: ScriptWorkerFactory = {
             chatEvents: Math.max(0, Number(api.getLocalState()?.chatEvents || 0)) + 1,
           };
           api.setLocalState(local);
-          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), local));
+          api.setViewModel(buildView(api.getData(), local));
         }
       },
     };

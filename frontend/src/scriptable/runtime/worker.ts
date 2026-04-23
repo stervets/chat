@@ -5,13 +5,13 @@ import type {ScriptRuntimeEvent, ScriptRuntimeEventSource, ScriptWorkerApi, Scri
 type WorkerIncoming =
   | {type: 'init'; payload: {snapshot: ScriptEntitySnapshot; localState?: Record<string, any>}}
   | {type: 'user_action'; payload: {actionType: string; payload?: any}}
-  | {type: 'shared_state'; payload: {state: Record<string, any>}}
+  | {type: 'runtime_data'; payload: {data: Record<string, any>}}
   | {type: 'host_event'; payload: {eventType?: string; type?: string; source?: ScriptRuntimeEventSource; payload?: any}}
   | {type: 'dispose'};
 
 let snapshot: ScriptEntitySnapshot | null = null;
 let localState: Record<string, any> = {};
-let sharedState: Record<string, any> = {};
+let runtimeData: Record<string, any> = {};
 let viewModel: Record<string, any> = {};
 let runtime: ScriptWorkerInstance | null = null;
 
@@ -31,23 +31,14 @@ function runtimeScriptId(snapshotRaw: ScriptEntitySnapshot | null) {
   return String(snapshotRaw?.clientScript || '').trim().toLowerCase();
 }
 
-function runtimeConfig(snapshotRaw: ScriptEntitySnapshot | null) {
-  const configRaw = snapshotRaw?.data?.scriptConfig;
-  if (!configRaw || typeof configRaw !== 'object' || Array.isArray(configRaw)) return {};
-  return cloneJson(configRaw);
-}
-
-function runtimeState(snapshotRaw: ScriptEntitySnapshot | null) {
-  const stateRaw = snapshotRaw?.data?.scriptState;
-  if (!stateRaw || typeof stateRaw !== 'object' || Array.isArray(stateRaw)) return {};
-  return cloneJson(stateRaw);
+function currentRuntimeData() {
+  return cloneJson(runtimeData || {});
 }
 
 function buildApi(): ScriptWorkerApi {
   return {
     getSnapshot: () => cloneJson(snapshot as ScriptEntitySnapshot),
-    getConfig: () => runtimeConfig(snapshot),
-    getSharedState: () => cloneJson(sharedState || {}),
+    getData: () => currentRuntimeData(),
     getLocalState: () => cloneJson(localState || {}),
     setLocalState(next) {
       localState = cloneJson(next || {});
@@ -57,8 +48,8 @@ function buildApi(): ScriptWorkerApi {
       viewModel = cloneJson(next || {});
       send('view_model', {viewModel});
     },
-    requestSharedAction(actionType, payload) {
-      send('request_shared_action', {
+    requestRuntimeAction(actionType, payload) {
+      send('request_runtime_action', {
         actionType: String(actionType || ''),
         payload: cloneJson(payload),
       });
@@ -106,7 +97,7 @@ function disposeRuntime() {
 function initRuntime(payload: {snapshot: ScriptEntitySnapshot; localState?: Record<string, any>}) {
   disposeRuntime();
   snapshot = cloneJson(payload.snapshot);
-  sharedState = runtimeState(snapshot);
+  runtimeData = cloneJson(snapshot?.data || {});
   localState = cloneJson(payload.localState || {});
   viewModel = {};
 
@@ -142,6 +133,7 @@ function initRuntime(payload: {snapshot: ScriptEntitySnapshot; localState?: Reco
       roomId: snapshot.roomId,
       clientScript: snapshot.clientScript,
       serverScript: snapshot.serverScript,
+      data: cloneJson(snapshot.data || {}),
     },
   });
 }
@@ -171,13 +163,13 @@ self.onmessage = (event: MessageEvent<WorkerIncoming>) => {
     return;
   }
 
-  if (data.type === 'shared_state') {
-    sharedState = cloneJson(data.payload?.state || {});
+  if (data.type === 'runtime_data') {
+    runtimeData = cloneJson(data.payload?.data || {});
     emitRuntimeEvent({
       source: 'server',
-      type: 'state:update',
+      type: 'data:update',
       payload: {
-        state: cloneJson(sharedState),
+        data: currentRuntimeData(),
       },
     });
     return;

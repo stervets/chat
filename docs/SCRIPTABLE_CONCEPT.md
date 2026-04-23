@@ -17,7 +17,7 @@ Pinned view использует тот же instance по `messageId`.
 
 1. `init`
 2. `mount` (переход active views `0 -> 1`)
-3. `state:update`
+3. `data:update`
 4. `unmount` (переход active views `1 -> 0`)
 
 ## Event pipeline
@@ -34,15 +34,15 @@ type ScriptRuntimeEvent = {
 
 - `ui` — пользовательские действия.
 - `room` — события комнаты.
-- `server` — shared-state update / shared_action_error.
+- `server` — runtime data update / runtime action error.
 - `system` — lifecycle/runtime события.
 
-## State model
+## Data model
 
-- persistent/shared state: `nodes.data.scriptState`
-- runtime config: `nodes.data.scriptConfig`
+- persistent runtime data лежит в `nodes.data`;
+- `scriptState` и `scriptConfig` могут использоваться как обычные ключи внутри `data`, если конкретному script это нужно;
 - local state: только worker
-- effects (звук/вибрация/одноразовые вещи): не хранить в shared state
+- effects (звук/вибрация/одноразовые вещи): не хранить в persistent runtime data
 
 ## Room surface
 

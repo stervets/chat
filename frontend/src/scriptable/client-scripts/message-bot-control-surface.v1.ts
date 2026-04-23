@@ -6,13 +6,15 @@ function clampLevel(raw: unknown) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function buildView(config: Record<string, any>, shared: Record<string, any>, local: Record<string, any>) {
+function buildView(data: Record<string, any>, local: Record<string, any>) {
+  const config = data?.scriptConfig && typeof data.scriptConfig === 'object' ? data.scriptConfig : {};
+  const state = data?.scriptState && typeof data.scriptState === 'object' ? data.scriptState : {};
   return {
     kind: 'bot_control_surface',
     title: String(config?.title || 'Bot control'),
-    enabled: !!shared?.enabled,
-    level: clampLevel(shared?.level),
-    updatedAt: shared?.updatedAt ? String(shared.updatedAt) : '',
+    enabled: !!state?.enabled,
+    level: clampLevel(state?.level),
+    updatedAt: state?.updatedAt ? String(state.updatedAt) : '',
     pending: !!local?.pending,
     pendingAction: String(local?.pendingAction || ''),
     chatEvents: Math.max(0, Number(local?.chatEvents || 0)),
@@ -21,7 +23,6 @@ function buildView(config: Record<string, any>, shared: Record<string, any>, loc
 
 export const messageBotControlSurfaceV1: ScriptWorkerFactory = {
   scriptId: 'demo:bot_control_surface',
-  revision: 1,
   nodeType: 'message',
 
   create(api) {
@@ -33,7 +34,7 @@ export const messageBotControlSurfaceV1: ScriptWorkerFactory = {
           chatEvents: 0,
         };
         api.setLocalState(local);
-        api.setViewModel(buildView(api.getConfig(), api.getSharedState(), local));
+        api.setViewModel(buildView(api.getData(), local));
       },
 
       onEvent(event) {
@@ -51,33 +52,33 @@ export const messageBotControlSurfaceV1: ScriptWorkerFactory = {
             pendingAction: actionType,
           };
           api.setLocalState(local);
-          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), local));
-          api.requestSharedAction(actionType, payload);
+          api.setViewModel(buildView(api.getData(), local));
+          api.requestRuntimeAction(actionType, payload);
           return;
         }
 
-        if (source === 'server' && eventType === 'state:update') {
-          const nextState = event?.payload?.state && typeof event.payload.state === 'object'
-            ? event.payload.state
-            : api.getSharedState();
+        if (source === 'server' && eventType === 'data:update') {
+          const nextData = event?.payload?.data && typeof event.payload.data === 'object'
+            ? event.payload.data
+            : api.getData();
           const local = {
             ...api.getLocalState(),
             pending: false,
             pendingAction: '',
           };
           api.setLocalState(local);
-          api.setViewModel(buildView(api.getConfig(), nextState, local));
+          api.setViewModel(buildView(nextData, local));
           return;
         }
 
-        if (source === 'server' && eventType === 'shared_action_error') {
+        if (source === 'server' && eventType === 'runtime_action_error') {
           const local = {
             ...api.getLocalState(),
             pending: false,
             pendingAction: '',
           };
           api.setLocalState(local);
-          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), local));
+          api.setViewModel(buildView(api.getData(), local));
           return;
         }
 
@@ -87,7 +88,7 @@ export const messageBotControlSurfaceV1: ScriptWorkerFactory = {
             chatEvents: Math.max(0, Number(api.getLocalState()?.chatEvents || 0)) + 1,
           };
           api.setLocalState(local);
-          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), local));
+          api.setViewModel(buildView(api.getData(), local));
         }
       },
     };

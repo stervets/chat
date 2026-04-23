@@ -1,4 +1,4 @@
-import type {ScriptNodeType, ScriptExecutionMode, ScriptSideEffect} from './types.js';
+import type {ScriptNodeType, ScriptSideEffect} from './types.js';
 
 export type RunnerRequest = {
   id: string;
@@ -7,11 +7,9 @@ export type RunnerRequest = {
     nodeType: ScriptNodeType;
     nodeId: number;
     roomId: number;
-    scriptId: string;
-    runtimeRevision: number;
-    runtimeMode: ScriptExecutionMode;
-    config: any;
-    state: any;
+    clientScript: string | null;
+    serverScript: string | null;
+    data: any;
     actionType?: string;
     actionPayload?: any;
     actor?: {
@@ -28,6 +26,6 @@ export type RunnerResponse = {
   id: string;
   ok: boolean;
   error?: string;
-  state?: any;
+  data?: any;
   sideEffects?: ScriptSideEffect[];
 };

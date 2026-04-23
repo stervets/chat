@@ -22,13 +22,14 @@ export const chatMethodsScriptableRuntime = {
         onError: (_nodeType, _nodeId, errorMessage) => {
           this.error = `Script runtime error: ${String(errorMessage || 'unknown_error')}`;
         },
-        requestSharedAction: async (snapshot, request) => {
+        requestRuntimeAction: async (snapshot, request) => {
           const hasServer = !!String(snapshot?.serverScript || '').trim();
           if (!hasServer) {
-            const state = snapshot?.data?.scriptState;
             return {
               ok: true,
-              state: state && typeof state === 'object' && !Array.isArray(state) ? state : {},
+              data: snapshot?.data && typeof snapshot.data === 'object' && !Array.isArray(snapshot.data)
+                ? snapshot.data
+                : {},
             };
           }
 
@@ -42,12 +43,12 @@ export const chatMethodsScriptableRuntime = {
             return {ok: false};
           }
 
-          const state = (result as any)?.state && typeof (result as any).state === 'object'
-            ? (result as any).state
+          const data = (result as any)?.data && typeof (result as any).data === 'object'
+            ? (result as any).data
             : {};
           return {
             ok: true,
-            state,
+            data,
           };
         },
       });
@@ -160,7 +161,7 @@ export const chatMethodsScriptableRuntime = {
         }
       }
 
-      this.scriptRuntimeManager?.pushSharedStateUpdate(payload);
+      this.scriptRuntimeManager?.pushRuntimeDataUpdate(payload);
       if (nodeType === 'message') {
         this.emitScriptHostRoomEvent('message_script_state', {
           nodeId,

@@ -1,17 +1,19 @@
 import type {ScriptWorkerFactory} from '../runtime/types';
 
-function buildView(config: Record<string, any>, shared: Record<string, any>, local: Record<string, any>) {
-  const winners = Array.isArray(shared?.winners) ? shared.winners : [];
-  const lastGuess = shared?.lastGuess && typeof shared.lastGuess === 'object'
-    ? shared.lastGuess
+function buildView(data: Record<string, any>, local: Record<string, any>) {
+  const config = data?.scriptConfig && typeof data.scriptConfig === 'object' ? data.scriptConfig : {};
+  const state = data?.scriptState && typeof data.scriptState === 'object' ? data.scriptState : {};
+  const winners = Array.isArray(state?.winners) ? state.winners : [];
+  const lastGuess = state?.lastGuess && typeof state.lastGuess === 'object'
+    ? state.lastGuess
     : null;
 
   return {
     kind: 'guess_word',
     title: String(config?.title || 'Угадай слово'),
     hint: String(config?.hint || ''),
-    mask: String(shared?.mask || ''),
-    attempts: Math.max(0, Number(shared?.attempts || 0)),
+    mask: String(state?.mask || ''),
+    attempts: Math.max(0, Number(state?.attempts || 0)),
     winners,
     pending: !!local?.pending,
     lastGuess,
@@ -20,7 +22,6 @@ function buildView(config: Record<string, any>, shared: Record<string, any>, loc
 
 export const messageGuessWordV1: ScriptWorkerFactory = {
   scriptId: 'demo:guess_word',
-  revision: 1,
   nodeType: 'message',
 
   create(api) {
@@ -30,7 +31,7 @@ export const messageGuessWordV1: ScriptWorkerFactory = {
           pending: false,
         };
         api.setLocalState(localState);
-        api.setViewModel(buildView(api.getConfig(), api.getSharedState(), localState));
+        api.setViewModel(buildView(api.getData(), localState));
       },
 
       onEvent(event) {
@@ -47,31 +48,31 @@ export const messageGuessWordV1: ScriptWorkerFactory = {
             pending: true,
           };
           api.setLocalState(localState);
-          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), localState));
-          api.requestSharedAction('submit_guess', {guess});
+          api.setViewModel(buildView(api.getData(), localState));
+          api.requestRuntimeAction('submit_guess', {guess});
           return;
         }
 
-        if (source === 'server' && eventType === 'state:update') {
-          const state = event?.payload?.state && typeof event.payload.state === 'object'
-            ? event.payload.state
-            : api.getSharedState();
+        if (source === 'server' && eventType === 'data:update') {
+          const data = event?.payload?.data && typeof event.payload.data === 'object'
+            ? event.payload.data
+            : api.getData();
           const localState = {
             ...api.getLocalState(),
             pending: false,
           };
           api.setLocalState(localState);
-          api.setViewModel(buildView(api.getConfig(), state, localState));
+          api.setViewModel(buildView(data, localState));
           return;
         }
 
-        if (source === 'server' && eventType === 'shared_action_error') {
+        if (source === 'server' && eventType === 'runtime_action_error') {
           const localState = {
             ...api.getLocalState(),
             pending: false,
           };
           api.setLocalState(localState);
-          api.setViewModel(buildView(api.getConfig(), api.getSharedState(), localState));
+          api.setViewModel(buildView(api.getData(), localState));
         }
       },
     };
