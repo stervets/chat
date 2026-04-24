@@ -71,6 +71,7 @@ export type Message = {
   authorId: Id;
   authorNickname: string;
   authorName: string;
+  authorAvatarUrl?: string | null;
   authorNicknameColor: string | null;
   authorDonationBadgeUntil?: string | null;
   rawText: string;

@@ -102,6 +102,25 @@ type RoomDeleteData = {
 };
 type MessageCreateData = {
   message: ChatContextMessagePayload;
+  notifyComment?: {
+    userId: number;
+    roomId: number;
+    roomKind: 'comment';
+    messageId: number;
+    sourceMessageId: number;
+    sourceRoomId: number | null;
+    sourceMessagePreview: string;
+    actor: {
+      id: number;
+      nickname: string;
+      name: string;
+      avatarUrl: string | null;
+      nicknameColor: string | null;
+      donationBadgeUntil: string | null;
+    };
+    messageBody: string;
+    createdAt: string;
+  } | null;
 };
 type MessageUpdateData = {
   changed: boolean;
@@ -512,6 +531,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const skipPush = silentRequested && client.state?.user?.nickname === SYSTEM_NICKNAME;
           if (room) {
             this.broadcastToRoomMembers(room, 'message:created', result.data.message);
+            if (result.data.notifyComment?.userId) {
+              this.sendToUser(result.data.notifyComment.userId, 'message:comment:notify', result.data.notifyComment);
+            }
             if (!skipPush) {
               void this.webPushService.sendChatMessagePush({
                 room,

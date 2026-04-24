@@ -155,6 +155,7 @@ export function createChatPageState() {
     chatReactionsHandler: ref<Function | null>(null),
     dialogsDeletedHandler: ref<Function | null>(null),
     chatReactionNotifyHandler: ref<Function | null>(null),
+    chatCommentNotifyHandler: ref<Function | null>(null),
     scriptsStateHandler: ref<Function | null>(null),
     usersUpdatedHandler: ref<Function | null>(null),
     disconnectedHandler: ref<Function | null>(null),

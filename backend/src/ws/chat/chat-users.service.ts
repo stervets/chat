@@ -3,6 +3,8 @@ import {normalizeNickname} from '../../common/nickname.js';
 import {ChatContext, type ApiError, type ApiOk, type PublicUser} from './chat-context.js';
 import type {SocketState} from '../protocol.js';
 
+const SYSTEM_NICKNAME = 'marx';
+
 function publicUserSelect() {
   return {
     id: true,
@@ -79,21 +81,37 @@ export class ChatUsersService {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    const rows = await db.userContact.findMany({
-      where: {
-        ownerId: state.user!.id,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: {
-        contact: {
-          select: publicUserSelect(),
+    const [rows, systemUser] = await Promise.all([
+      db.userContact.findMany({
+        where: {
+          ownerId: state.user!.id,
         },
-      },
-    });
+        orderBy: {
+          createdAt: 'desc',
+        },
+        select: {
+          contact: {
+            select: publicUserSelect(),
+          },
+        },
+      }),
+      db.user.findUnique({
+        where: {
+          nickname: SYSTEM_NICKNAME,
+        },
+        select: publicUserSelect(),
+      }),
+    ]);
 
-    return rows.map((row) => this.ctx.toPublicUser(row.contact));
+    const contacts = rows.map((row) => this.ctx.toPublicUser(row.contact));
+    if (systemUser && Number(systemUser.id || 0) !== Number(state.user!.id || 0)) {
+      const hasSystemUser = contacts.some((user) => Number(user.id || 0) === Number(systemUser.id || 0));
+      if (!hasSystemUser) {
+        contacts.unshift(this.ctx.toPublicUser(systemUser));
+      }
+    }
+
+    return contacts;
   }
 
   async contactsAdd(state: SocketState, payload: {userId?: unknown}): Promise<ApiError | ApiOk<{user: PublicUser}>> {
@@ -145,6 +163,18 @@ export class ChatUsersService {
     const userId = Number.parseInt(String(payload?.userId ?? ''), 10);
     if (!Number.isFinite(userId) || userId <= 0) {
       return {ok: false, error: 'invalid_user'};
+    }
+
+    const systemUser = await db.user.findUnique({
+      where: {
+        nickname: SYSTEM_NICKNAME,
+      },
+      select: {
+        id: true,
+      },
+    });
+    if (Number(systemUser?.id || 0) === userId) {
+      return {ok: false, error: 'forbidden'};
     }
 
     const result = await db.userContact.deleteMany({

@@ -8,7 +8,7 @@ import {
   type CompileMessageFormatOptions,
   type MessageLinkPreview,
 } from '../../common/message-format.js';
-import {ensureUserInGroupRooms, getOrCreateDirectRoom} from '../../common/rooms.js';
+import {ensureUserInMarxNewsRoom, getOrCreateDirectRoom} from '../../common/rooms.js';
 import {deleteUploadFile, sanitizeUploadName} from '../../common/uploads.js';
 import {
   findCommentRoomNodeIdByMessageId,
@@ -108,6 +108,7 @@ type MessageAuthorSource = {
     id?: number;
     nickname?: string | null;
     name?: string | null;
+    avatarPath?: string | null;
     nicknameColor?: string | null;
     donationBadgeUntil?: Date | string | null;
   } | null;
@@ -324,6 +325,7 @@ export class ChatContext {
         authorId: sender.id,
         authorNickname: String(sender.nickname || '').trim() || 'deleted',
         authorName: String(sender.name || sender.nickname || '').trim() || 'deleted',
+        authorAvatarUrl: this.toAvatarUrl(sender.avatarPath),
         authorNicknameColor: sender.nicknameColor || DEFAULT_NICKNAME_COLOR,
         authorDonationBadgeUntil: this.normalizeDonationBadgeUntil(sender.donationBadgeUntil || null),
       };
@@ -335,6 +337,7 @@ export class ChatContext {
         authorId: ANONYMOUS_AUTHOR_ID,
         authorNickname: ANONYMOUS_AUTHOR_NICKNAME,
         authorName: ANONYMOUS_AUTHOR_NAME,
+        authorAvatarUrl: null,
         authorNicknameColor: null,
         authorDonationBadgeUntil: null,
       };
@@ -344,6 +347,7 @@ export class ChatContext {
       authorId: senderId,
       authorNickname: 'deleted',
       authorName: 'deleted',
+      authorAvatarUrl: null,
       authorNicknameColor: DEFAULT_NICKNAME_COLOR,
       authorDonationBadgeUntil: null,
     };
@@ -670,6 +674,7 @@ export class ChatContext {
             id: true,
             nickname: true,
             name: true,
+            avatarPath: true,
             nicknameColor: true,
             donationBadgeUntil: true,
           },
@@ -712,6 +717,7 @@ export class ChatContext {
       authorId: author.authorId,
       authorNickname: author.authorNickname,
       authorName: author.authorName,
+      authorAvatarUrl: author.authorAvatarUrl,
       authorNicknameColor: author.authorNicknameColor,
       authorDonationBadgeUntil: author.authorDonationBadgeUntil,
       rawText: compiled.rawText,
@@ -750,7 +756,7 @@ export class ChatContext {
   }
 
   async ensureSystemDirectForUser(userId: number) {
-    await ensureUserInGroupRooms(userId);
+    await ensureUserInMarxNewsRoom(userId);
 
     const systemUserId = await this.findSystemUserId();
     if (!systemUserId || systemUserId === userId) return;
@@ -859,6 +865,7 @@ export type ChatContextMessagePayload = {
   authorId: number;
   authorNickname: string;
   authorName: string;
+  authorAvatarUrl?: string | null;
   authorNicknameColor: string | null;
   authorDonationBadgeUntil: string | null;
   rawText: string;

@@ -399,6 +399,9 @@ export default {
     this.chatReactionNotifyHandler = (payload: any) => {
       this.onChatReactionNotify(payload);
     };
+    this.chatCommentNotifyHandler = (payload: any) => {
+      this.addCommentNotification(payload);
+    };
     this.usersUpdatedHandler = (user: User) => {
       this.onUsersUpdated(user);
     };
@@ -424,6 +427,7 @@ export default {
     on('message:reactions:updated', this.chatReactionsHandler);
     on('room:deleted', this.dialogsDeletedHandler);
     on('message:reaction:notify', this.chatReactionNotifyHandler);
+    on('message:comment:notify', this.chatCommentNotifyHandler);
     on('user:updated', this.usersUpdatedHandler);
     on('ws:disconnected', this.disconnectedHandler);
     on('ws:reconnected', this.reconnectedHandler);
@@ -464,6 +468,7 @@ export default {
     this.chatReactionsHandler && off('message:reactions:updated', this.chatReactionsHandler);
     this.dialogsDeletedHandler && off('room:deleted', this.dialogsDeletedHandler);
     this.chatReactionNotifyHandler && off('message:reaction:notify', this.chatReactionNotifyHandler);
+    this.chatCommentNotifyHandler && off('message:comment:notify', this.chatCommentNotifyHandler);
     this.usersUpdatedHandler && off('user:updated', this.usersUpdatedHandler);
     this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
     this.reconnectedHandler && off('ws:reconnected', this.reconnectedHandler);

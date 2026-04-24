@@ -15,6 +15,7 @@ import type {
   User,
   NotificationItem,
 } from './shared';
+import {resolveMediaUrl} from '@/composables/media-url';
 export const chatMethodsComposerAndVirtual = {
     isDirectDialogUnread(this: any, roomIdRaw: unknown) {
       const roomId = Number(roomIdRaw || 0);
@@ -259,6 +260,7 @@ export const chatMethodsComposerAndVirtual = {
         ...message,
         kind: sourceKind === 'system' ? 'system' : 'text',
         rawText: sourceKind === 'scriptable' ? fallbackText : rawText,
+        authorAvatarUrl: resolveMediaUrl(message?.authorAvatarUrl) || null,
         authorDonationBadgeUntil: message?.authorDonationBadgeUntil
           ? String(message.authorDonationBadgeUntil)
           : null,
@@ -275,6 +277,22 @@ export const chatMethodsComposerAndVirtual = {
         commentCount: Math.max(0, Number(message?.commentCount || 0)),
         reactions: Array.isArray(message?.reactions) ? message.reactions : [],
       } as Message;
+    },
+
+    async onMessageAuthorAvatarClick(this: any, messageRaw: Message) {
+      const message = this.normalizeMessage(messageRaw);
+      const nickname = String(message?.authorNickname || '').trim();
+      const authorId = Number(message?.authorId || 0);
+      if (!nickname || !Number.isFinite(authorId) || authorId <= 0) return;
+
+      this.hapticTap();
+      await this.router.push({
+        path: '/console',
+        query: {
+          tab: 'user',
+          nickname,
+        },
+      });
     },
 
     getMessageRawText(this: any, messageRaw: any) {

@@ -3,7 +3,7 @@ import {Logger} from '@nestjs/common';
 import {createSession, hashPassword} from '../../common/auth.js';
 import {DEFAULT_NICKNAME_COLOR} from '../../common/const.js';
 import {createRoomNode} from '../../common/nodes.js';
-import {getOrCreateGroupRoom} from '../../common/rooms.js';
+import {findMarxNewsRoom, getOrCreateGroupRoom} from '../../common/rooms.js';
 import {WgAdminClient, WgAdminClientError} from '../../common/wg-admin.client.js';
 import {config} from '../../config.js';
 import {db} from '../../db.js';
@@ -40,6 +40,11 @@ export class ChatInvitesService {
   private async resolveDefaultGroupRoomId() {
     const room = await getOrCreateGroupRoom();
     return room.id;
+  }
+
+  private async resolveMarxNewsRoomId() {
+    const room = await findMarxNewsRoom();
+    return Number(room?.id || 0) || null;
   }
 
   private async cleanupUsedInvites(ownerId: number) {
@@ -115,6 +120,7 @@ export class ChatInvitesService {
         .filter((value) => Number.isFinite(value) && value > 0)))
       : [];
     const defaultGroupRoomId = await this.resolveDefaultGroupRoomId();
+    const marxNewsRoomId = await this.resolveMarxNewsRoomId();
 
     const selectedRooms = requestedRoomIds.length > 0
       ? await db.room.findMany({
@@ -137,7 +143,7 @@ export class ChatInvitesService {
       })
       : await db.room.findMany({
         where: {
-          id: defaultGroupRoomId,
+          id: marxNewsRoomId || defaultGroupRoomId,
         },
         select: {
           id: true,
@@ -198,7 +204,7 @@ export class ChatInvitesService {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    const defaultGroupRoomId = await this.resolveDefaultGroupRoomId();
+    const marxNewsRoomId = await this.resolveMarxNewsRoomId();
     const rooms = await db.room.findMany({
       where: {
         kind: 'group',
@@ -222,7 +228,7 @@ export class ChatInvitesService {
       roomId: room.id,
       title: room.title || 'Комната',
       visibility: room.visibility === 'private' ? 'private' : 'public',
-      checkedByDefault: room.id === defaultGroupRoomId,
+      checkedByDefault: marxNewsRoomId ? room.id === marxNewsRoomId : false,
     }));
   }
 
@@ -363,7 +369,6 @@ export class ChatInvitesService {
     if (!code) {
       return {ok: false, error: 'invalid_input'};
     }
-    const defaultGroupRoomId = await this.resolveDefaultGroupRoomId();
     const authorizedUserId = Number(state.user?.id || 0);
 
     const resolveTargetRoomIds = async (
@@ -383,11 +388,7 @@ export class ChatInvitesService {
         },
       });
 
-      const targetRoomIdsSet = new Set<number>(
-        inviteRoomIds.length > 0
-          ? inviteRoomIds
-          : [defaultGroupRoomId],
-      );
+      const targetRoomIdsSet = new Set<number>(inviteRoomIds);
       if (newsRoom?.id) {
         targetRoomIdsSet.add(newsRoom.id);
       }

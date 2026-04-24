@@ -20,8 +20,8 @@ export type LinkPreview = {
 export type NotificationItem = {
   id: number;
   roomId: number;
-  roomKind: 'group' | 'direct' | 'unknown';
-  notificationType: 'message' | 'reaction';
+  roomKind: 'group' | 'direct' | 'comment' | 'unknown';
+  notificationType: 'message' | 'reaction' | 'comment';
   authorId: number;
   authorName: string;
   authorNickname: string;

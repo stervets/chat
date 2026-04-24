@@ -198,7 +198,7 @@
         }"
       >
         <header class="chat-header">
-          <button class="icon-btn" @click="toggleLeftMenu">
+          <button class="icon-btn menu-toggle-btn" @click="toggleLeftMenu">
             <Menu :size="18" />
           </button>
           <button
@@ -513,6 +513,7 @@
                 :reaction-palette="reactionPalette()"
                 @update:editing-message-text="onEditingMessageTextUpdate"
                 @author-click="onAuthorClick"
+                @author-avatar-click="onMessageAuthorAvatarClick"
                 @direct-jump-click="onDirectFromMessageClick"
                 @time-click="onMessageTimeClick"
                 @start-edit="startMessageEdit"

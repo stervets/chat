@@ -200,6 +200,12 @@ export default {
       avatarCropDragStartX: ref(0),
       avatarCropDragStartY: ref(0),
       avatarCropOverlayCloseBlockedUntilTs: ref(0),
+      mediaViewerVisible: ref(false),
+      mediaViewerSrc: ref(''),
+      mediaViewerAlt: ref(''),
+      copyToastVisible: ref(false),
+      copyToastText: ref('Текст скопирован'),
+      copyToastTimer: ref<number | null>(null),
     };
   },
 
@@ -309,6 +315,9 @@ export default {
       const selectedRoomId = Number(this.selectedRoom?.id || 0);
       if (!Number.isFinite(selectedRoomId) || selectedRoomId <= 0) return false;
       if (this.canEditSelectedRoom) return false;
+      if (String(this.selectedRoom?.title || '').trim() === 'Новости MARX' && !!this.selectedRoom?.postOnlyByAdmin) {
+        return false;
+      }
       const meId = Number(this.me?.id || 0);
       if (!Number.isFinite(meId) || meId <= 0) return false;
       return this.roomMembers.some((member: any) => Number(member?.id || 0) === meId);
@@ -385,6 +394,33 @@ export default {
   },
 
   methods: {
+    showCopyToast(this: any, textRaw?: unknown) {
+      const text = String(textRaw || 'Текст скопирован').trim() || 'Текст скопирован';
+      this.copyToastText = text;
+      this.copyToastVisible = true;
+      if (this.copyToastTimer) {
+        clearTimeout(this.copyToastTimer);
+      }
+      this.copyToastTimer = window.setTimeout(() => {
+        this.copyToastVisible = false;
+        this.copyToastTimer = null;
+      }, 2200);
+    },
+
+    openMediaViewer(this: any, srcRaw: unknown, altRaw?: unknown) {
+      const src = resolveMediaUrl(srcRaw);
+      if (!src) return;
+      this.mediaViewerSrc = src;
+      this.mediaViewerAlt = String(altRaw || '').trim();
+      this.mediaViewerVisible = true;
+    },
+
+    closeMediaViewer(this: any) {
+      this.mediaViewerVisible = false;
+      this.mediaViewerSrc = '';
+      this.mediaViewerAlt = '';
+    },
+
     normalizeTab(this: any, raw: unknown): ConsoleTab {
       const value = String(raw || '').trim().toLowerCase();
       return value === 'rooms' || value === 'vpn' || value === 'invites' ? value : 'user';
@@ -478,6 +514,7 @@ export default {
       try {
         if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(value);
+          this.showCopyToast('Текст скопирован');
           return true;
         }
       } catch {}
@@ -494,6 +531,7 @@ export default {
         textarea.select();
         document.execCommand('copy');
         document.body.removeChild(textarea);
+        this.showCopyToast('Текст скопирован');
         return true;
       } catch {
         return false;
@@ -1635,6 +1673,10 @@ export default {
 
   beforeUnmount(this: any) {
     this.clearDonationUndoTimer();
+    if (this.copyToastTimer) {
+      clearTimeout(this.copyToastTimer);
+      this.copyToastTimer = null;
+    }
     if (typeof window !== 'undefined') {
       window.removeEventListener('pointermove', this.onAvatarCropPointerMove);
       window.removeEventListener('pointerup', this.onAvatarCropPointerUp);

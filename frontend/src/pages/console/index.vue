@@ -41,12 +41,18 @@
         <div v-if="activeTab === 'user'" class="console-card">
           <div v-if="profile" class="profile-top">
             <div class="profile-avatar-wrap">
-              <img
+              <button
                 v-if="profileDisplayAvatarUrl"
-                class="profile-avatar"
-                :src="profileDisplayAvatarUrl"
-                :alt="profileDisplayName || profile.nickname"
-              />
+                class="media-viewer-trigger"
+                type="button"
+                @click="openMediaViewer(profileDisplayAvatarUrl, profileDisplayName || profile.nickname)"
+              >
+                <img
+                  class="profile-avatar"
+                  :src="profileDisplayAvatarUrl"
+                  :alt="profileDisplayName || profile.nickname"
+                />
+              </button>
               <div v-else class="profile-avatar profile-avatar-fallback">
                 {{ userAvatarFallback(profile) }}
               </div>
@@ -73,10 +79,10 @@
                   <MessageCircleMore :size="16" />
                   <span>Написать</span>
                 </button>
-                <button class="ghost-btn" :disabled="contactBusy" @click="toggleContact">
+                <button class="ghost-btn" :disabled="contactBusy || isSystemNickname(profile.nickname)" @click="toggleContact">
                   <UserRoundPlus v-if="!isContact" :size="16" />
                   <UserRoundMinus v-else :size="16" />
-                  <span>{{ isContact ? 'Убрать из контактов' : 'Добавить в контакты' }}</span>
+                  <span>{{ isSystemNickname(profile.nickname) ? 'Системный контакт' : (isContact ? 'Убрать из контактов' : 'Добавить в контакты') }}</span>
                 </button>
               </div>
             </div>
@@ -248,12 +254,18 @@
             <div class="rooms-main">
               <div v-if="selectedRoom" class="room-details">
                 <div class="room-head">
-                  <img
+                  <button
                     v-if="selectedRoomDisplayAvatarUrl"
-                    class="room-avatar room-avatar-lg"
-                    :src="selectedRoomDisplayAvatarUrl"
-                    :alt="selectedRoomDisplayTitle"
-                  />
+                    class="media-viewer-trigger"
+                    type="button"
+                    @click="openMediaViewer(selectedRoomDisplayAvatarUrl, selectedRoomDisplayTitle)"
+                  >
+                    <img
+                      class="room-avatar room-avatar-lg"
+                      :src="selectedRoomDisplayAvatarUrl"
+                      :alt="selectedRoomDisplayTitle"
+                    />
+                  </button>
                   <div v-else class="room-avatar room-avatar-fallback room-avatar-lg">
                     {{ roomAvatarFallback(selectedRoom) }}
                   </div>
@@ -433,7 +445,7 @@
                     <span class="invite-used">Доступен</span>
                   </div>
                   <div class="invite-list-rooms">
-                    {{ (invite.rooms || []).map(room => room.title).join(', ') || 'Общий чат' }}
+                    {{ (invite.rooms || []).map(room => room.title).join(', ') || 'Комнаты не выбраны' }}
                   </div>
                   <div class="action-row">
                     <button class="ghost-btn" type="button" @click="copyInviteCode(invite.code)">
@@ -508,6 +520,15 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <div v-if="mediaViewerVisible" class="media-viewer-overlay" @click.self="closeMediaViewer">
+      <button class="media-viewer-close" type="button" @click="closeMediaViewer">Закрыть</button>
+      <img class="media-viewer-image" :src="mediaViewerSrc" :alt="mediaViewerAlt || 'image'" />
+    </div>
+
+    <div v-if="copyToastVisible" class="console-copy-toast">
+      {{ copyToastText }}
     </div>
   </div>
 </template>

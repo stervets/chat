@@ -142,6 +142,7 @@ export const chatMethodsAuthDialogsAndProfile = {
           ...message,
           authorName: user.name,
           authorNickname: user.nickname,
+          authorAvatarUrl: user.avatarUrl || null,
           authorNicknameColor: user.nicknameColor,
           authorDonationBadgeUntil: user.donationBadgeUntil || null,
         };
@@ -397,14 +398,18 @@ export const chatMethodsAuthDialogsAndProfile = {
         const nextKind = joinedKind === 'direct' || joinedKind === 'game'
           ? joinedKind
           : 'group';
+        const directTargetUser = this.normalizeUser((result as any).targetUser) || this.activeDialog?.targetUser || null;
+        const resolvedTitle = nextKind === 'direct'
+          ? String(directTargetUser?.name || directTargetUser?.nickname || this.activeDialog?.title || 'Чат')
+          : ((result as any).title
+            ? String((result as any).title)
+            : (this.activeDialog?.title || 'Комната'));
         const nextPinnedNodeId = Number((result as any).pinnedNodeId || 0) || null;
         this.activeDialog = {
           ...this.activeDialog,
           kind: nextKind,
           joined: (result as any).joined !== undefined ? !!(result as any).joined : (this.activeDialog?.joined !== false),
-          title: (result as any).title
-            ? String((result as any).title)
-            : (this.activeDialog?.title || (nextKind === 'direct' ? 'Чат' : 'Комната')),
+          title: resolvedTitle,
           visibility: (result as any).visibility === 'private' ? 'private' : (this.activeDialog?.visibility || 'public'),
           commentsEnabled: (result as any).commentsEnabled !== undefined
             ? !!(result as any).commentsEnabled
@@ -417,6 +422,7 @@ export const chatMethodsAuthDialogsAndProfile = {
           pinnedNodeId: nextPinnedNodeId,
           roomSurface: this.normalizeRoomSurface((result as any).roomSurface, nextPinnedNodeId),
           discussion: this.normalizeDiscussionMeta((result as any).discussion),
+          targetUser: nextKind === 'direct' ? directTargetUser : this.activeDialog?.targetUser,
         };
       }
 
@@ -645,6 +651,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       const roomKind = roomKindRaw === 'direct' || roomKindRaw === 'game'
         ? roomKindRaw
         : 'group';
+      const directTargetUser = this.normalizeUser(payloadRaw?.targetUser) || this.activeDialog?.targetUser || null;
       const pinnedNodeId = Number(payloadRaw?.pinnedNodeId || 0) || null;
       const hasDiscussionPayload = Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'discussion');
       const discussion = hasDiscussionPayload
@@ -656,9 +663,11 @@ export const chatMethodsAuthDialogsAndProfile = {
         joined: payloadRaw?.joined !== undefined
           ? !!payloadRaw.joined
           : (roomKind === 'direct' ? true : (this.activeDialog?.joined !== false)),
-        title: payloadRaw?.title
-          ? String(payloadRaw.title)
-          : (this.activeDialog?.title || (roomKind === 'direct' ? 'Чат' : 'Комната')),
+        title: roomKind === 'direct'
+          ? String(directTargetUser?.name || directTargetUser?.nickname || payloadRaw?.title || this.activeDialog?.title || 'Чат')
+          : (payloadRaw?.title
+            ? String(payloadRaw.title)
+            : (this.activeDialog?.title || 'Комната')),
         visibility: payloadRaw?.visibility === 'private' ? 'private' : (this.activeDialog?.visibility || 'public'),
         commentsEnabled: payloadRaw?.commentsEnabled !== undefined
           ? !!payloadRaw.commentsEnabled
@@ -671,6 +680,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         pinnedNodeId,
         roomSurface: this.normalizeRoomSurface(payloadRaw?.roomSurface, pinnedNodeId),
         discussion,
+        targetUser: roomKind === 'direct' ? directTargetUser : this.activeDialog?.targetUser,
       };
       if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'roomRuntime')) {
         this.setActiveRoomScript(payloadRaw?.roomRuntime || null);

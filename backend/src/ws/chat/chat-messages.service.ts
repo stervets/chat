@@ -40,8 +40,87 @@ export class ChatMessagesService {
     };
   }
 
+  private async buildCommentNotifyPayload(roomId: number, commentMessageId: number, actorUserId: number) {
+    const commentRoom = await db.room.findUnique({
+      where: {
+        id: roomId,
+      },
+      select: {
+        id: true,
+        node: {
+          select: {
+            parentId: true,
+          },
+        },
+      },
+    });
+    const sourceMessageId = Number(commentRoom?.node?.parentId || 0);
+    if (!Number.isFinite(sourceMessageId) || sourceMessageId <= 0) return null;
+
+    const sourceMessage = await db.message.findUnique({
+      where: {
+        id: sourceMessageId,
+      },
+      select: {
+        id: true,
+        senderId: true,
+        rawText: true,
+        createdAt: true,
+        node: {
+          select: {
+            parentId: true,
+          },
+        },
+      },
+    });
+    const targetUserId = Number(sourceMessage?.senderId || 0);
+    if (!Number.isFinite(targetUserId) || targetUserId <= 0 || targetUserId === actorUserId) return null;
+
+    const commentMessage = await this.ctx.loadMessagePayloadById(roomId, commentMessageId);
+    if (!commentMessage) return null;
+
+    return {
+      userId: targetUserId,
+      roomId,
+      roomKind: 'comment' as const,
+      messageId: commentMessage.id,
+      sourceMessageId: sourceMessage.id,
+      sourceRoomId: Number(sourceMessage.node?.parentId || 0) || null,
+      sourceMessagePreview: this.buildDiscussionRoomTitle(sourceMessage.id, sourceMessage.rawText),
+      actor: {
+        id: commentMessage.authorId,
+        nickname: commentMessage.authorNickname,
+        name: commentMessage.authorName,
+        avatarUrl: commentMessage.authorAvatarUrl || null,
+        nicknameColor: commentMessage.authorNicknameColor,
+        donationBadgeUntil: commentMessage.authorDonationBadgeUntil || null,
+      },
+      messageBody: commentMessage.rawText,
+      createdAt: commentMessage.createdAt,
+    };
+  }
+
   async messageCreate(state: SocketState, roomIdRaw: unknown, bodyRaw: unknown, optionsRaw?: unknown): Promise<ApiError | ApiOk<{
     message: ChatContextMessagePayload;
+    notifyComment: null | {
+      userId: number;
+      roomId: number;
+      roomKind: 'comment';
+      messageId: number;
+      sourceMessageId: number;
+      sourceRoomId: number | null;
+      sourceMessagePreview: string;
+      actor: {
+        id: number;
+        nickname: string;
+        name: string;
+        avatarUrl: string | null;
+        nicknameColor: string | null;
+        donationBadgeUntil: string | null;
+      };
+      messageBody: string;
+      createdAt: string;
+    };
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -86,31 +165,17 @@ export class ChatMessagesService {
 
     await this.ctx.pruneRoomOverflow(roomId);
 
+    const message = await this.ctx.loadMessagePayloadById(roomId, created.message.id);
+    if (!message) {
+      return {ok: false, error: 'message_not_found'};
+    }
+
     return {
       ok: true,
-      message: {
-        id: created.message.id,
-        roomId,
-        dialogId: roomId,
-        kind: 'text',
-        authorId: anonymous ? ANONYMOUS_AUTHOR_ID : state.user!.id,
-        authorNickname: anonymous ? ANONYMOUS_AUTHOR_NICKNAME : state.user!.nickname,
-        authorName: anonymous ? ANONYMOUS_AUTHOR_NAME : state.user!.name,
-        authorNicknameColor: anonymous ? null : state.user!.nicknameColor,
-        authorDonationBadgeUntil: anonymous ? null : state.user!.donationBadgeUntil,
-        rawText: compiled.rawText,
-        renderedHtml: compiled.renderedHtml,
-        renderedPreviews: compiled.renderedPreviews,
-        runtime: {
-          clientScript: null,
-          serverScript: null,
-          data: {},
-        },
-        commentRoomId: null,
-        commentCount: 0,
-        createdAt: created.message.createdAt.toISOString(),
-        reactions: [],
-      },
+      message,
+      notifyComment: room.kind === 'comment'
+        ? await this.buildCommentNotifyPayload(roomId, message.id, state.user!.id)
+        : null,
     };
   }
 

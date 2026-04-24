@@ -8,6 +8,7 @@ import type {
 export const chatMethodsNotifications = {
     getNotificationDialogTitle(this: any, notification: NotificationItem) {
       if (notification.roomKind === 'group') return 'Общий чат';
+      if (notification.roomKind === 'comment') return 'Комментарии';
       if (notification.targetUser) return `Директ: ${notification.targetUser.name}`;
       return 'Чат';
     },
@@ -266,6 +267,42 @@ export const chatMethodsNotifications = {
       this.pushNotification(notification, true);
     },
 
+    addCommentNotification(this: any, payload: any) {
+      const actor = payload?.actor;
+      if (!actor?.id) return;
+
+      const roomId = Number(payload?.roomId || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+
+      const notificationId = this.notificationsSeq;
+      this.notificationsSeq += 1;
+
+      const sourcePreview = String(payload?.sourceMessagePreview || '').trim();
+      const messageBody = String(payload?.messageBody || '').replace(/\s+/g, ' ').trim();
+      const body = sourcePreview
+        ? `комментарий к: ${sourcePreview}${messageBody ? ` — ${messageBody}` : ''}`
+        : (messageBody || 'Новый комментарий');
+
+      const notification: NotificationItem = {
+        id: notificationId,
+        roomId,
+        roomKind: 'comment',
+        notificationType: 'comment',
+        authorId: Number(actor.id || 0),
+        authorName: String(actor.name || actor.nickname || 'Пользователь'),
+        authorNickname: String(actor.nickname || ''),
+        authorNicknameColor: actor.nicknameColor ? String(actor.nicknameColor) : null,
+        authorDonationBadgeUntil: actor.donationBadgeUntil ? String(actor.donationBadgeUntil) : null,
+        body,
+        createdAt: String(payload?.createdAt || new Date().toISOString()),
+        unread: true,
+        targetUser: null,
+        targetMessageId: Number(payload?.messageId || 0) || undefined,
+      };
+
+      this.pushNotification(notification, true);
+    },
+
     markNotificationRead(this: any, notificationIdRaw: unknown) {
       const notificationId = Number.parseInt(String(notificationIdRaw ?? ''), 10);
       if (!Number.isFinite(notificationId) || notificationId <= 0) return;
@@ -369,6 +406,14 @@ export const chatMethodsNotifications = {
         this.composerToolsOpen = false;
       }
 
+      if (this.leftMenuOpen) {
+        const inLeftMenu = !!targetEl?.closest('.drawer-left');
+        const inMenuToggle = !!targetEl?.closest('.menu-toggle-btn');
+        if (!inLeftMenu && !inMenuToggle) {
+          this.closeLeftMenu();
+        }
+      }
+
       if (!this.notificationsMenuOpen) return;
 
       const inMenu = this.notificationMenuEl?.contains(target);
@@ -407,61 +452,39 @@ export const chatMethodsNotifications = {
         this.markNotificationRead(notification.id);
       }
 
+      let targetDialog = null;
       if (notification.roomKind === 'group' && this.generalDialog) {
-        if (this.activeDialog?.id !== this.generalDialog.id) {
-          await this.selectDialog(this.generalDialog);
-        }
-        this.closeNotificationsMenu();
-        if (targetMessageId) {
-          const loaded = await this.ensureMessageLoadedById(targetMessageId);
-          if (loaded) {
-            const jumped = await this.scrollToMessageById(targetMessageId);
-            if (jumped) {
-              this.markNotificationRead(notification.id);
-              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
-              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 640);
-            }
-          }
-        }
-        return;
-      }
-
-      const direct = this.directDialogs.find((dialog: DirectDialog) => dialog.roomId === notification.roomId);
-      if (direct) {
-        if (this.activeDialog?.id !== direct.roomId) {
-          await this.selectDialog({
+        targetDialog = this.generalDialog;
+      } else {
+        const direct = this.directDialogs.find((dialog: DirectDialog) => dialog.roomId === notification.roomId);
+        if (direct) {
+          targetDialog = {
             id: direct.roomId,
             kind: 'direct',
+            joined: true,
             targetUser: direct.targetUser,
             title: direct.targetUser.name,
-          });
+          };
+        } else if (notification.targetUser && notification.roomKind === 'direct') {
+          await this.selectPrivate(notification.targetUser);
+          targetDialog = this.activeDialog;
+        } else {
+          targetDialog = this.buildDialogFromRoomRoute(notification.roomId);
         }
-        this.closeNotificationsMenu();
-        if (targetMessageId) {
-          const loaded = await this.ensureMessageLoadedById(targetMessageId);
-          if (loaded) {
-            const jumped = await this.scrollToMessageById(targetMessageId);
-            if (jumped) {
-              this.markNotificationRead(notification.id);
-              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
-              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 640);
-            }
-          }
-        }
-        return;
       }
 
-      if (notification.targetUser && notification.roomKind !== 'group') {
-        await this.selectPrivate(notification.targetUser);
-        if (targetMessageId) {
-          const loaded = await this.ensureMessageLoadedById(targetMessageId);
-          if (loaded) {
-            const jumped = await this.scrollToMessageById(targetMessageId);
-            if (jumped) {
-              this.markNotificationRead(notification.id);
-              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
-              window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 640);
-            }
+      if (targetDialog && this.activeDialog?.id !== Number(targetDialog.id || 0)) {
+        await this.selectDialog(targetDialog);
+      }
+
+      if (targetMessageId) {
+        const loaded = await this.ensureMessageLoadedById(targetMessageId);
+        if (loaded) {
+          const jumped = await this.scrollToMessageById(targetMessageId);
+          if (jumped) {
+            this.markNotificationRead(notification.id);
+            window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 280);
+            window.setTimeout(() => this.markVisibleMessageNotificationsRead(), 640);
           }
         }
       }

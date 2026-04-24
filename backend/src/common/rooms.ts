@@ -173,6 +173,27 @@ export async function ensureUserInGroupRooms(userId: number) {
   await ensureRoomMembership(defaultRoom.id, userId);
 }
 
+export async function findMarxNewsRoom() {
+  const room = await db.room.findFirst({
+    where: {
+      kind: 'group',
+      postOnlyByAdmin: true,
+      title: 'Новости MARX',
+    },
+    select: roomSelect(),
+  }) as RoomWithUsers | null;
+
+  if (!room) return null;
+  return mapRoom(room);
+}
+
+export async function ensureUserInMarxNewsRoom(userId: number) {
+  const room = await findMarxNewsRoom();
+  if (!room) return null;
+  await ensureRoomMembership(room.id, userId);
+  return room;
+}
+
 export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<RoomRow> {
   return withRoomCreateLock(DEFAULT_GROUP_ROOM_LOCK_KEY, async () => {
     const createdById = Number(createdByIdRaw || 0);

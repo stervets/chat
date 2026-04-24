@@ -114,6 +114,14 @@
   background: rgba(57, 81, 106, 0.92);
 }
 
+.media-viewer-trigger {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+  cursor: zoom-in;
+}
+
 .profile-avatar {
   width: 110px;
   height: 110px;
@@ -200,6 +208,50 @@
   font-size: 24px;
   line-height: 1;
   position: relative;
+}
+
+.media-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(4, 9, 16, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.media-viewer-image {
+  max-width: min(96vw, 1200px);
+  max-height: 92vh;
+  border-radius: 18px;
+  object-fit: contain;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.media-viewer-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(174, 204, 232, 0.28);
+  background: rgba(22, 34, 48, 0.88);
+  color: #eef7ff;
+  padding: 10px 14px;
+}
+
+.console-copy-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 130;
+  border-radius: 999px;
+  border: 1px solid rgba(175, 205, 231, 0.28);
+  background: linear-gradient(180deg, rgba(36, 53, 73, 0.96) 0%, rgba(22, 34, 49, 0.98) 100%);
+  color: #eef7ff;
+  padding: 10px 16px;
+  box-shadow: 0 16px 32px rgba(6, 10, 16, 0.42);
 }
 
 .section-title {

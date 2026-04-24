@@ -75,6 +75,43 @@ function publicUserSelect() {
 export class ChatDialogsService {
   constructor(private readonly ctx: ChatContext) {}
 
+  private async isMarxNewsRoom(roomIdRaw: unknown) {
+    const roomId = Number(roomIdRaw || 0);
+    if (!Number.isFinite(roomId) || roomId <= 0) return false;
+
+    const room = await db.room.findUnique({
+      where: {
+        id: roomId,
+      },
+      select: {
+        title: true,
+        postOnlyByAdmin: true,
+      },
+    });
+
+    return !!room
+      && !!room.postOnlyByAdmin
+      && String(room.title || '').trim() === 'Новости MARX';
+  }
+
+  private async loadDirectTargetUser(roomId: number, viewerUserId: number) {
+    const membership = await db.roomUser.findFirst({
+      where: {
+        roomId,
+        userId: {
+          not: viewerUserId,
+        },
+      },
+      select: {
+        user: {
+          select: publicUserSelect(),
+        },
+      },
+    });
+
+    return membership?.user ? this.ctx.toPublicUser(membership.user) : null;
+  }
+
   private buildDiscussionPreview(rawTextRaw: unknown) {
     const preview = String(rawTextRaw || '').replace(/\s+/g, ' ').trim();
     if (!preview) return '(пусто)';
@@ -566,6 +603,7 @@ export class ChatDialogsService {
             id: true,
             nickname: true,
             name: true,
+            avatarPath: true,
             nicknameColor: true,
             donationBadgeUntil: true,
           },
@@ -643,6 +681,7 @@ export class ChatDialogsService {
         authorId: author.authorId,
         authorNickname: author.authorNickname,
         authorName: author.authorName,
+        authorAvatarUrl: author.authorAvatarUrl,
         authorNicknameColor: author.authorNicknameColor,
         authorDonationBadgeUntil: author.authorDonationBadgeUntil,
         rawText: compiled.rawText,
@@ -678,6 +717,7 @@ export class ChatDialogsService {
     discussion: DiscussionPayload | null;
     pinnedNodeId: number | null;
     pinnedMessage: any | null;
+    targetUser?: PublicUser | null;
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -704,17 +744,26 @@ export class ChatDialogsService {
       ? await this.ctx.loadMessagePayloadById(roomId, pinnedNodeId)
       : null;
     const discussion = await this.loadDiscussionPayload(roomId, room.kind);
+    const directTargetUser = room.kind === 'direct'
+      ? await this.loadDirectTargetUser(roomId, state.user!.id)
+      : null;
+    const resolvedTitle = room.kind === 'direct'
+      ? String(directTargetUser?.name || directTargetUser?.nickname || room.title || 'Чат')
+      : String(room.title || (room.kind === 'comment' ? 'Комментарии' : 'Комната'));
+    const resolvedAvatarUrl = room.kind === 'direct'
+      ? (directTargetUser?.avatarUrl || null)
+      : this.ctx.toRoomAvatarUrl(room.avatar_path);
 
     return {
       ok: true,
       roomId,
       dialogId: roomId,
       kind: room.kind,
-      title: String(room.title || (room.kind === 'comment' ? 'Комментарии' : 'Комната')),
+      title: resolvedTitle,
       joined: room.member_user_ids.includes(state.user!.id),
       visibility: room.visibility,
       commentsEnabled: room.comments_enabled,
-      avatarUrl: this.ctx.toRoomAvatarUrl(room.avatar_path),
+      avatarUrl: resolvedAvatarUrl,
       postOnlyByAdmin: !!room.post_only_by_admin,
       createdById: room.created_by || null,
       roomSurface: this.toRoomSurfacePayload(
@@ -727,6 +776,7 @@ export class ChatDialogsService {
       pinnedNodeId: pinnedMessage?.id || (roomRuntime?.pinnedNodeId || null),
       pinnedMessage,
       roomRuntime: this.toRoomRuntimePayload(roomId, roomRuntime),
+      targetUser: directTargetUser,
     };
   }
 
@@ -828,6 +878,9 @@ export class ChatDialogsService {
       return {ok: false, error: 'forbidden'};
     }
     if (room.kind === 'direct' || room.kind === 'comment') {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (await this.isMarxNewsRoom(roomId)) {
       return {ok: false, error: 'forbidden'};
     }
 

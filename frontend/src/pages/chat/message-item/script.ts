@@ -124,6 +124,7 @@ export default {
   emits: [
     'update:editing-message-text',
     'author-click',
+    'author-avatar-click',
     'direct-jump-click',
     'time-click',
     'start-edit',
@@ -200,6 +201,10 @@ export default {
   },
 
   methods: {
+    authorAvatarFallback(this: any) {
+      return ((this.message?.authorName || this.message?.authorNickname || '?').trim().charAt(0) || '?').toUpperCase();
+    },
+
     isOwnMessage(this: any) {
       return Number(this.meId || 0) > 0 && Number(this.meId) === Number(this.message.authorId);
     },
@@ -217,6 +222,10 @@ export default {
 
     onAuthorClick(this: any) {
       this.$emit('author-click', this.message);
+    },
+
+    onAuthorAvatarClick(this: any) {
+      this.$emit('author-avatar-click', this.message);
     },
 
     onDirectJumpClick(this: any) {
