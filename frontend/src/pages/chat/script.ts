@@ -1,9 +1,9 @@
 import type {Message, User} from '@/composables/types';
+import {Bell, Menu, Pin, Settings, ShieldCheck, Trash2, UserPlus} from 'lucide-vue-next';
 import {on, off} from '@/composables/event-bus';
 import {setWsReconnectDialogResolver} from '@/composables/ws-rpc';
 import {isStandaloneDisplayMode} from '@/composables/use-web-push';
 import ChatMessageItem from './message-item/index.vue';
-import ScriptableMessage from './message-scriptable/index.vue';
 import {
   VIRTUAL_MAX_ITEMS,
   type DirectDialog,
@@ -21,7 +21,13 @@ import {chatMethodsScriptableRuntime} from './modules/methods-scriptable-runtime
 export default {
   components: {
     ChatMessageItem,
-    ScriptableMessage,
+    Bell,
+    Menu,
+    Pin,
+    Settings,
+    ShieldCheck,
+    Trash2,
+    UserPlus,
   },
 
   async setup() {
@@ -74,6 +80,56 @@ export default {
       return matched.map((item) => item.user);
     },
 
+    filteredDirectDialogs(this: any) {
+      const query = this.searchQuery.trim().toLowerCase().replace(/^@+/, '');
+      if (!query) return this.sortedDirectDialogs;
+      return this.sortedDirectDialogs.filter((dialog: DirectDialog) => {
+        const name = String(dialog?.targetUser?.name || '').toLowerCase();
+        const nickname = String(dialog?.targetUser?.nickname || '').toLowerCase();
+        return name.includes(query) || nickname.includes(query);
+      });
+    },
+
+    filteredJoinedRooms(this: any) {
+      const query = this.roomSearchQuery.trim().toLowerCase();
+      if (!query) return this.joinedRooms;
+      return this.joinedRooms.filter((dialog: any) => {
+        const title = String(dialog?.title || '').toLowerCase();
+        return title.includes(query);
+      });
+    },
+
+    filteredPublicRooms(this: any) {
+      const query = this.roomSearchQuery.trim().toLowerCase();
+      if (!query) return this.publicRooms;
+      return this.publicRooms.filter((dialog: any) => {
+        const title = String(dialog?.title || '').toLowerCase();
+        return title.includes(query);
+      });
+    },
+
+    filteredRoomInviteContacts(this: any) {
+      const query = this.roomInviteSearchQuery.trim().toLowerCase().replace(/^@+/, '');
+      if (!query) return this.roomInviteContacts;
+      return this.roomInviteContacts.filter((user: User) => {
+        const name = String(user?.name || '').toLowerCase();
+        const nickname = String(user?.nickname || '').toLowerCase();
+        return name.includes(query) || nickname.includes(query);
+      });
+    },
+
+    filteredRoomInviteUsers(this: any) {
+      const query = this.roomInviteSearchQuery.trim().toLowerCase().replace(/^@+/, '');
+      if (!query) return [];
+      const contactIds = new Set(this.roomInviteContacts.map((user: User) => Number(user.id || 0)));
+      return this.users.filter((user: User) => {
+        if (contactIds.has(Number(user.id || 0))) return false;
+        const name = String(user?.name || '').toLowerCase();
+        const nickname = String(user?.nickname || '').toLowerCase();
+        return name.includes(query) || nickname.includes(query);
+      });
+    },
+
     unreadNotificationsCount(this: any) {
       return this.notifications.reduce((count: number, notification: NotificationItem) => {
         return notification.unread ? count + 1 : count;
@@ -123,7 +179,12 @@ export default {
 
     sortedDirectDialogs(this: any) {
       const unreadIds = this.unreadDirectDialogIds || {};
+      const pinnedIds = new Set((this.pinnedDirectUserIds || []).map((value: number) => Number(value || 0)));
       return [...this.directDialogs].sort((left: DirectDialog, right: DirectDialog) => {
+        const leftPinned = pinnedIds.has(Number(left?.targetUser?.id || 0));
+        const rightPinned = pinnedIds.has(Number(right?.targetUser?.id || 0));
+        if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+
         const leftUnread = !!unreadIds[left.roomId];
         const rightUnread = !!unreadIds[right.roomId];
         if (leftUnread !== rightUnread) return leftUnread ? -1 : 1;
@@ -183,13 +244,41 @@ export default {
 
     canManagePinnedMessages(this: any) {
       if (!this.activeDialog) return false;
-      if (this.activeDialog.kind === 'direct') return false;
-      return !!this.isActiveDialogAdmin;
+      return this.activeDialog.kind !== 'direct';
+    },
+
+    isActiveDirectPinned(this: any) {
+      if (this.activeDialog?.kind !== 'direct') return false;
+      const targetUserId = Number(this.activeDialog?.targetUser?.id || 0);
+      if (!Number.isFinite(targetUserId) || targetUserId <= 0) return false;
+      return (this.pinnedDirectUserIds || []).includes(targetUserId);
+    },
+
+    isActiveRoomPinned(this: any) {
+      if (!this.activeDialog || this.activeDialog.kind === 'direct') return false;
+      return !!this.activeDialog?.joined;
+    },
+
+    canPinActiveDialog(this: any) {
+      if (!this.activeDialog) return false;
+      if (this.activeDialog.kind === 'direct') {
+        return !this.isActiveDirectPinned;
+      }
+      return !this.isActiveRoomPinned;
     },
 
     canDeleteActiveRoom(this: any) {
       if (!this.activeDialog) return false;
+      if (this.activeDialog.kind === 'direct') {
+        return !this.isSystemNickname(this.activeDialog?.targetUser?.nickname);
+      }
+      return !!this.isActiveDialogAdmin;
+    },
+
+    canComposeInActiveDialog(this: any) {
+      if (!this.activeDialog) return true;
       if (this.activeDialog.kind === 'direct') return true;
+      if (!this.activeDialog.postOnlyByAdmin) return true;
       return !!this.isActiveDialogAdmin;
     },
 
@@ -224,7 +313,6 @@ export default {
 
     shouldShowPinnedPanel(this: any) {
       if (!this.activeDialog || !this.activePinnedMessage) return false;
-      if (this.activeDialog.kind === 'direct') return false;
       return true;
     },
 
@@ -284,7 +372,6 @@ export default {
       return Number.isFinite(roomId) && roomId > 0 ? roomId : null;
     });
     this.resolveSoundStartupState();
-    this.initScriptRuntimeManager();
     this.initBrowserNotifications();
     await this.initWebPush();
 
@@ -315,9 +402,6 @@ export default {
     this.usersUpdatedHandler = (user: User) => {
       this.onUsersUpdated(user);
     };
-    this.scriptsStateHandler = (payload: any) => {
-      this.onScriptsState(payload);
-    };
     this.disconnectedHandler = () => this.onDisconnected();
     this.reconnectedHandler = () => {
       void this.onWsReconnected();
@@ -341,7 +425,6 @@ export default {
     on('room:deleted', this.dialogsDeletedHandler);
     on('message:reaction:notify', this.chatReactionNotifyHandler);
     on('user:updated', this.usersUpdatedHandler);
-    on('runtime:data:updated', this.scriptsStateHandler);
     on('ws:disconnected', this.disconnectedHandler);
     on('ws:reconnected', this.reconnectedHandler);
     on('ws:session-expired', this.sessionExpiredHandler);
@@ -364,6 +447,8 @@ export default {
     this.generalDialog = await this.fetchGeneralDialog();
     await this.fetchUsers();
     await this.fetchDirectDialogs();
+    await this.fetchPinnedDirectUserIds();
+    await this.fetchRoomsNavigation();
 
     await this.syncDialogFromRoute({replaceInvalid: true});
     this.routeSyncReady = true;
@@ -380,7 +465,6 @@ export default {
     this.dialogsDeletedHandler && off('room:deleted', this.dialogsDeletedHandler);
     this.chatReactionNotifyHandler && off('message:reaction:notify', this.chatReactionNotifyHandler);
     this.usersUpdatedHandler && off('user:updated', this.usersUpdatedHandler);
-    this.scriptsStateHandler && off('runtime:data:updated', this.scriptsStateHandler);
     this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
     this.reconnectedHandler && off('ws:reconnected', this.reconnectedHandler);
     this.sessionExpiredHandler && off('ws:session-expired', this.sessionExpiredHandler);

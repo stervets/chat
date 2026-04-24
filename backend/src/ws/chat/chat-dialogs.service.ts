@@ -1,23 +1,18 @@
 import {Prisma} from '@prisma/client';
 import {db} from '../../db.js';
 import {
-  createPublicGroupRoom,
+  createGroupRoom,
   ensureUserInRoom,
   getRoomById,
   getOrCreateDirectRoom,
   getOrCreateGroupRoom,
+  normalizeRoomVisibility,
   userCanAccessRoom,
   userIsRoomAdmin,
-  type RoomSurfaceType,
   type RoomRow,
 } from '../../common/rooms.js';
 import {
-  hasNodeRuntime,
   cloneJson,
-  mergeNodeData,
-  normalizeRoomSurfaceType,
-  readNodeRuntime,
-  readRoomSurface,
 } from '../../common/nodes.js';
 import {
   ChatContext,
@@ -40,13 +35,13 @@ type RoomRuntimeRow = {
 };
 
 type RoomSurfacePayload = {
-  enabled: boolean;
-  type: RoomSurfaceType | null;
+  enabled: false;
+  type: null;
   config: Record<string, any>;
   pinnedNodeId: number | null;
-  pinnedKind: 'text' | 'system' | 'scriptable' | null;
-  hasRoomRuntime: boolean;
-  requiresRoomRuntime: boolean;
+  pinnedKind: 'text' | 'system' | null;
+  hasRoomRuntime: false;
+  requiresRoomRuntime: false;
 };
 
 type DiscussionPayload = {
@@ -54,6 +49,7 @@ type DiscussionPayload = {
   sourceRoomId: number | null;
   sourceRoomKind: 'group' | 'direct' | 'game' | 'comment' | null;
   sourceRoomTitle: string | null;
+  sourceRoomAvatarUrl: string | null;
   sourceMessagePreview: string;
   sourceMessageDeleted: boolean;
 };
@@ -61,6 +57,19 @@ type DiscussionPayload = {
 function normalizeAppConfig(raw: unknown) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   return cloneJson(raw as Record<string, any>);
+}
+
+function publicUserSelect() {
+  return {
+    id: true,
+    nickname: true,
+    name: true,
+    info: true,
+    avatarPath: true,
+    nicknameColor: true,
+    donationBadgeUntil: true,
+    pushDisableAllMentions: true,
+  } as const;
 }
 
 export class ChatDialogsService {
@@ -73,52 +82,32 @@ export class ChatDialogsService {
     return `${preview.slice(0, 217)}...`;
   }
 
-  private hasRoomRuntime(roomRuntime: RoomRuntimeRow | null) {
-    if (!roomRuntime) return false;
-    return hasNodeRuntime(roomRuntime.node);
-  }
-
-  private toRoomRuntimePayload(roomId: number, roomRuntime: RoomRuntimeRow | null) {
-    if (!this.hasRoomRuntime(roomRuntime)) return null;
-    const runtime = readNodeRuntime(roomRuntime!.node);
-    return {
-      nodeType: 'room',
-      nodeId: roomId,
-      roomId,
-      clientScript: runtime.clientScript,
-      serverScript: runtime.serverScript,
-      data: runtime.data,
-    };
+  private toRoomRuntimePayload(_roomId: number, _roomRuntime: RoomRuntimeRow | null) {
+    return null;
   }
 
   private toRoomSurfacePayload(
     room: RoomRow,
-    roomRuntime: RoomRuntimeRow | null,
+    _roomRuntime: RoomRuntimeRow | null,
     pinnedMessage: any | null,
     pinnedNodeIdRaw?: unknown,
   ): RoomSurfacePayload {
-    const roomSurface = readRoomSurface({data: room.data || {}});
-    const enabled = room.kind !== 'direct' && !!roomSurface.enabled;
-    const type = enabled ? (normalizeRoomSurfaceType(roomSurface.type) || 'custom') : null;
-    const config = normalizeAppConfig(roomSurface.config);
-    const pinnedNodeId = room.kind === 'direct'
-      ? null
-      : (Number(pinnedMessage?.id || pinnedNodeIdRaw || room.pinned_node_id || 0) || null);
+    const pinnedNodeId = Number(pinnedMessage?.id || pinnedNodeIdRaw || room.pinned_node_id || 0) || null;
     const pinnedKindRaw = pinnedMessage && typeof pinnedMessage === 'object'
       ? String(pinnedMessage.kind || '').trim().toLowerCase()
       : '';
-    const pinnedKind = pinnedKindRaw === 'text' || pinnedKindRaw === 'system' || pinnedKindRaw === 'scriptable'
+    const pinnedKind = pinnedKindRaw === 'text' || pinnedKindRaw === 'system'
       ? pinnedKindRaw
       : null;
 
     return {
-      enabled,
-      type,
-      config,
+      enabled: false,
+      type: null,
+      config: normalizeAppConfig({}),
       pinnedNodeId,
       pinnedKind,
-      hasRoomRuntime: this.hasRoomRuntime(roomRuntime),
-      requiresRoomRuntime: enabled && !!config.requireRoomRuntime,
+      hasRoomRuntime: false,
+      requiresRoomRuntime: false,
     };
   }
 
@@ -180,6 +169,7 @@ export class ChatDialogsService {
         sourceRoomId: null,
         sourceRoomKind: null,
         sourceRoomTitle: null,
+        sourceRoomAvatarUrl: null,
         sourceMessagePreview: '',
         sourceMessageDeleted: true,
       };
@@ -192,6 +182,7 @@ export class ChatDialogsService {
         select: {
           kind: true,
           title: true,
+          avatarPath: true,
         },
       })
       : null;
@@ -201,6 +192,7 @@ export class ChatDialogsService {
       sourceRoomId,
       sourceRoomKind: (sourceRoom?.kind as DiscussionPayload['sourceRoomKind']) || null,
       sourceRoomTitle: sourceRoom?.title || null,
+      sourceRoomAvatarUrl: this.ctx.toRoomAvatarUrl(sourceRoom?.avatarPath),
       sourceMessagePreview: this.buildDiscussionPreview(sourceMessage.rawText),
       sourceMessageDeleted: false,
     };
@@ -211,6 +203,10 @@ export class ChatDialogsService {
     dialogId: number;
     type: 'group';
     title: string;
+    visibility: 'public' | 'private';
+    commentsEnabled: boolean;
+    avatarUrl: string | null;
+    postOnlyByAdmin: boolean;
     createdById: number | null;
     pinnedNodeId: number | null;
     roomSurface: RoomSurfacePayload;
@@ -226,6 +222,10 @@ export class ChatDialogsService {
       dialogId: room.id,
       type: 'group',
       title: room.title || 'Общий чат',
+      visibility: room.visibility,
+      commentsEnabled: room.comments_enabled,
+      avatarUrl: this.ctx.toRoomAvatarUrl(room.avatar_path),
+      postOnlyByAdmin: !!room.post_only_by_admin,
       createdById: room.created_by || null,
       pinnedNodeId: room.pinned_node_id || null,
       roomSurface: this.toRoomSurfacePayload(room, roomRuntime, null, roomRuntime?.pinnedNodeId),
@@ -255,13 +255,7 @@ export class ChatDialogsService {
 
     const targetUser = await db.user.findUnique({
       where: {id: userId},
-      select: {
-        id: true,
-        nickname: true,
-        name: true,
-        nicknameColor: true,
-        donationBadgeUntil: true,
-      },
+      select: publicUserSelect(),
     });
 
     if (!targetUser) {
@@ -313,13 +307,7 @@ export class ChatDialogsService {
         roomUsers: {
           include: {
             user: {
-              select: {
-                id: true,
-                nickname: true,
-                name: true,
-                nicknameColor: true,
-                donationBadgeUntil: true,
-              },
+              select: publicUserSelect(),
             },
           },
         },
@@ -363,6 +351,10 @@ export class ChatDialogsService {
           id: row.id,
           kind: 'direct',
           title: row.title || null,
+          visibility: 'private',
+          comments_enabled: true,
+          avatar_path: null,
+          post_only_by_admin: false,
           created_by: null,
           pinned_node_id: null,
           surface_enabled: false,
@@ -389,13 +381,7 @@ export class ChatDialogsService {
       where: {
         nickname: SYSTEM_NICKNAME,
       },
-      select: {
-        id: true,
-        nickname: true,
-        name: true,
-        nicknameColor: true,
-        donationBadgeUntil: true,
-      },
+      select: publicUserSelect(),
     });
 
     if (systemUser && systemUser.id !== userId) {
@@ -416,6 +402,111 @@ export class ChatDialogsService {
 
     mapped.sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
     return mapped;
+  }
+
+  async roomListJoined(
+    state: SocketState,
+    scopeRaw?: unknown,
+  ): Promise<ApiError | Array<{
+    roomId: number;
+    dialogId: number;
+    kind: 'group';
+    title: string;
+    visibility: 'public' | 'private';
+    commentsEnabled: boolean;
+    avatarUrl: string | null;
+    postOnlyByAdmin: boolean;
+    createdById: number | null;
+    pinnedNodeId: number | null;
+    joined: boolean;
+    roomSurface: RoomSurfacePayload;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const scope = String(scopeRaw || 'all').trim().toLowerCase();
+    const userId = state.user!.id;
+    const rows = await db.room.findMany({
+      where: {
+        kind: 'group',
+        ...(scope === 'joined'
+          ? {
+            roomUsers: {
+              some: {userId},
+            },
+          }
+          : scope === 'public'
+            ? {
+              visibility: 'public',
+            }
+            : {
+              OR: [
+                {visibility: 'public'},
+                {
+                  roomUsers: {
+                    some: {userId},
+                  },
+                },
+              ],
+            }),
+      },
+      orderBy: [
+        {id: 'asc'},
+      ],
+      include: {
+        node: {
+          select: {
+            createdById: true,
+            component: true,
+            clientScript: true,
+            serverScript: true,
+            data: true,
+          },
+        },
+        roomUsers: {
+          select: {
+            userId: true,
+          },
+        },
+      },
+    });
+
+    return rows.map((row) => {
+      const room: RoomRow = {
+        id: row.id,
+        kind: 'group',
+        title: row.title || null,
+        visibility: normalizeRoomVisibility(row.visibility),
+        comments_enabled: !!row.commentsEnabled,
+        avatar_path: row.avatarPath?.trim() ? row.avatarPath.trim() : null,
+        post_only_by_admin: !!row.postOnlyByAdmin,
+        created_by: Number(row.node?.createdById || 0) || null,
+        pinned_node_id: Number(row.pinnedNodeId || 0) || null,
+        surface_enabled: false,
+        surface_type: null,
+        surface_config_json: {},
+        component: row.node?.component || null,
+        client_script: row.node?.clientScript || null,
+        server_script: row.node?.serverScript || null,
+        data: cloneJson((row.node?.data || {}) as Record<string, any>),
+        member_user_ids: row.roomUsers.map((item) => item.userId),
+      };
+
+      return {
+        roomId: row.id,
+        dialogId: row.id,
+        kind: 'group' as const,
+        title: row.title || 'Комната',
+        visibility: room.visibility,
+        commentsEnabled: room.comments_enabled,
+        avatarUrl: this.ctx.toRoomAvatarUrl(room.avatar_path),
+        postOnlyByAdmin: !!room.post_only_by_admin,
+        createdById: room.created_by,
+        pinnedNodeId: room.pinned_node_id,
+        joined: room.member_user_ids.includes(userId),
+        roomSurface: this.toRoomSurfacePayload(room, null, null, room.pinned_node_id),
+      };
+    });
   }
 
   async messageList(
@@ -508,35 +599,47 @@ export class ChatDialogsService {
       discussionByMessageId.set(messageId, row.id);
     });
 
+    const discussionRoomIds = discussionRooms.map((row) => row.id);
+    const commentCountByRoomId = new Map<number, number>();
+    if (discussionRoomIds.length > 0) {
+      const commentCounts = await db.$queryRaw<Array<{roomId: number; count: bigint | number}>>(Prisma.sql`
+        select
+          n.parent_id as "roomId",
+          count(*)::bigint as "count"
+        from messages m
+        join nodes n on n.id = m.id
+        where n.parent_id in (${Prisma.join(discussionRoomIds)})
+        group by n.parent_id
+      `);
+      commentCounts.forEach((row) => {
+        commentCountByRoomId.set(Number(row.roomId || 0), Number(row.count || 0));
+      });
+    }
+
     const renderContext = await this.ctx.buildRoomMessageRenderContext(
       roomId,
       result.map((row) => String(row.rawText || '')),
     );
 
     const ordered = result.reverse().map((row) => {
-      const isScriptable = row.kind === 'scriptable';
-      const compiled = isScriptable
-        ? {
-          rawText: String(row.rawText || ''),
-          renderedHtml: String(row.renderedHtml || ''),
-          renderedPreviews: [],
-        }
-        : this.ctx.compileMessageWithContext(
-          String(row.rawText || ''),
-          renderContext,
-          row.id,
-        );
+      const sourceText = row.kind === 'scriptable'
+        ? this.ctx.getDisabledScriptableFallbackText(row.rawText)
+        : String(row.rawText || '');
+      const compiled = this.ctx.compileMessageWithContext(
+        sourceText,
+        renderContext,
+        row.id,
+      );
       const author = this.ctx.toMessageAuthor({
         senderId: row.senderId,
         sender: row.sender,
       });
 
-      const runtime = readNodeRuntime(row.node);
       return {
         id: row.id,
         roomId,
         dialogId: roomId,
-        kind: row.kind || 'text',
+        kind: row.kind === 'system' ? 'system' : 'text',
         authorId: author.authorId,
         authorNickname: author.authorNickname,
         authorName: author.authorName,
@@ -545,8 +648,13 @@ export class ChatDialogsService {
         rawText: compiled.rawText,
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,
-        runtime,
+        runtime: {
+          clientScript: null,
+          serverScript: null,
+          data: {},
+        },
         commentRoomId: discussionByMessageId.get(row.id) || null,
+        commentCount: commentCountByRoomId.get(discussionByMessageId.get(row.id) || 0) || 0,
         createdAt: row.createdAt.toISOString(),
       };
     });
@@ -558,6 +666,12 @@ export class ChatDialogsService {
     roomId: number;
     dialogId: number;
     kind: 'group' | 'direct' | 'game' | 'comment';
+    title: string;
+    joined: boolean;
+    visibility: 'public' | 'private';
+    commentsEnabled: boolean;
+    avatarUrl: string | null;
+    postOnlyByAdmin: boolean;
     createdById: number | null;
     roomRuntime: any | null;
     roomSurface: RoomSurfacePayload;
@@ -573,7 +687,7 @@ export class ChatDialogsService {
       return {ok: false, error: 'invalid_room'};
     }
 
-    const room = await getRoomById(roomId);
+    let room = await getRoomById(roomId);
     if (!room) {
       return {ok: false, error: 'room_not_found'};
     }
@@ -585,10 +699,7 @@ export class ChatDialogsService {
     const roomRuntime = await this.loadRoomRuntime(roomId);
 
     state.roomId = roomId;
-    const pinnedAllowed = room.kind !== 'direct';
-    const pinnedNodeId = pinnedAllowed
-      ? Number(roomRuntime?.pinnedNodeId || 0)
-      : 0;
+    const pinnedNodeId = Number(roomRuntime?.pinnedNodeId || 0);
     const pinnedMessage = pinnedNodeId > 0
       ? await this.ctx.loadMessagePayloadById(roomId, pinnedNodeId)
       : null;
@@ -599,18 +710,22 @@ export class ChatDialogsService {
       roomId,
       dialogId: roomId,
       kind: room.kind,
+      title: String(room.title || (room.kind === 'comment' ? 'Комментарии' : 'Комната')),
+      joined: room.member_user_ids.includes(state.user!.id),
+      visibility: room.visibility,
+      commentsEnabled: room.comments_enabled,
+      avatarUrl: this.ctx.toRoomAvatarUrl(room.avatar_path),
+      postOnlyByAdmin: !!room.post_only_by_admin,
       createdById: room.created_by || null,
       roomSurface: this.toRoomSurfacePayload(
         room,
         roomRuntime,
-        pinnedAllowed ? pinnedMessage : null,
+        pinnedMessage,
         roomRuntime?.pinnedNodeId,
       ),
       discussion,
-      pinnedNodeId: pinnedAllowed
-        ? (pinnedMessage?.id || (roomRuntime?.pinnedNodeId || null))
-        : null,
-      pinnedMessage: pinnedAllowed ? pinnedMessage : null,
+      pinnedNodeId: pinnedMessage?.id || (roomRuntime?.pinnedNodeId || null),
+      pinnedMessage,
       roomRuntime: this.toRoomRuntimePayload(roomId, roomRuntime),
     };
   }
@@ -619,7 +734,12 @@ export class ChatDialogsService {
     roomId: number;
     dialogId: number;
     kind: 'group';
+    joined: true;
     title: string;
+    visibility: 'public' | 'private';
+    commentsEnabled: boolean;
+    avatarUrl: string | null;
+    postOnlyByAdmin: boolean;
     createdById: number;
     pinnedNodeId: null;
     roomSurface: RoomSurfacePayload;
@@ -628,33 +748,39 @@ export class ChatDialogsService {
     if (authError) return authError;
 
     const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
-    const room = await createPublicGroupRoom(state.user!.id, payload?.title);
+    const title = String(payload?.title || '').trim() || 'Комната';
+    const avatarPath = this.ctx.parseRoomAvatarPath(payload?.avatarPath);
+    if (!avatarPath.ok) {
+      return {ok: false, error: avatarPath.error};
+    }
+    const room = await createGroupRoom(state.user!.id, {
+      title,
+      visibility: payload?.visibility,
+      commentsEnabled: payload?.commentsEnabled,
+      avatarPath: avatarPath.value ?? null,
+      postOnlyByAdmin: !!payload?.postOnlyByAdmin,
+    });
 
     return {
       ok: true,
       roomId: room.id,
       dialogId: room.id,
       kind: 'group',
+      joined: true,
       title: room.title || 'Комната',
+      visibility: room.visibility,
+      commentsEnabled: room.comments_enabled,
+      avatarUrl: this.ctx.toRoomAvatarUrl(room.avatar_path),
+      postOnlyByAdmin: !!room.post_only_by_admin,
       createdById: Number(room.created_by || state.user!.id),
       pinnedNodeId: null,
       roomSurface: this.toRoomSurfacePayload(room, null, null),
     };
   }
 
-  async roomSurfaceSet(
-    state: SocketState,
-    roomIdRaw: unknown,
-    payloadRaw: any,
-  ): Promise<ApiError | ApiOk<{
+  async roomJoin(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
     roomId: number;
-    dialogId: number;
-    kind: 'group' | 'game' | 'comment';
-    createdById: number | null;
-    roomSurface: RoomSurfacePayload;
-    roomRuntime: any | null;
-    pinnedNodeId: number | null;
-    pinnedMessage: any | null;
+    joined: boolean;
   }>> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
@@ -668,159 +794,324 @@ export class ChatDialogsService {
     if (!room) {
       return {ok: false, error: 'room_not_found'};
     }
-    if (!userCanAccessRoom(state.user!.id, room)) {
+    if (room.kind === 'direct' || room.kind === 'comment') {
       return {ok: false, error: 'forbidden'};
     }
-    if (room.kind === 'direct') {
-      return {ok: false, error: 'room_surface_not_supported'};
+    if (room.visibility !== 'public') {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    await ensureUserInRoom(roomId, state.user!.id);
+    return {
+      ok: true,
+      roomId,
+      joined: true,
+    };
+  }
+
+  async roomLeave(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
+    roomId: number;
+    dialogId: number;
+    kind: 'group' | 'game';
+    left: boolean;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
+    }
+
+    const room = await getRoomById(roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (room.kind === 'direct' || room.kind === 'comment') {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const result = await db.roomUser.deleteMany({
+      where: {
+        roomId,
+        userId: state.user!.id,
+      },
+    });
+    if (state.roomId === roomId) {
+      state.roomId = null;
+    }
+
+    return {
+      ok: true,
+      roomId,
+      dialogId: roomId,
+      kind: room.kind === 'game' ? 'game' : 'group',
+      left: result.count > 0,
+    };
+  }
+
+  async roomMembersList(state: SocketState, roomIdRaw: unknown): Promise<ApiError | PublicUser[]> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
+    }
+
+    const room = await getRoomById(roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const rows = await db.roomUser.findMany({
+      where: {
+        roomId,
+      },
+      orderBy: {
+        joinedAt: 'asc',
+      },
+      select: {
+        user: {
+          select: publicUserSelect(),
+        },
+      },
+    });
+
+    return rows.map((row) => this.ctx.toPublicUser(row.user));
+  }
+
+  async roomMembersAdd(state: SocketState, payloadRaw: any): Promise<ApiError | ApiOk<{addedUserIds: number[]}>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const roomId = this.ctx.parseRoomId(payloadRaw?.roomId);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
+    }
+
+    const room = await getRoomById(roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (room.kind === 'direct' || room.kind === 'comment') {
+      return {ok: false, error: 'forbidden'};
     }
     if (!userIsRoomAdmin(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
-    const payload = payloadRaw && typeof payloadRaw === 'object'
-      ? payloadRaw
-      : {};
-    const hasEnabled = Object.prototype.hasOwnProperty.call(payload, 'enabled');
-    const enabled = hasEnabled ? !!payload.enabled : true;
-
-    const hasType = Object.prototype.hasOwnProperty.call(payload, 'type');
-    const parsedType = normalizeRoomSurfaceType(payload.type);
-    if (hasType && !parsedType && enabled) {
-      return {ok: false, error: 'invalid_surface_type'};
+    const userIds: number[] = Array.isArray(payloadRaw?.userIds)
+      ? Array.from(new Set(payloadRaw.userIds
+        .map((value: unknown) => Number.parseInt(String(value ?? ''), 10))
+        .filter((value: number) => Number.isFinite(value) && value > 0)))
+      : [];
+    if (!userIds.length) {
+      return {ok: false, error: 'invalid_users'};
     }
 
-    const currentRoomSurface = readRoomSurface({data: room.data || {}});
-    const hasConfig = Object.prototype.hasOwnProperty.call(payload, 'config');
-    const rawConfig = hasConfig
-      ? normalizeAppConfig(payload.config)
-      : normalizeAppConfig(currentRoomSurface.config);
-    const nextConfig = enabled
-      ? {
-        ...rawConfig,
-      }
-      : {};
-
-    if (Object.prototype.hasOwnProperty.call(payload, 'requireRoomRuntime')) {
-      if (enabled) {
-        nextConfig.requireRoomRuntime = !!payload.requireRoomRuntime;
-      } else {
-        delete nextConfig.requireRoomRuntime;
-      }
-    }
-
-    const hasPinnedNodeId = Object.prototype.hasOwnProperty.call(payload, 'pinnedNodeId');
-    let nextPinnedNodeId = room.pinned_node_id;
-
-    if (hasPinnedNodeId) {
-      const pinnedRaw = payload.pinnedNodeId;
-      if (pinnedRaw === null || pinnedRaw === undefined || pinnedRaw === '' || Number(pinnedRaw) === 0) {
-        nextPinnedNodeId = null;
-      } else {
-        const parsed = Number.parseInt(String(pinnedRaw), 10);
-        if (!Number.isFinite(parsed) || parsed <= 0) {
-          return {ok: false, error: 'invalid_message'};
-        }
-        nextPinnedNodeId = parsed;
-      }
-    }
-
-    let pinnedMessageForValidation: {
-      id: number;
-      kind: 'text' | 'system' | 'scriptable';
-      node: {
-        parentId: number | null;
-      };
-    } | null = null;
-    if (Number(nextPinnedNodeId || 0) > 0) {
-      pinnedMessageForValidation = await db.message.findUnique({
-        where: {
-          id: Number(nextPinnedNodeId || 0),
-        },
-        select: {
-          id: true,
-          kind: true,
-          node: {
-            select: {
-              parentId: true,
-            },
-          },
-        },
-      }) as typeof pinnedMessageForValidation;
-      if (!pinnedMessageForValidation) {
-        return {ok: false, error: 'message_not_found'};
-      }
-      if (Number(pinnedMessageForValidation.node?.parentId || 0) !== roomId) {
-        return {ok: false, error: 'message_not_in_room'};
-      }
-      if (enabled && pinnedMessageForValidation.kind !== 'scriptable') {
-        return {ok: false, error: 'room_surface_must_be_scriptable'};
-      }
-    }
-
-    const nextSurfaceType = enabled
-      ? (parsedType || normalizeRoomSurfaceType(currentRoomSurface.type) || 'custom')
-      : null;
-    const roomRuntimeBefore = await this.loadRoomRuntime(roomId);
-    const requiresRoomRuntime = enabled && !!nextConfig.requireRoomRuntime;
-    if (requiresRoomRuntime && !this.hasRoomRuntime(roomRuntimeBefore)) {
-      return {ok: false, error: 'room_runtime_required'};
-    }
-
-    await db.node.update({
+    const existingUsers = await db.user.findMany({
       where: {
-        id: roomId,
+        id: {
+          in: userIds,
+        },
       },
-      data: {
-        data: mergeNodeData({
-          current: room.data || {},
-          roomSurface: {
-            enabled,
-            type: nextSurfaceType,
-            config: enabled ? cloneJson(nextConfig) : {},
-          },
-        }),
+      select: {
+        id: true,
+      },
+    });
+    const existingUserIds: number[] = existingUsers.map((row) => row.id);
+    if (!existingUserIds.length) {
+      return {ok: false, error: 'invalid_users'};
+    }
+
+    await db.roomUser.createMany({
+      data: existingUserIds.map((userId) => ({
+        roomId,
+        userId,
+      })),
+      skipDuplicates: true,
+    });
+
+    return {
+      ok: true,
+      addedUserIds: existingUserIds,
+    };
+  }
+
+  async roomMembersRemove(state: SocketState, payloadRaw: any): Promise<ApiError | ApiOk<{removedUserIds: number[]}>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const roomId = this.ctx.parseRoomId(payloadRaw?.roomId);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
+    }
+
+    const room = await getRoomById(roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (room.kind === 'direct' || room.kind === 'comment') {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (!userIsRoomAdmin(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const requestedUserIds: number[] = Array.isArray(payloadRaw?.userIds)
+      ? Array.from(new Set(payloadRaw.userIds
+        .map((value: unknown) => Number.parseInt(String(value ?? ''), 10))
+        .filter((value: number) => Number.isFinite(value) && value > 0)))
+      : [];
+    if (!requestedUserIds.length) {
+      return {ok: false, error: 'invalid_users'};
+    }
+
+    const removableIds = requestedUserIds.filter((userId) => userId !== Number(room.created_by || 0));
+    if (!removableIds.length) {
+      return {
+        ok: true,
+        removedUserIds: [],
+      };
+    }
+
+    const existingMembers = await db.roomUser.findMany({
+      where: {
+        roomId,
+        userId: {
+          in: removableIds,
+        },
+      },
+      select: {
+        userId: true,
+      },
+    });
+    const memberIds = existingMembers.map((row) => Number(row.userId || 0)).filter((userId) => Number.isFinite(userId) && userId > 0);
+    if (!memberIds.length) {
+      return {
+        ok: true,
+        removedUserIds: [],
+      };
+    }
+
+    await db.roomUser.deleteMany({
+      where: {
+        roomId,
+        userId: {
+          in: memberIds,
+        },
       },
     });
 
-    if (hasPinnedNodeId) {
-      await db.room.update({
-        where: {
-          id: roomId,
-        },
-        data: {
-          pinnedNodeId: nextPinnedNodeId,
-        },
-      });
+    return {
+      ok: true,
+      removedUserIds: memberIds,
+    };
+  }
+
+  async roomSettingsUpdate(state: SocketState, payloadRaw: any): Promise<ApiError | ApiOk<{
+    roomId: number;
+    dialogId: number;
+    kind: 'group' | 'game' | 'comment';
+    title: string | null;
+    visibility: 'public' | 'private';
+    commentsEnabled: boolean;
+    avatarUrl: string | null;
+    postOnlyByAdmin: boolean;
+    createdById: number | null;
+    pinnedNodeId: number | null;
+    roomSurface: RoomSurfacePayload;
+    discussion: DiscussionPayload | null;
+  }>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const roomId = this.ctx.parseRoomId(payloadRaw?.roomId);
+    if (!roomId) {
+      return {ok: false, error: 'invalid_room'};
     }
+
+    const room = await getRoomById(roomId);
+    if (!room || !userCanAccessRoom(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (room.kind === 'direct') {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (!userIsRoomAdmin(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'title')) {
+      const title = String(payloadRaw?.title || '').trim();
+      updateData.title = title ? title.slice(0, 120) : 'Комната';
+    }
+    if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'visibility')) {
+      updateData.visibility = normalizeRoomVisibility(payloadRaw?.visibility);
+    }
+    if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'commentsEnabled')) {
+      updateData.commentsEnabled = !!payloadRaw?.commentsEnabled;
+    }
+    if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'avatarPath')) {
+      const avatarPath = this.ctx.parseRoomAvatarPath(payloadRaw?.avatarPath);
+      if (!avatarPath.ok) {
+        return {ok: false, error: avatarPath.error};
+      }
+      updateData.avatarPath = avatarPath.value ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'postOnlyByAdmin')) {
+      updateData.postOnlyByAdmin = !!payloadRaw?.postOnlyByAdmin;
+    }
+    if (!Object.keys(updateData).length) {
+      return {ok: false, error: 'invalid_input'};
+    }
+
+    await db.room.update({
+      where: {
+        id: roomId,
+      },
+      data: updateData,
+    });
 
     const updatedRoom = await getRoomById(roomId);
     if (!updatedRoom) {
       return {ok: false, error: 'room_not_found'};
     }
 
-    const roomRuntime = await this.loadRoomRuntime(roomId);
-    const pinnedNodeId = Number(roomRuntime?.pinnedNodeId || 0);
-    const pinnedMessage = pinnedNodeId > 0
-      ? await this.ctx.loadMessagePayloadById(roomId, pinnedNodeId)
-      : null;
-
     return {
       ok: true,
       roomId,
       dialogId: roomId,
       kind: updatedRoom.kind === 'game' ? 'game' : (updatedRoom.kind === 'comment' ? 'comment' : 'group'),
-      createdById: updatedRoom.created_by || null,
-      roomSurface: this.toRoomSurfacePayload(
-        updatedRoom,
-        roomRuntime,
-        pinnedMessage,
-        pinnedNodeId || null,
-      ),
-      roomRuntime: this.toRoomRuntimePayload(roomId, roomRuntime),
-      pinnedNodeId: pinnedMessage?.id || (pinnedNodeId > 0 ? pinnedNodeId : null),
-      pinnedMessage,
+      title: updatedRoom.title,
+      visibility: updatedRoom.visibility,
+      commentsEnabled: updatedRoom.comments_enabled,
+      avatarUrl: this.ctx.toRoomAvatarUrl(updatedRoom.avatar_path),
+      postOnlyByAdmin: !!updatedRoom.post_only_by_admin,
+      createdById: updatedRoom.created_by,
+      pinnedNodeId: updatedRoom.pinned_node_id,
+      roomSurface: this.toRoomSurfacePayload(updatedRoom, null, null, updatedRoom.pinned_node_id),
+      discussion: await this.loadDiscussionPayload(roomId, updatedRoom.kind),
     };
+  }
+
+  async roomSurfaceSet(
+    _state: SocketState,
+    _roomIdRaw: unknown,
+    _payloadRaw: any,
+  ): Promise<ApiError | ApiOk<{
+    roomId: number;
+    dialogId: number;
+    kind: 'group' | 'game' | 'comment';
+    createdById: number | null;
+    roomSurface: RoomSurfacePayload;
+    roomRuntime: any | null;
+    pinnedNodeId: number | null;
+    pinnedMessage: any | null;
+  }>> {
+    return {ok: false, error: 'scriptable_disabled'};
   }
 
   async roomDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any): Promise<ApiError | ApiOk<{

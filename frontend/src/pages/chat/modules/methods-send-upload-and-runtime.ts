@@ -6,6 +6,7 @@ import {
   wsLogout,
   HISTORY_BATCH_SIZE,
   MAX_PASTE_IMAGE_BYTES,
+  MAX_UPLOAD_IMAGE_DIMENSION,
 } from './shared';
 import type {
   Message,
@@ -192,11 +193,8 @@ export const chatMethodsSendUploadAndRuntime = {
 
     async compressImageToLimit(this: any, source: Blob, maxBytes: number) {
       if (source.type === 'image/gif') {
-        return source;
-      }
-
-      if (source.size <= maxBytes) {
-        return source;
+        if (source.size <= maxBytes) return source;
+        return null;
       }
 
       const image = await this.loadImageFromBlob(source);
@@ -204,23 +202,36 @@ export const chatMethodsSendUploadAndRuntime = {
       const ctx = canvas.getContext('2d');
       if (!ctx) return source;
 
+      const maxSide = Math.max(1, Number(MAX_UPLOAD_IMAGE_DIMENSION || 1024));
+      const sourceMaxSide = Math.max(1, image.naturalWidth, image.naturalHeight);
+      const baseScale = Math.min(1, maxSide / sourceMaxSide);
+      const baseWidth = Math.max(1, Math.floor(image.naturalWidth * baseScale));
+      const baseHeight = Math.max(1, Math.floor(image.naturalHeight * baseScale));
+
       let scale = 1;
       let quality = 0.9;
-      let bestBlob: Blob = source;
+      let bestBlob: Blob | null = null;
 
       for (let attempt = 0; attempt < 14; attempt += 1) {
-        const width = Math.max(1, Math.floor(image.naturalWidth * scale));
-        const height = Math.max(1, Math.floor(image.naturalHeight * scale));
+        const width = Math.max(1, Math.floor(baseWidth * scale));
+        const height = Math.max(1, Math.floor(baseHeight * scale));
         canvas.width = width;
         canvas.height = height;
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(image, 0, 0, width, height);
 
-        const mime = source.type === 'image/png' ? 'image/png' : 'image/jpeg';
-        const blob = await this.canvasToBlob(canvas, mime, quality);
+        const preferredMime = source.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        let blob = await this.canvasToBlob(canvas, preferredMime, quality);
         if (!blob) break;
 
-        if (blob.size < bestBlob.size) {
+        if (blob.size > maxBytes && preferredMime === 'image/png') {
+          const jpegBlob = await this.canvasToBlob(canvas, 'image/jpeg', quality);
+          if (jpegBlob && jpegBlob.size <= blob.size) {
+            blob = jpegBlob;
+          }
+        }
+
+        if (!bestBlob || blob.size < bestBlob.size) {
           bestBlob = blob;
         }
         if (blob.size <= maxBytes) {
@@ -238,9 +249,13 @@ export const chatMethodsSendUploadAndRuntime = {
       return bestBlob;
     },
 
-    async preparePastedImage(this: any, file: File) {
+    async prepareUploadMediaFile(this: any, file: File) {
+      if (!String(file?.type || '').startsWith('image/')) {
+        return file;
+      }
+
       const compressed = await this.compressImageToLimit(file, MAX_PASTE_IMAGE_BYTES);
-      if (compressed.size > MAX_PASTE_IMAGE_BYTES) {
+      if (!compressed || compressed.size > MAX_PASTE_IMAGE_BYTES) {
         return null;
       }
       const mime = compressed.type || 'image/jpeg';
@@ -248,7 +263,7 @@ export const chatMethodsSendUploadAndRuntime = {
       return new File([compressed], fileName, {type: mime});
     },
 
-    async uploadImageFile(this: any, file: File) {
+    async uploadMediaFile(this: any, file: File) {
       const token = getSessionToken();
       if (!token) {
         return {ok: false, error: 'unauthorized'};
@@ -256,7 +271,7 @@ export const chatMethodsSendUploadAndRuntime = {
 
       const form = new FormData();
       form.append('file', file);
-      const response = await fetch(`${getApiBase()}/upload/image`, {
+      const response = await fetch(`${getApiBase()}/upload/media`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -304,7 +319,10 @@ export const chatMethodsSendUploadAndRuntime = {
         anonymous,
       });
       if (!(result as any)?.ok) {
-        this.error = 'Не удалось отправить сообщение.';
+        const errorCode = String((result as any)?.error || '');
+        this.error = errorCode === 'room_posting_restricted'
+          ? 'В эту комнату может писать только админ.'
+          : 'Не удалось отправить сообщение.';
         return false;
       }
       const createdMessageId = Number((result as any)?.message?.id || 0);
@@ -329,6 +347,7 @@ export const chatMethodsSendUploadAndRuntime = {
     },
 
     async onSend(this: any) {
+      if (!this.canComposeInActiveDialog) return;
       const text = this.messageText.trim();
       if (!text) return;
       const ok = await this.sendMessageBody(text);
@@ -351,7 +370,7 @@ export const chatMethodsSendUploadAndRuntime = {
       if (!files.length) return;
 
       event.preventDefault();
-      await this.attachImageFiles(files);
+      await this.attachMediaFiles(files);
     },
 
     onKeydown(this: any, event: KeyboardEvent) {
@@ -525,6 +544,8 @@ export const chatMethodsSendUploadAndRuntime = {
 
       if (this.activeDialog?.id !== roomId) {
         await this.fetchDirectDialogs();
+        await this.fetchPinnedDirectUserIds();
+        await this.fetchRoomsNavigation();
         return;
       }
 
@@ -544,6 +565,8 @@ export const chatMethodsSendUploadAndRuntime = {
         this.setActiveRoomScript(null);
       }
       await this.fetchDirectDialogs();
+      await this.fetchPinnedDirectUserIds();
+      await this.fetchRoomsNavigation();
     },
 
     consumeAnonymousOwnMessageCandidate(this: any, message: Message) {
@@ -593,6 +616,8 @@ export const chatMethodsSendUploadAndRuntime = {
       if (this.activeDialog?.kind === 'direct') {
         await this.fetchDirectDialogs();
       }
+      await this.fetchPinnedDirectUserIds();
+      await this.fetchRoomsNavigation();
       this.markVisibleMessageNotificationsRead();
       this.emitScriptHostRoomEvent('system:ws_reconnected', {}, 'system');
     },

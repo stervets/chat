@@ -36,6 +36,7 @@ import {
   type WebPushPermission,
   unsubscribeWebPush,
 } from '@/composables/use-web-push';
+import {loadLastChatPath, persistLastChatPath} from '@/composables/last-chat';
 import {vibrateConfirm, vibrateError, vibrateTap} from '@/utils/vibrate';
 
 const WEB_PUSH_ROLLOUT_VERSION = '2026-04-19-1';
@@ -759,6 +760,20 @@ export const chatMethodsRuntimeAndRouting = {
       return null;
     },
 
+    isOwnDirectNickname(this: any, nicknameRaw: unknown) {
+      const nickname = this.normalizeRouteNickname(nicknameRaw);
+      const meNickname = this.normalizeRouteNickname(this.me?.nickname);
+      return !!nickname && !!meNickname && nickname === meNickname;
+    },
+
+    isSelfDirectPath(this: any, pathRaw: unknown) {
+      const path = String(pathRaw || '').trim();
+      if (!path.startsWith('/direct/')) return false;
+      const nicknamePart = path.slice('/direct/'.length).split(/[?#]/, 1)[0] || '';
+      const decoded = this.safeDecodeRouteParam(nicknamePart);
+      return this.isOwnDirectNickname(decoded);
+    },
+
     findDirectDialogByRoomId(this: any, roomIdRaw: unknown) {
       const roomId = Number(roomIdRaw || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return null;
@@ -779,6 +794,7 @@ export const chatMethodsRuntimeAndRouting = {
         return {
           id: direct.roomId,
           kind: 'direct',
+          joined: true,
           targetUser: direct.targetUser,
           title: direct.targetUser.name,
           createdById: null,
@@ -791,6 +807,7 @@ export const chatMethodsRuntimeAndRouting = {
       return {
         id: roomId,
         kind: 'group',
+        joined: false,
         title: `Комната #${roomId}`,
         createdById: null,
         pinnedNodeId: null,
@@ -807,13 +824,18 @@ export const chatMethodsRuntimeAndRouting = {
         ? this.buildDirectRoutePath(dialog.targetUser?.nickname)
         : this.buildRoomRoutePath(dialog.id);
       const currentFullPath = String(this.route?.fullPath || this.route?.path || '');
-      if (currentFullPath === targetPath) return;
+      if (currentFullPath === targetPath) {
+        persistLastChatPath(targetPath);
+        return;
+      }
 
       if (mode === 'replace') {
         await this.router.replace(targetPath);
+        persistLastChatPath(targetPath);
         return;
       }
       await this.router.push(targetPath);
+      persistLastChatPath(targetPath);
     },
 
     async syncDialogFromRoute(this: any, optionsRaw?: {replaceInvalid?: boolean}) {
@@ -822,6 +844,7 @@ export const chatMethodsRuntimeAndRouting = {
       if (directNickname) {
         const targetUser = this.findUserByNickname(directNickname);
         if (!targetUser || targetUser.id === this.me?.id) {
+          persistLastChatPath('/chat');
           if (replaceInvalid) {
             await this.router.replace('/chat');
           }
@@ -841,16 +864,25 @@ export const chatMethodsRuntimeAndRouting = {
         if (String(this.route?.path || '') !== canonicalPath) {
           await this.router.replace(canonicalPath);
         }
+        persistLastChatPath(canonicalPath);
         return;
       }
 
       const roomIdFromRoute = this.getRoomIdFromRoute();
       if (!roomIdFromRoute) {
         if (this.generalDialog) {
+          const lastPath = loadLastChatPath();
+          if (replaceInvalid && this.isSelfDirectPath(lastPath)) {
+            persistLastChatPath('/chat');
+          } else if (replaceInvalid && lastPath && lastPath !== '/chat' && String(this.route?.fullPath || this.route?.path || '') === '/chat') {
+            await this.router.replace(lastPath);
+            return;
+          }
           await this.selectDialog(this.generalDialog, {routeMode: 'none'});
           if (replaceInvalid && String(this.route?.path || '') !== '/chat') {
             await this.router.replace('/chat');
           }
+          persistLastChatPath('/chat');
           const focusMessageId = Number(this.getRoomRouteContext().focusMessageId || 0);
           if (Number.isFinite(focusMessageId) && focusMessageId > 0) {
             void this.scrollToMessageById(focusMessageId);
@@ -888,6 +920,7 @@ export const chatMethodsRuntimeAndRouting = {
         if (String(this.route?.fullPath || this.route?.path || '') !== canonicalPath) {
           await this.router.replace(canonicalPath);
         }
+        persistLastChatPath(canonicalPath);
       }
 
       const focusMessageId = Number(this.getRoomRouteContext().focusMessageId || 0);
@@ -941,6 +974,7 @@ export const chatMethodsRuntimeAndRouting = {
 
       const targetUser = this.findUserByNickname(directNickname);
       if (!targetUser || targetUser.id === this.me?.id) {
+        persistLastChatPath('/chat');
         await this.selectGeneral({routeMode: 'replace', closeMenu: false});
         return;
       }

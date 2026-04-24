@@ -55,6 +55,15 @@
     left: 4px;
   }
 
+  .author-system-star {
+    color: #ff5d5d;
+    font-size: 24px;
+    line-height: 1;
+    user-select: none;
+    position: relative;
+    //top: -2px;
+  }
+
   .author {
     color: var(--accent);
     font-weight: 600;
@@ -94,43 +103,6 @@
 
   .time {
     margin-left: auto;
-  }
-
-  .message-inline-btn {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 10px;
-    line-height: 1;
-    padding: 4px 6px;
-    cursor: pointer;
-    transition: transform .12s ease, filter .12s ease, border-color .2s ease, color .2s ease, background-color .2s ease;
-  }
-
-  .message-inline-btn:hover {
-    border-color: var(--accent-strong);
-    color: var(--text);
-  }
-
-  .message-inline-btn:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  .message-inline-btn-danger {
-    color: #f3a1a1;
-  }
-
-  .message-inline-btn-danger:hover {
-    border-color: rgba(224, 108, 117, 0.55);
-    color: #ffc2c2;
-  }
-
-  .message-inline-btn-active {
-    border-color: rgba(255, 196, 94, 0.6);
-    color: #ffd383;
-    background: rgba(61, 46, 22, 0.55);
   }
 
   .message-body {
@@ -336,13 +308,22 @@
     background: #000;
   }
 
-  .reaction-controls {
+  .message-footer {
     margin-top: 8px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .reaction-controls {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     position: relative;
+    flex: 1;
+    min-width: 0;
   }
 
   .reaction-add-btn {
@@ -446,6 +427,49 @@
     font-size: 11px;
     min-width: 10px;
     text-align: center;
+  }
+
+  .message-action-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+
+  .message-icon-btn,
+  .message-comment-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 24px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: #162131;
+    color: var(--text-muted);
+    padding: 0 8px;
+    cursor: pointer;
+  }
+
+  .message-icon-btn {
+    width: 24px;
+    padding: 0;
+  }
+
+  .message-icon-btn-active {
+    border-color: rgba(255, 196, 94, 0.6);
+    color: #ffd383;
+    background: rgba(61, 46, 22, 0.55);
+  }
+
+  .message-icon-btn-danger {
+    color: #f3a1a1;
+  }
+
+  .message-comment-btn {
+    font-size: 11px;
+    font-weight: 700;
   }
 }
 

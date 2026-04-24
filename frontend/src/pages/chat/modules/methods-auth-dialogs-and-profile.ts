@@ -18,13 +18,15 @@ import type {
   NotificationItem,
   RouteMode,
 } from './shared';
+import {resolveMediaUrl} from '@/composables/media-url';
 export const chatMethodsAuthDialogsAndProfile = {
     applyMe(this: any, me: User) {
-      this.me = me;
-      this.profileName = me.name || me.nickname;
-      this.profileNicknameColor = me.nicknameColor || '';
-      this.profileColorPicker = me.nicknameColor || '#61afef';
-      this.pushDisableAllMentions = !!me.pushDisableAllMentions;
+      const normalizedMe = this.normalizeUser(me) || me;
+      this.me = normalizedMe;
+      this.profileName = normalizedMe.name || normalizedMe.nickname;
+      this.profileNicknameColor = normalizedMe.nicknameColor || '';
+      this.profileColorPicker = normalizedMe.nicknameColor || '#61afef';
+      this.pushDisableAllMentions = !!normalizedMe.pushDisableAllMentions;
     },
 
     normalizeUser(this: any, raw: any): User | null {
@@ -34,6 +36,8 @@ export const chatMethodsAuthDialogsAndProfile = {
         id,
         nickname: String(raw?.nickname || '').trim(),
         name: String(raw?.name || raw?.nickname || '').trim(),
+        info: raw?.info ? String(raw.info) : null,
+        avatarUrl: resolveMediaUrl(raw?.avatarUrl) || null,
         nicknameColor: raw?.nicknameColor ? String(raw.nicknameColor) : null,
         donationBadgeUntil: raw?.donationBadgeUntil ? String(raw.donationBadgeUntil) : null,
         pushDisableAllMentions: !!raw?.pushDisableAllMentions,
@@ -88,6 +92,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         sourceRoomId,
         sourceRoomKind,
         sourceRoomTitle: raw?.sourceRoomTitle ? String(raw.sourceRoomTitle) : null,
+        sourceRoomAvatarUrl: resolveMediaUrl(raw?.sourceRoomAvatarUrl) || null,
         sourceMessagePreview: raw?.sourceMessagePreview ? String(raw.sourceMessagePreview) : '',
         sourceMessageDeleted,
       };
@@ -208,9 +213,57 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (Array.isArray(result)) {
         this.directDialogs = result.map((dialogRaw: any) => ({
           ...dialogRaw,
+          targetUser: this.normalizeUser(dialogRaw?.targetUser) || dialogRaw?.targetUser,
           roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
         }));
       }
+    },
+
+    async fetchPinnedDirectUserIds(this: any) {
+      const result = await ws.request('contacts:list');
+      if (!Array.isArray(result)) {
+        this.pinnedDirectUserIds = [];
+        return;
+      }
+
+      this.pinnedDirectUserIds = result
+        .map((row: any) => Number(row?.id || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0);
+    },
+
+    async fetchRoomsNavigation(this: any) {
+      const [joinedResult, publicResult] = await Promise.all([
+        ws.request('room:list', {kind: 'group', scope: 'joined'}),
+        ws.request('room:list', {kind: 'group', scope: 'public'}),
+      ]);
+
+      const normalizeRoomDialog = (dialogRaw: any): Dialog => ({
+        id: Number(dialogRaw?.roomId || dialogRaw?.dialogId || 0),
+        kind: 'group',
+        joined: dialogRaw?.joined !== undefined ? !!dialogRaw.joined : true,
+        title: String(dialogRaw?.title || 'Комната'),
+        visibility: dialogRaw?.visibility === 'private' ? 'private' : 'public',
+        commentsEnabled: dialogRaw?.commentsEnabled !== undefined ? !!dialogRaw.commentsEnabled : true,
+        avatarUrl: resolveMediaUrl(dialogRaw?.avatarUrl) || null,
+        postOnlyByAdmin: !!dialogRaw?.postOnlyByAdmin,
+        createdById: Number(dialogRaw?.createdById || 0) || null,
+        pinnedNodeId: Number(dialogRaw?.pinnedNodeId || 0) || null,
+        roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
+        discussion: null,
+      });
+
+      this.joinedRooms = Array.isArray(joinedResult)
+        ? joinedResult
+          .map((row: any) => normalizeRoomDialog(row))
+          .filter((dialog: Dialog) => Number(dialog.id || 0) > 0)
+        : [];
+
+      const joinedIds = new Set(this.joinedRooms.map((dialog: Dialog) => Number(dialog.id || 0)));
+      this.publicRooms = Array.isArray(publicResult)
+        ? publicResult
+          .map((row: any) => normalizeRoomDialog(row))
+          .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !joinedIds.has(Number(dialog.id || 0)))
+        : [];
     },
 
     async fetchGeneralDialog(this: any) {
@@ -219,7 +272,12 @@ export const chatMethodsAuthDialogsAndProfile = {
       return {
         id: (result as any).roomId,
         kind: 'group',
+        joined: true,
         title: (result as any).title,
+        visibility: (result as any).visibility === 'private' ? 'private' : 'public',
+        commentsEnabled: (result as any).commentsEnabled !== undefined ? !!(result as any).commentsEnabled : true,
+        avatarUrl: resolveMediaUrl((result as any).avatarUrl) || null,
+        postOnlyByAdmin: !!(result as any).postOnlyByAdmin,
         createdById: Number((result as any).createdById || 0) || null,
         pinnedNodeId: Number((result as any).pinnedNodeId || 0) || null,
         roomSurface: this.normalizeRoomSurface((result as any).roomSurface, (result as any).pinnedNodeId),
@@ -233,11 +291,15 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.error = 'Не удалось открыть диалог.';
         return null;
       }
+      const normalizedTargetUser = this.normalizeUser((result as any).targetUser) || (result as any).targetUser;
       return {
         id: (result as any).roomId,
         kind: 'direct',
-        targetUser: (result as any).targetUser,
-        title: (result as any).targetUser.name,
+        joined: true,
+        targetUser: normalizedTargetUser,
+        title: String(normalizedTargetUser?.name || normalizedTargetUser?.nickname || 'Чат'),
+        visibility: 'private',
+        commentsEnabled: false,
         createdById: null,
         pinnedNodeId: Number((result as any).pinnedNodeId || 0) || null,
         roomSurface: this.normalizeRoomSurface((result as any).roomSurface, (result as any).pinnedNodeId),
@@ -339,6 +401,18 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.activeDialog = {
           ...this.activeDialog,
           kind: nextKind,
+          joined: (result as any).joined !== undefined ? !!(result as any).joined : (this.activeDialog?.joined !== false),
+          title: (result as any).title
+            ? String((result as any).title)
+            : (this.activeDialog?.title || (nextKind === 'direct' ? 'Чат' : 'Комната')),
+          visibility: (result as any).visibility === 'private' ? 'private' : (this.activeDialog?.visibility || 'public'),
+          commentsEnabled: (result as any).commentsEnabled !== undefined
+            ? !!(result as any).commentsEnabled
+            : (this.activeDialog?.commentsEnabled !== undefined ? !!this.activeDialog.commentsEnabled : true),
+          avatarUrl: resolveMediaUrl((result as any).avatarUrl) || (this.activeDialog?.avatarUrl || null),
+          postOnlyByAdmin: (result as any).postOnlyByAdmin !== undefined
+            ? !!(result as any).postOnlyByAdmin
+            : !!this.activeDialog?.postOnlyByAdmin,
           createdById: Number((result as any).createdById || 0) || null,
           pinnedNodeId: nextPinnedNodeId,
           roomSurface: this.normalizeRoomSurface((result as any).roomSurface, nextPinnedNodeId),
@@ -365,6 +439,11 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.pinnedCollapsed = this.loadPinnedCollapsedState(dialog.id);
       this.scriptMessageViewModels = {};
       this.discussionOpenPendingMessageId = null;
+      this.roomInviteOpen = false;
+      this.roomInviteLoading = false;
+      this.roomInviteError = '';
+      this.roomInviteSearchQuery = '';
+      this.roomInviteSelectedIds = [];
       this.historyHasMore = true;
       this.historyLoadingMore = false;
       this.resetMessagePreviewCache();
@@ -410,7 +489,114 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.notificationsMenuOpen = false;
       this.leftMenuOpen = false;
       this.rightMenuOpen = false;
-      await this.router.push('/vpn');
+      await this.router.push({
+        path: '/console',
+        query: {
+          tab: 'vpn',
+        },
+      });
+    },
+
+    async onOpenOwnProfilePage(this: any) {
+      if (!this.me?.nickname) return;
+      this.hapticTap();
+      this.notificationsMenuOpen = false;
+      this.leftMenuOpen = false;
+      this.rightMenuOpen = false;
+      await this.router.push({
+        path: '/console',
+        query: {
+          tab: 'user',
+          nickname: this.me.nickname,
+        },
+      });
+    },
+
+    resolveDialogAvatarUrl(this: any, dialogRaw: Dialog | null) {
+      const dialog = dialogRaw || this.activeDialog;
+      if (!dialog) return '';
+      if (dialog.kind === 'direct') {
+        return resolveMediaUrl(dialog.targetUser?.avatarUrl);
+      }
+      if (dialog.discussion?.sourceRoomAvatarUrl) {
+        return resolveMediaUrl(dialog.discussion.sourceRoomAvatarUrl);
+      }
+      return resolveMediaUrl(dialog.avatarUrl);
+    },
+
+    getDialogAvatarFallback(this: any, dialogRaw: Dialog | null) {
+      const dialog = dialogRaw || this.activeDialog;
+      if (!dialog) return '?';
+      if (dialog.kind === 'direct') {
+        return ((dialog.targetUser?.name || dialog.targetUser?.nickname || '?').trim().charAt(0) || '?').toUpperCase();
+      }
+      const sourceTitle = String(dialog.discussion?.sourceRoomTitle || '').trim();
+      return ((sourceTitle || dialog.title || 'К').trim().charAt(0) || 'К').toUpperCase();
+    },
+
+    async onOpenActiveDialogInfoPage(this: any) {
+      if (!this.activeDialog) return;
+      this.hapticTap();
+      if (this.activeDialog.kind === 'direct' && this.activeDialog?.targetUser?.nickname) {
+        await this.router.push({
+          path: '/console',
+          query: {
+            tab: 'user',
+            nickname: this.activeDialog.targetUser.nickname,
+          },
+        });
+        return;
+      }
+
+      const roomId = Number(this.activeDialog?.discussion?.sourceRoomId || this.activeDialog?.id || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      await this.router.push({
+        path: '/console',
+        query: {
+          tab: 'rooms',
+          roomId: String(roomId),
+        },
+      });
+    },
+
+    async onPinActiveDialog(this: any) {
+      if (!this.activeDialog || this.navPinPending || !this.canPinActiveDialog) return;
+      this.hapticTap();
+      this.navPinPending = true;
+      this.error = '';
+
+      try {
+        if (this.activeDialog.kind === 'direct') {
+          const userId = Number(this.activeDialog?.targetUser?.id || 0);
+          if (!Number.isFinite(userId) || userId <= 0) return;
+          const result = await ws.request('contacts:add', {userId});
+          if (!(result as any)?.ok) {
+            this.error = 'Не удалось закрепить директ.';
+            return;
+          }
+          await this.fetchPinnedDirectUserIds();
+          this.pushToast('Директ', 'Добавлен в контакты');
+          return;
+        }
+
+        const roomId = Number(this.activeDialog.id || 0);
+        if (!Number.isFinite(roomId) || roomId <= 0) return;
+        const result = await ws.request('room:join', {roomId});
+        if (!(result as any)?.ok) {
+          this.error = 'Не удалось закрепить комнату.';
+          return;
+        }
+        if (this.activeDialog?.id === roomId) {
+          this.activeDialog = {
+            ...this.activeDialog,
+            joined: true,
+          };
+        }
+        await this.fetchRoomsNavigation();
+        this.pushToast('Комната', 'Добавлена в навигацию');
+      } finally {
+        this.navPinPending = false;
+      }
     },
 
     async selectPrivate(this: any, user: User, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; refreshDirects?: boolean; haptic?: boolean}) {
@@ -437,8 +623,11 @@ export const chatMethodsAuthDialogsAndProfile = {
       await this.selectDialog({
         id: dialog.roomId,
         kind: 'direct',
+        joined: true,
         targetUser: dialog.targetUser,
         title: dialog.targetUser.name,
+        visibility: 'private',
+        commentsEnabled: false,
         createdById: null,
         pinnedNodeId: Number(dialog.pinnedNodeId || 0) || null,
         roomSurface: this.normalizeRoomSurface(dialog?.roomSurface, dialog?.pinnedNodeId),
@@ -464,6 +653,20 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.activeDialog = {
         ...this.activeDialog,
         kind: roomKind,
+        joined: payloadRaw?.joined !== undefined
+          ? !!payloadRaw.joined
+          : (roomKind === 'direct' ? true : (this.activeDialog?.joined !== false)),
+        title: payloadRaw?.title
+          ? String(payloadRaw.title)
+          : (this.activeDialog?.title || (roomKind === 'direct' ? 'Чат' : 'Комната')),
+        visibility: payloadRaw?.visibility === 'private' ? 'private' : (this.activeDialog?.visibility || 'public'),
+        commentsEnabled: payloadRaw?.commentsEnabled !== undefined
+          ? !!payloadRaw.commentsEnabled
+          : (this.activeDialog?.commentsEnabled !== undefined ? !!this.activeDialog.commentsEnabled : true),
+        avatarUrl: resolveMediaUrl(payloadRaw?.avatarUrl) || (this.activeDialog?.avatarUrl || null),
+        postOnlyByAdmin: payloadRaw?.postOnlyByAdmin !== undefined
+          ? !!payloadRaw.postOnlyByAdmin
+          : !!this.activeDialog?.postOnlyByAdmin,
         createdById: Number(payloadRaw?.createdById || 0) || null,
         pinnedNodeId,
         roomSurface: this.normalizeRoomSurface(payloadRaw?.roomSurface, pinnedNodeId),
@@ -472,6 +675,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'roomRuntime')) {
         this.setActiveRoomScript(payloadRaw?.roomRuntime || null);
       }
+      void this.fetchRoomsNavigation();
     },
 
     async onDeleteActiveRoom(this: any) {
@@ -507,7 +711,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (this.leftMenuOpen) {
         this.rightMenuOpen = false;
         this.notificationsMenuOpen = false;
-        void this.refreshSpacesNavigation({silent: true});
+        void this.fetchRoomsNavigation();
       }
     },
 
@@ -518,6 +722,149 @@ export const chatMethodsAuthDialogsAndProfile = {
     onCloseLeftMenuClick(this: any) {
       this.hapticTap();
       this.closeLeftMenu();
+    },
+
+    async selectRoomDialog(this: any, dialogRaw: Dialog) {
+      const dialog: Dialog = {
+        ...dialogRaw,
+        kind: 'group',
+        joined: true,
+        visibility: dialogRaw?.visibility === 'private' ? 'private' : 'public',
+        commentsEnabled: dialogRaw?.commentsEnabled !== undefined ? !!dialogRaw.commentsEnabled : true,
+        avatarUrl: resolveMediaUrl(dialogRaw?.avatarUrl) || null,
+        postOnlyByAdmin: !!dialogRaw?.postOnlyByAdmin,
+        roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
+        discussion: null,
+      };
+      await this.selectDialog(dialog, {routeMode: 'push'});
+      this.closeLeftMenu();
+    },
+
+    async createRoom(this: any) {
+      if (this.roomCreating) return;
+      this.roomCreating = true;
+      this.error = '';
+
+      try {
+        const result = await ws.request('room:create', {
+          title: String(this.roomCreateTitle || '').trim() || 'Комната',
+          visibility: this.roomCreateVisibility === 'private' ? 'private' : 'public',
+          commentsEnabled: !!this.roomCreateCommentsEnabled,
+        });
+        if (!(result as any)?.ok) {
+          this.error = 'Не удалось создать комнату.';
+          return;
+        }
+
+        const dialog: Dialog = {
+          id: Number((result as any).roomId || 0),
+          kind: 'group',
+          joined: true,
+          title: String((result as any).title || 'Комната'),
+          visibility: (result as any).visibility === 'private' ? 'private' : 'public',
+          commentsEnabled: (result as any).commentsEnabled !== undefined ? !!(result as any).commentsEnabled : true,
+          avatarUrl: resolveMediaUrl((result as any).avatarUrl) || null,
+          postOnlyByAdmin: !!(result as any).postOnlyByAdmin,
+          createdById: Number((result as any).createdById || 0) || null,
+          pinnedNodeId: Number((result as any).pinnedNodeId || 0) || null,
+          roomSurface: this.normalizeRoomSurface((result as any).roomSurface, (result as any).pinnedNodeId),
+          discussion: null,
+        };
+        this.roomCreateTitle = '';
+        this.roomCreateVisibility = 'public';
+        this.roomCreateCommentsEnabled = true;
+        await this.fetchRoomsNavigation();
+        await this.selectRoomDialog(dialog);
+      } finally {
+        this.roomCreating = false;
+      }
+    },
+
+    async joinPublicRoom(this: any, dialogRaw: Dialog) {
+      const roomId = Number(dialogRaw?.id || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+
+      const result = await ws.request('room:join', {roomId});
+      if (!(result as any)?.ok) {
+        this.error = 'Не удалось войти в комнату.';
+        return;
+      }
+
+      await this.fetchRoomsNavigation();
+      await this.selectRoomDialog(dialogRaw);
+    },
+
+    async loadRoomInviteContacts(this: any) {
+      const result = await ws.request('contacts:list');
+      if (!Array.isArray(result)) {
+        this.roomInviteContacts = [];
+        this.pinnedDirectUserIds = [];
+        return;
+      }
+
+      this.roomInviteContacts = result
+        .map((row: any) => this.normalizeUser(row))
+        .filter(Boolean) as User[];
+      this.pinnedDirectUserIds = result
+        .map((row: any) => Number(row?.id || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0);
+    },
+
+    async toggleRoomInvitePanel(this: any) {
+      if (!this.activeDialog?.id || !this.isActiveDialogAdmin || this.activeDialog.kind === 'direct') return;
+      this.roomInviteOpen = !this.roomInviteOpen;
+      this.roomInviteError = '';
+      if (!this.roomInviteOpen) return;
+
+      this.roomInviteLoading = true;
+      try {
+        await this.loadRoomInviteContacts();
+        this.roomInviteSelectedIds = [];
+        this.roomInviteSearchQuery = '';
+      } finally {
+        this.roomInviteLoading = false;
+      }
+    },
+
+    toggleRoomInviteSelection(this: any, userIdRaw: unknown) {
+      const userId = Number(userIdRaw || 0);
+      if (!Number.isFinite(userId) || userId <= 0) return;
+      const current = new Set((this.roomInviteSelectedIds || []).map((value: number) => Number(value || 0)));
+      if (current.has(userId)) {
+        current.delete(userId);
+      } else {
+        current.add(userId);
+      }
+      this.roomInviteSelectedIds = Array.from(current);
+    },
+
+    isRoomInviteSelected(this: any, userIdRaw: unknown) {
+      const userId = Number(userIdRaw || 0);
+      if (!Number.isFinite(userId) || userId <= 0) return false;
+      return (this.roomInviteSelectedIds || []).includes(userId);
+    },
+
+    async submitRoomInvite(this: any) {
+      if (!this.activeDialog?.id || !this.roomInviteSelectedIds.length) return;
+      this.roomInviteLoading = true;
+      this.roomInviteError = '';
+
+      try {
+        const result = await ws.request('room:members:add', {
+          roomId: this.activeDialog.id,
+          userIds: this.roomInviteSelectedIds,
+        });
+        if (!(result as any)?.ok) {
+          this.roomInviteError = 'Не удалось добавить пользователей.';
+          return;
+        }
+
+        this.roomInviteSelectedIds = [];
+        this.roomInviteOpen = false;
+        this.pushToast('Комната', 'Пользователи добавлены');
+      } finally {
+        this.roomInviteLoading = false;
+      }
     },
 
     toggleRightMenu(this: any) {

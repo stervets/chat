@@ -4,6 +4,8 @@ export type User = {
   id: Id;
   nickname: string;
   name: string;
+  info?: string | null;
+  avatarUrl?: string | null;
   nicknameColor: string | null;
   donationBadgeUntil?: string | null;
   pushDisableAllMentions?: boolean;
@@ -16,6 +18,11 @@ export type Invite = {
   usedAt?: string | null;
   usedBy?: User | null;
   isUsed: boolean;
+  rooms?: Array<{
+    roomId: number;
+    title: string;
+    visibility: 'public' | 'private';
+  }>;
 };
 
 export type DialogKind = 'group' | 'direct' | 'game' | 'comment';
@@ -36,6 +43,7 @@ export type DiscussionMeta = {
   sourceRoomId: Id | null;
   sourceRoomKind: DialogKind | null;
   sourceRoomTitle: string | null;
+  sourceRoomAvatarUrl?: string | null;
   sourceMessagePreview: string;
   sourceMessageDeleted: boolean;
 };
@@ -43,7 +51,12 @@ export type DiscussionMeta = {
 export type Dialog = {
   id: Id;
   kind: DialogKind;
+  joined?: boolean;
   title?: string;
+  visibility?: 'public' | 'private';
+  commentsEnabled?: boolean;
+  avatarUrl?: string | null;
+  postOnlyByAdmin?: boolean;
   targetUser?: User;
   createdById?: Id | null;
   pinnedNodeId?: Id | null;
@@ -74,6 +87,7 @@ export type Message = {
     data: Record<string, any>;
   };
   commentRoomId: Id | null;
+  commentCount?: number;
   body?: string;
   createdAt: string;
   reactions: MessageReaction[];

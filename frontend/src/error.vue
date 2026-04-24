@@ -14,7 +14,7 @@
         <p>{{ descriptionText }}</p>
 
         <div class="actions">
-          <button class="btn" type="button" @click="onGoHome">В чат</button>
+          <button class="btn" type="button" @click="onGoHome">Назад</button>
           <button class="btn btn-ghost" type="button" @click="onRetry">Обновить</button>
         </div>
       </div>

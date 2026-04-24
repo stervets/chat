@@ -1,4 +1,4 @@
-import {Injectable, type OnApplicationShutdown} from '@nestjs/common';
+import {Injectable} from '@nestjs/common';
 import type {SocketState} from '../protocol.js';
 import {ChatAuthService} from './chat-auth.service.js';
 import {ChatContext} from './chat-context.js';
@@ -8,10 +8,9 @@ import {ChatGamesService} from './chat-games.service.js';
 import {ChatMessagesService} from './chat-messages.service.js';
 import {ChatReactionsService} from './chat-reactions.service.js';
 import {ChatUsersService} from './chat-users.service.js';
-import {ScriptableService} from '../../scriptable/service.js';
 
 @Injectable()
-export class ChatService implements OnApplicationShutdown {
+export class ChatService {
   private readonly ctx = new ChatContext();
   private readonly authService = new ChatAuthService(this.ctx);
   private readonly usersService = new ChatUsersService(this.ctx);
@@ -20,15 +19,6 @@ export class ChatService implements OnApplicationShutdown {
   private readonly roomsService = new ChatDialogsService(this.ctx);
   private readonly messagesService = new ChatMessagesService(this.ctx);
   private readonly reactionsService = new ChatReactionsService(this.ctx);
-  private readonly scriptableService = new ScriptableService(this.ctx);
-
-  constructor() {
-    this.scriptableService.startRunnerClient();
-  }
-
-  onApplicationShutdown() {
-    this.scriptableService.stopRunnerClient();
-  }
 
   authLogin(state: SocketState, payload: any) {
     return this.authService.authLogin(state, payload);
@@ -58,12 +48,28 @@ export class ChatService implements OnApplicationShutdown {
     return this.usersService.usersList(state);
   }
 
+  userGet(state: SocketState, payload: {userId?: unknown; nickname?: unknown}) {
+    return this.usersService.userGet(state, payload);
+  }
+
+  contactsList(state: SocketState) {
+    return this.usersService.contactsList(state);
+  }
+
+  contactsAdd(state: SocketState, payload: {userId?: unknown}) {
+    return this.usersService.contactsAdd(state, payload);
+  }
+
+  contactsRemove(state: SocketState, payload: {userId?: unknown}) {
+    return this.usersService.contactsRemove(state, payload);
+  }
+
   invitesList(state: SocketState) {
     return this.invitesService.invitesList(state);
   }
 
-  invitesCreate(state: SocketState) {
-    return this.invitesService.invitesCreate(state);
+  invitesCreate(state: SocketState, payload: {roomIds?: unknown}) {
+    return this.invitesService.invitesCreate(state, payload);
   }
 
   invitesCheck(state: SocketState, payload: any) {
@@ -72,6 +78,14 @@ export class ChatService implements OnApplicationShutdown {
 
   invitesRedeem(state: SocketState, payload: any) {
     return this.invitesService.invitesRedeem(state, payload);
+  }
+
+  invitesAvailableRooms(state: SocketState) {
+    return this.invitesService.invitesAvailableRooms(state);
+  }
+
+  invitesDelete(state: SocketState, payload: {inviteId?: unknown}) {
+    return this.invitesService.invitesDelete(state, payload);
   }
 
   publicVpnInfo(state: SocketState) {
@@ -110,6 +124,10 @@ export class ChatService implements OnApplicationShutdown {
     return this.roomsService.roomListDirect(state);
   }
 
+  roomListJoined(state: SocketState, scopeRaw?: unknown) {
+    return this.roomsService.roomListJoined(state, scopeRaw);
+  }
+
   messageList(state: SocketState, roomIdRaw: unknown, limitRaw?: unknown, beforeMessageIdRaw?: unknown) {
     return this.roomsService.messageList(state, roomIdRaw, limitRaw, beforeMessageIdRaw);
   }
@@ -122,8 +140,28 @@ export class ChatService implements OnApplicationShutdown {
     return this.roomsService.roomCreate(state, payloadRaw);
   }
 
-  roomSurfaceSet(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
-    return this.roomsService.roomSurfaceSet(state, roomIdRaw, payloadRaw);
+  roomJoin(state: SocketState, roomIdRaw: unknown) {
+    return this.roomsService.roomJoin(state, roomIdRaw);
+  }
+
+  roomLeave(state: SocketState, roomIdRaw: unknown) {
+    return this.roomsService.roomLeave(state, roomIdRaw);
+  }
+
+  roomMembersList(state: SocketState, roomIdRaw: unknown) {
+    return this.roomsService.roomMembersList(state, roomIdRaw);
+  }
+
+  roomMembersAdd(state: SocketState, payloadRaw: any) {
+    return this.roomsService.roomMembersAdd(state, payloadRaw);
+  }
+
+  roomMembersRemove(state: SocketState, payloadRaw: any) {
+    return this.roomsService.roomMembersRemove(state, payloadRaw);
+  }
+
+  roomSettingsUpdate(state: SocketState, payloadRaw: any) {
+    return this.roomsService.roomSettingsUpdate(state, payloadRaw);
   }
 
   roomDelete(state: SocketState, roomIdRaw: unknown, optionsRaw?: any) {
@@ -162,19 +200,23 @@ export class ChatService implements OnApplicationShutdown {
     return this.reactionsService.messageReactionSet(state, messageIdRaw, reactionRaw);
   }
 
-  messageCreateScriptable(state: SocketState, roomIdRaw: unknown, payloadRaw: any) {
-    return this.scriptableService.createScriptableMessage(state, roomIdRaw, payloadRaw);
+  messageCreateScriptable(_state: SocketState, _roomIdRaw: unknown, _payloadRaw: any) {
+    return {ok: false, error: 'scriptable_disabled'};
   }
 
-  runtimeAction(state: SocketState, payloadRaw: any) {
-    return this.scriptableService.applyScriptAction(state, payloadRaw);
+  runtimeAction(_state: SocketState, _payloadRaw: any) {
+    return {ok: false, error: 'scriptable_disabled'};
   }
 
-  roomRuntimeGet(state: SocketState, roomIdRaw: unknown) {
-    return this.scriptableService.getRoomScriptEntity(state, roomIdRaw);
+  roomRuntimeGet(_state: SocketState, _roomIdRaw: unknown) {
+    return {ok: true, roomRuntime: null};
   }
 
-  scriptableNotifyRoomEvent(input: {roomId: number; eventType: string; eventPayload: any}) {
-    return this.scriptableService.notifyRoomEvent(input);
+  roomSurfaceSet(_state: SocketState, _roomIdRaw: unknown, _payloadRaw: any) {
+    return {ok: false, error: 'scriptable_disabled'};
+  }
+
+  scriptableNotifyRoomEvent(_input: {roomId: number; eventType: string; eventPayload: any}) {
+    return {ok: true};
   }
 }

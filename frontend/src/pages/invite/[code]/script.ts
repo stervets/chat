@@ -1,5 +1,5 @@
 import {ref} from 'vue';
-import {wsCheckInvite, wsRedeemInvite} from '@/composables/ws-rpc';
+import {restoreSession, wsCheckInvite, wsRedeemInvite} from '@/composables/ws-rpc';
 import {vibrateConfirm, vibrateError} from '@/utils/vibrate';
 
 export default {
@@ -15,6 +15,8 @@ export default {
       loading: ref(false),
       inviteChecking: ref(true),
       inviteValid: ref(false),
+      existingUserApplied: ref(false),
+      existingUserMessage: ref(''),
     };
   },
 
@@ -47,6 +49,40 @@ export default {
         this.error = 'Сервер недоступен.';
       } finally {
         this.inviteChecking = false;
+      }
+    },
+
+    buildExistingUserInviteMessage(this: any, resultRaw: any) {
+      const roomsAdded = Number(resultRaw?.roomsAdded || (Array.isArray(resultRaw?.addedRoomIds) ? resultRaw.addedRoomIds.length : 0));
+      if (Number.isFinite(roomsAdded) && roomsAdded > 0) {
+        return roomsAdded === 1
+          ? 'Получен доступ к 1 новой комнате.'
+          : `Получен доступ к ${roomsAdded} новым комнатам.`;
+      }
+      return 'Инвайт обработан. Новых комнат не добавилось.';
+    },
+
+    async tryRedeemForAuthorizedUser(this: any) {
+      const session = await restoreSession();
+      if (!(session as any)?.ok || !(session as any)?.user?.id) return;
+      if (!this.inviteValid) return;
+
+      this.loading = true;
+      try {
+        const result = await wsRedeemInvite(this.code, '', '');
+        if (!(result as any)?.ok) {
+          this.error = this.mapInviteError((result as any)?.error);
+          return;
+        }
+        if ((result as any)?.appliedToExistingUser) {
+          this.existingUserApplied = true;
+          this.existingUserMessage = this.buildExistingUserInviteMessage(result);
+          vibrateConfirm();
+        }
+      } catch {
+        this.error = 'Сервер недоступен.';
+      } finally {
+        this.loading = false;
       }
     },
 
@@ -96,9 +132,14 @@ export default {
       event.preventDefault();
       void this.onRegister();
     },
+
+    async onGoChat(this: any) {
+      await this.router.push('/chat');
+    },
   },
 
   async mounted(this: any) {
     await this.validateInvite();
+    await this.tryRedeemForAuthorizedUser();
   },
 };

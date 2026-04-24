@@ -16,6 +16,8 @@ export type SocketUser = {
   id: number;
   nickname: string;
   name: string;
+  info: string | null;
+  avatarUrl: string | null;
   nicknameColor: string | null;
   donationBadgeUntil: string | null;
   pushDisableAllMentions: boolean;

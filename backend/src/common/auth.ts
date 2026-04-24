@@ -8,6 +8,8 @@ export type ResolvedSession = {
     id: number;
     nickname: string;
     name: string;
+    info: string | null;
+    avatarUrl: string | null;
     nicknameColor: string | null;
     donationBadgeUntil: string | null;
     pushDisableAllMentions: boolean;
@@ -60,6 +62,8 @@ export async function resolveSession(token: string): Promise<ResolvedSession | n
           id: true,
           nickname: true,
           name: true,
+          info: true,
+          avatarPath: true,
           nicknameColor: true,
           donationBadgeUntil: true,
           pushDisableAllMentions: true,
@@ -77,6 +81,8 @@ export async function resolveSession(token: string): Promise<ResolvedSession | n
       id: row.user.id,
       nickname: row.user.nickname,
       name: row.user.name || row.user.nickname,
+      info: row.user.info?.trim() ? row.user.info.trim() : null,
+      avatarUrl: row.user.avatarPath?.trim() ? row.user.avatarPath.trim() : null,
       nicknameColor: row.user.nicknameColor || DEFAULT_NICKNAME_COLOR,
       donationBadgeUntil: row.user.donationBadgeUntil ? row.user.donationBadgeUntil.toISOString() : null,
       pushDisableAllMentions: !!row.user.pushDisableAllMentions,

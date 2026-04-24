@@ -12,12 +12,12 @@ import {ensureUserInGroupRooms, getOrCreateDirectRoom} from '../../common/rooms.
 import {deleteUploadFile, sanitizeUploadName} from '../../common/uploads.js';
 import {
   findCommentRoomNodeIdByMessageId,
-  readNodeRuntime,
 } from '../../common/nodes.js';
 import type {SocketState} from '../protocol.js';
 
 export const MAX_MESSAGE_LENGTH = 5000;
 export const MAX_USER_NAME_LENGTH = 80;
+export const MAX_USER_INFO_LENGTH = 2000;
 export const MAX_PASSWORD_LENGTH = 256;
 export const MIN_PASSWORD_LENGTH = 3;
 export const DAY_MS = 24 * 60 * 60 * 1000;
@@ -31,6 +31,8 @@ export const ANONYMOUS_AUTHOR_NAME = 'Аноним';
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const UPLOAD_LINK_RE = /\/uploads\/([a-zA-Z0-9._-]+)/gi;
+const AVATAR_PATH_RE = /^\/uploads\/[a-zA-Z0-9._-]+$/;
+const ROOM_AVATAR_PATH_RE = /^\/(?:uploads\/[a-zA-Z0-9._-]+|[a-zA-Z0-9._-]+\.(?:png|jpe?g|webp|gif|svg))$/i;
 const ALLOWED_REACTIONS = new Set([
   '🙂',
   '👍',
@@ -52,6 +54,8 @@ export type PublicUser = {
   id: number;
   nickname: string;
   name: string;
+  info: string | null;
+  avatarUrl: string | null;
   nicknameColor: string | null;
   donationBadgeUntil: string | null;
   pushDisableAllMentions: boolean;
@@ -61,6 +65,8 @@ export type UserRow = {
   id: number;
   nickname: string;
   name: string | null;
+  info?: string | null;
+  avatarPath?: string | null;
   nicknameColor: string | null;
   donationBadgeUntil?: Date | null;
   pushDisableAllMentions?: boolean;
@@ -246,6 +252,48 @@ export class ChatContext {
     return {ok: true, value: value.toLowerCase()};
   }
 
+  parseAvatarPath(raw: unknown) {
+    if (raw === undefined) return {ok: true, value: undefined as string | null | undefined};
+    if (raw === null) return {ok: true, value: null};
+
+    const value = String(raw || '').trim();
+    if (!value) return {ok: true, value: null};
+    if (!AVATAR_PATH_RE.test(value)) {
+      return {ok: false, error: 'invalid_avatar_path'};
+    }
+    return {ok: true, value};
+  }
+
+  parseRoomAvatarPath(raw: unknown) {
+    if (raw === undefined) return {ok: true, value: undefined as string | null | undefined};
+    if (raw === null) return {ok: true, value: null};
+
+    const value = String(raw || '').trim();
+    if (!value) return {ok: true, value: null};
+    if (!ROOM_AVATAR_PATH_RE.test(value)) {
+      return {ok: false, error: 'invalid_avatar_path'};
+    }
+    return {ok: true, value};
+  }
+
+  normalizeUserInfo(raw: unknown) {
+    const value = String(raw ?? '').trim();
+    if (!value) return null;
+    return value.slice(0, MAX_USER_INFO_LENGTH);
+  }
+
+  toAvatarUrl(raw: unknown) {
+    const path = String(raw || '').trim();
+    if (!path) return null;
+    return AVATAR_PATH_RE.test(path) ? path : null;
+  }
+
+  toRoomAvatarUrl(raw: unknown) {
+    const path = String(raw || '').trim();
+    if (!path) return null;
+    return ROOM_AVATAR_PATH_RE.test(path) ? path : null;
+  }
+
   normalizeDonationBadgeUntil(raw: Date | string | null | undefined) {
     if (!raw) return null;
     if (raw instanceof Date) {
@@ -261,6 +309,8 @@ export class ChatContext {
       id: user.id,
       nickname: user.nickname,
       name: user.name?.trim() ? user.name.trim() : user.nickname,
+      info: user.info?.trim() ? user.info.trim() : null,
+      avatarUrl: this.toAvatarUrl(user.avatarPath),
       nicknameColor: user.nicknameColor || DEFAULT_NICKNAME_COLOR,
       donationBadgeUntil: this.normalizeDonationBadgeUntil(user.donationBadgeUntil),
       pushDisableAllMentions: !!user.pushDisableAllMentions,
@@ -586,6 +636,11 @@ export class ChatContext {
     return this.compileMessageWithContext(rawText, context, sourceMessageId);
   }
 
+  getDisabledScriptableFallbackText(rawTextRaw: unknown) {
+    const rawText = String(rawTextRaw || '').trim();
+    return rawText || '[scriptable disabled]';
+  }
+
   async loadMessagePayloadById(roomId: number, messageId: number): Promise<ChatContextMessagePayload | null> {
     const messageRow = await db.message.findFirst({
       where: {
@@ -625,15 +680,23 @@ export class ChatContext {
     if (!messageRow) return null;
 
     const commentRoomId = await findCommentRoomNodeIdByMessageId(messageRow.id);
-    const runtime = readNodeRuntime(messageRow.node);
-
+    let commentCount = 0;
+    if (commentRoomId) {
+      commentCount = await db.message.count({
+        where: {
+          node: {
+            parentId: commentRoomId,
+          },
+        },
+      });
+    }
     const isScriptable = messageRow.kind === 'scriptable';
     const compiled = isScriptable
-      ? {
-        rawText: String(messageRow.rawText || ''),
-        renderedHtml: String(messageRow.renderedHtml || ''),
-        renderedPreviews: [],
-      }
+      ? await this.compileMessageForRoom(
+        roomId,
+        this.getDisabledScriptableFallbackText(messageRow.rawText),
+        messageRow.id,
+      )
       : await this.compileMessageForRoom(roomId, String(messageRow.rawText || ''), messageRow.id);
 
     const author = this.toMessageAuthor({
@@ -645,7 +708,7 @@ export class ChatContext {
       id: messageRow.id,
       roomId,
       dialogId: roomId,
-      kind: messageRow.kind === 'system' || messageRow.kind === 'scriptable' ? messageRow.kind : 'text',
+      kind: messageRow.kind === 'system' ? 'system' : 'text',
       authorId: author.authorId,
       authorNickname: author.authorNickname,
       authorName: author.authorName,
@@ -654,8 +717,13 @@ export class ChatContext {
       rawText: compiled.rawText,
       renderedHtml: compiled.renderedHtml,
       renderedPreviews: compiled.renderedPreviews,
-      runtime,
+      runtime: {
+        clientScript: null,
+        serverScript: null,
+        data: {},
+      },
       commentRoomId,
+      commentCount,
       createdAt: messageRow.createdAt.toISOString(),
       reactions: await this.loadMessageReactions(messageRow.id),
     };
@@ -802,6 +870,7 @@ export type ChatContextMessagePayload = {
     data: Record<string, any>;
   };
   commentRoomId?: number | null;
+  commentCount?: number;
   createdAt: string;
   reactions: MessageReaction[];
 };

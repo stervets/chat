@@ -1,4 +1,5 @@
 import {ref} from 'vue';
+import {loadLastChatPath} from '@/composables/last-chat';
 import {restoreSession, wsGamesSoloCreate} from '@/composables/ws-rpc';
 
 export default {
@@ -21,7 +22,7 @@ export default {
     },
 
     async goBackToChat(this: any) {
-      await this.router.push('/chat');
+      await this.router.push(loadLastChatPath());
     },
 
     async createSoloKing(this: any) {

@@ -31,6 +31,7 @@ model User {
   name                  String              @db.VarChar(80)
   isBot                 Boolean             @default(false) @map("is_bot")
   info                  String?             @db.Text
+  avatarPath            String?             @map("avatar_path") @db.Text
   nicknameColor         String?             @map("nickname_color") @db.VarChar(7)
   pushDisableAllMentions Boolean            @default(false) @map("push_disable_all_mentions")
   donationBadgeUntil    DateTime?           @map("donation_badge_until") @db.Timestamptz(3)
@@ -47,6 +48,8 @@ model User {
   pushSubscriptions     PushSubscription[]
   createdGameSessions   GameSession[]       @relation("GameSessionCreatedBy")
   gameSessionPlayers    GameSessionPlayer[]
+  ownedContacts         UserContact[]       @relation("ContactOwner")
+  contactOf             UserContact[]       @relation("ContactTarget")
 
   @@index([name], map: "users_name_idx")
   @@map("users")
@@ -62,6 +65,7 @@ model Invite {
   usedBy      User?     @relation("InviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
   usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
   expiresAt   DateTime? @map("expires_at") @db.Timestamptz(3)
+  rooms       InviteRoom[]
 
   @@map("invites")
 }
@@ -90,14 +94,19 @@ model Node {
 }
 
 model Room {
-  id           Int      @id
-  node         Node     @relation(fields: [id], references: [id], onDelete: Cascade)
-  kind         String   @db.VarChar(64)
-  title        String?  @db.Text
-  pinnedNodeId Int?     @map("pinned_node_id")
-  pinnedNode   Node?    @relation("RoomPinnedNode", fields: [pinnedNodeId], references: [id], onDelete: SetNull)
-  roomUsers    RoomUser[]
-  gameSessions GameSession[]
+  id              Int      @id
+  node            Node     @relation(fields: [id], references: [id], onDelete: Cascade)
+  kind            String   @db.VarChar(64)
+  title           String?  @db.Text
+  visibility      String   @default("public") @db.VarChar(16)
+  commentsEnabled Boolean  @default(true) @map("comments_enabled")
+  avatarPath      String?  @map("avatar_path") @db.Text
+  postOnlyByAdmin Boolean  @default(false) @map("post_only_by_admin")
+  pinnedNodeId    Int?     @map("pinned_node_id")
+  pinnedNode      Node?    @relation("RoomPinnedNode", fields: [pinnedNodeId], references: [id], onDelete: SetNull)
+  roomUsers       RoomUser[]
+  gameSessions    GameSession[]
+  inviteRooms     InviteRoom[]
 
   @@index([kind], map: "rooms_kind_idx")
   @@index([pinnedNodeId], map: "rooms_pinned_node_idx")
@@ -211,4 +220,27 @@ model PushSubscription {
 
   @@index([userId], map: "push_subscriptions_user_idx")
   @@map("push_subscriptions")
+}
+
+model InviteRoom {
+  inviteId Int    @map("invite_id")
+  roomId   Int    @map("room_id")
+  invite   Invite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  room     Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([inviteId, roomId])
+  @@index([roomId])
+  @@map("invites_rooms")
+}
+
+model UserContact {
+  ownerId   Int      @map("owner_id")
+  contactId Int      @map("contact_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  owner     User     @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  contact   User     @relation("ContactTarget", fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([ownerId, contactId])
+  @@index([contactId])
+  @@map("users_contacts")
 }

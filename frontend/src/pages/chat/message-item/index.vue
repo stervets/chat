@@ -11,6 +11,7 @@
     :data-message-id="message.id"
   >
     <div class="message-meta">
+      <span v-if="isSystemAuthor" class="author-system-star">★</span>
       <span
         v-if="showAuthorBadge"
         class="author-badge"
@@ -39,38 +40,6 @@
       <span class="time message-meta-action" @click="onTimeClick">
         {{ formattedTime }}
       </span>
-      <button
-        v-if="canPinMessage && !isEditing"
-        class="message-inline-btn"
-        :class="{'message-inline-btn-active': isPinnedMessage}"
-        @click="onTogglePinnedMessage"
-      >
-        {{ isPinnedMessage ? 'откреп.' : 'закреп.' }}
-      </button>
-      <button
-        v-if="canOpenDiscussion && !isEditing"
-        class="message-inline-btn"
-        :disabled="discussionOpenPendingId === message.id"
-        @click="onOpenDiscussion"
-      >
-        {{ message.commentRoomId ? 'комментарии' : 'комментарии+' }}
-      </button>
-      <button
-        v-if="isOwnMessage() && !isEditing && message.kind === 'text'"
-        class="message-inline-btn"
-        :disabled="messageActionPendingId === message.id"
-        @click="onStartEdit"
-      >
-        ред.
-      </button>
-      <button
-        v-if="isOwnMessage() && !isEditing"
-        class="message-inline-btn message-inline-btn-danger"
-        :disabled="messageActionPendingId === message.id"
-        @click="onDeleteMessage"
-      >
-        удал.
-      </button>
     </div>
 
     <div v-if="isEditing" class="message-edit">
@@ -101,16 +70,7 @@
       @mousemove="onBodyMouseMove"
       @mouseleave="onBodyMouseLeave"
     >
-      <div v-if="message.kind !== 'scriptable'" class="message-rendered-html" v-html="renderedHtml"/>
-      <ScriptableMessage
-        v-else
-        :message="message"
-        :view-model="scriptViewModel"
-        view-source="timeline"
-        @action="onScriptAction"
-        @runtime-view-mounted="onScriptViewMounted"
-        @runtime-view-unmounted="onScriptViewUnmounted"
-      />
+      <div class="message-rendered-html" v-html="renderedHtml"/>
     </div>
 
     <div v-if="!isEditing && extraPreviews.length" class="message-previews">
@@ -153,43 +113,86 @@
       </template>
     </div>
 
-    <div v-if="!isEditing" ref="reactionControlsEl" class="reaction-controls" @click.stop>
-      <button class="reaction-add-btn" @click="onToggleReactionPicker">+</button>
-      <div
-        v-if="reactionPickerOpen"
-        ref="reactionPickerEl"
-        class="reaction-picker"
-        :class="{
-          'reaction-picker-up': reactionPickerDirection === 'up',
-          'reaction-picker-down': reactionPickerDirection === 'down',
-        }"
-        :style="{maxHeight: `${reactionPickerMaxHeight}px`}"
-      >
-        <button
-          v-for="emoji in reactionPalette"
-          :key="`${message.id}-${emoji}`"
-          class="reaction-picker-item"
-          @click="onReactionSelect(emoji)"
+    <div v-if="!isEditing" class="message-footer">
+      <div ref="reactionControlsEl" class="reaction-controls" @click.stop>
+        <button class="reaction-add-btn" @click="onToggleReactionPicker">+</button>
+        <div
+          v-if="reactionPickerOpen"
+          ref="reactionPickerEl"
+          class="reaction-picker"
+          :class="{
+            'reaction-picker-up': reactionPickerDirection === 'up',
+            'reaction-picker-down': reactionPickerDirection === 'down',
+          }"
+          :style="{maxHeight: `${reactionPickerMaxHeight}px`}"
         >
-          {{ emoji }}
+          <button
+            v-for="emoji in reactionPalette"
+            :key="`${message.id}-${emoji}`"
+            class="reaction-picker-item"
+            @click="onReactionSelect(emoji)"
+          >
+            {{ emoji }}
+          </button>
+        </div>
+        <button
+          v-for="reaction in message.reactions"
+          :key="`${message.id}-${reaction.emoji}`"
+          class="reaction-chip"
+          :class="{
+            'reaction-chip-own': isMyReaction(reaction),
+            'reaction-chip-pop': isReactionPopping(reaction),
+          }"
+          @click="onReactionChipClick(reaction)"
+          @mouseenter="onReactionMouseEnter($event, reaction)"
+          @mousemove="onReactionMouseMove"
+          @mouseleave="onReactionMouseLeave"
+        >
+          <span class="reaction-emoji">{{ reaction.emoji }}</span>
+          <span class="reaction-count">{{ reaction.users.length }}</span>
         </button>
       </div>
-      <button
-        v-for="reaction in message.reactions"
-        :key="`${message.id}-${reaction.emoji}`"
-        class="reaction-chip"
-        :class="{
-          'reaction-chip-own': isMyReaction(reaction),
-          'reaction-chip-pop': isReactionPopping(reaction),
-        }"
-        @click="onReactionChipClick(reaction)"
-        @mouseenter="onReactionMouseEnter($event, reaction)"
-        @mousemove="onReactionMouseMove"
-        @mouseleave="onReactionMouseLeave"
-      >
-        <span class="reaction-emoji">{{ reaction.emoji }}</span>
-        <span class="reaction-count">{{ reaction.users.length }}</span>
-      </button>
+
+      <div class="message-action-bar" @click.stop>
+        <button
+          v-if="canPinMessage"
+          class="message-icon-btn"
+          :class="{'message-icon-btn-active': isPinnedMessage}"
+          :title="isPinnedMessage ? 'Открепить' : 'Закрепить'"
+          @click="onTogglePinnedMessage"
+        >
+          <PinOff v-if="isPinnedMessage" :size="14" />
+          <Pin v-else :size="14" />
+        </button>
+        <button
+          v-if="isOwnMessage() && message.kind === 'text'"
+          class="message-icon-btn"
+          title="Редактировать"
+          :disabled="messageActionPendingId === message.id"
+          @click="onStartEdit"
+        >
+          <Pencil :size="14" />
+        </button>
+        <button
+          v-if="isOwnMessage()"
+          class="message-icon-btn message-icon-btn-danger"
+          title="Удалить"
+          :disabled="messageActionPendingId === message.id"
+          @click="onDeleteMessage"
+        >
+          <Trash2 :size="14" />
+        </button>
+        <button
+          v-if="canOpenDiscussion"
+          class="message-comment-btn"
+          :disabled="discussionOpenPendingId === message.id"
+          :title="message.commentRoomId ? 'Открыть комментарии' : 'Создать комментарии'"
+          @click="onOpenDiscussion"
+        >
+          <MessageCircleMore :size="14" />
+          <span>{{ Math.max(0, Number(message.commentCount || 0)) }}</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>

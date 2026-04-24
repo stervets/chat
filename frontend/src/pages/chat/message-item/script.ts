@@ -1,6 +1,6 @@
 import {nextTick, ref, type PropType} from 'vue';
+import {MessageCircleMore, Pencil, Pin, PinOff, Trash2} from 'lucide-vue-next';
 import type {Message, MessageReaction} from '@/composables/types';
-import ScriptableMessage from '../message-scriptable/index.vue';
 
 type LinkPreview = {
   key: string;
@@ -11,7 +11,11 @@ type LinkPreview = {
 
 export default {
   components: {
-    ScriptableMessage,
+    MessageCircleMore,
+    Pencil,
+    Pin,
+    PinOff,
+    Trash2,
   },
 
   props: {
@@ -78,6 +82,10 @@ export default {
     showAuthorBadge: {
       type: Boolean,
       required: true,
+    },
+    isSystemAuthor: {
+      type: Boolean,
+      default: false,
     },
     authorBadgeOpacity: {
       type: Number,
@@ -248,7 +256,6 @@ export default {
     },
 
     onBodyClick(this: any, event: MouseEvent) {
-      if (this.message.kind === 'scriptable') return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('.message-spoiler')) {
         this.showHiddenText = true;

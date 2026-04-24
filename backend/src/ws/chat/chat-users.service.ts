@@ -1,6 +1,20 @@
 import {db} from '../../db.js';
-import {ChatContext, type ApiError, type PublicUser} from './chat-context.js';
+import {normalizeNickname} from '../../common/nickname.js';
+import {ChatContext, type ApiError, type ApiOk, type PublicUser} from './chat-context.js';
 import type {SocketState} from '../protocol.js';
+
+function publicUserSelect() {
+  return {
+    id: true,
+    nickname: true,
+    name: true,
+    info: true,
+    avatarPath: true,
+    nicknameColor: true,
+    donationBadgeUntil: true,
+    pushDisableAllMentions: true,
+  } as const;
+}
 
 export class ChatUsersService {
   constructor(private readonly ctx: ChatContext) {}
@@ -19,15 +33,130 @@ export class ChatUsersService {
         {name: 'asc'},
         {nickname: 'asc'},
       ],
-      select: {
-        id: true,
-        nickname: true,
-        name: true,
-        nicknameColor: true,
-        donationBadgeUntil: true,
-      },
+      select: publicUserSelect(),
     });
 
     return rows.map((row) => this.ctx.toPublicUser(row));
+  }
+
+  async userGet(
+    state: SocketState,
+    payload: {userId?: unknown; nickname?: unknown},
+  ): Promise<ApiError | ApiOk<{user: PublicUser}>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const userId = Number.parseInt(String(payload?.userId ?? ''), 10);
+    const nickname = normalizeNickname(payload?.nickname);
+
+    const user = Number.isFinite(userId) && userId > 0
+      ? await db.user.findUnique({
+        where: {
+          id: userId,
+        },
+        select: publicUserSelect(),
+      })
+      : nickname
+        ? await db.user.findUnique({
+          where: {
+            nickname,
+          },
+          select: publicUserSelect(),
+        })
+        : null;
+
+    if (!user) {
+      return {ok: false, error: 'user_not_found'};
+    }
+
+    return {
+      ok: true,
+      user: this.ctx.toPublicUser(user),
+    };
+  }
+
+  async contactsList(state: SocketState): Promise<ApiError | PublicUser[]> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const rows = await db.userContact.findMany({
+      where: {
+        ownerId: state.user!.id,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: {
+        contact: {
+          select: publicUserSelect(),
+        },
+      },
+    });
+
+    return rows.map((row) => this.ctx.toPublicUser(row.contact));
+  }
+
+  async contactsAdd(state: SocketState, payload: {userId?: unknown}): Promise<ApiError | ApiOk<{user: PublicUser}>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const userId = Number.parseInt(String(payload?.userId ?? ''), 10);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      return {ok: false, error: 'invalid_user'};
+    }
+    if (userId === state.user!.id) {
+      return {ok: false, error: 'cannot_add_self'};
+    }
+
+    const user = await db.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: publicUserSelect(),
+    });
+    if (!user) {
+      return {ok: false, error: 'user_not_found'};
+    }
+
+    await db.userContact.upsert({
+      where: {
+        ownerId_contactId: {
+          ownerId: state.user!.id,
+          contactId: userId,
+        },
+      },
+      update: {},
+      create: {
+        ownerId: state.user!.id,
+        contactId: userId,
+      },
+    });
+
+    return {
+      ok: true,
+      user: this.ctx.toPublicUser(user),
+    };
+  }
+
+  async contactsRemove(state: SocketState, payload: {userId?: unknown}): Promise<ApiError | ApiOk<{removed: boolean}>> {
+    const authError = this.ctx.requireAuth(state);
+    if (authError) return authError;
+
+    const userId = Number.parseInt(String(payload?.userId ?? ''), 10);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      return {ok: false, error: 'invalid_user'};
+    }
+
+    const result = await db.userContact.deleteMany({
+      where: {
+        ownerId: state.user!.id,
+        contactId: userId,
+      },
+    });
+
+    return {
+      ok: true,
+      removed: result.count > 0,
+    };
   }
 }

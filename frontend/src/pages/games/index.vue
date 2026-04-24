@@ -3,7 +3,7 @@
     <div class="lobby-shell">
       <header class="lobby-header">
         <h1>Игры</h1>
-        <button class="back-btn" @click="goBackToChat">В чат</button>
+        <button class="back-btn" @click="goBackToChat">Назад</button>
       </header>
 
       <section class="game-card">

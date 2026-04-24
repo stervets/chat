@@ -246,6 +246,17 @@ function extractVkVideo(url: URL) {
   };
 }
 
+function extractRutubeVideo(url: URL) {
+  const host = url.hostname.toLowerCase();
+  if (!host.includes('rutube.ru')) return null;
+
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (parts[0] !== 'video') return null;
+  const id = String(parts[1] || '').trim();
+  if (!id || !/^[a-zA-Z0-9]+$/.test(id)) return null;
+  return id;
+}
+
 export function buildLinkPreview(linkUrlRaw: unknown): MessageLinkPreview | null {
   const linkUrl = String(linkUrlRaw || '').trim();
   if (!linkUrl) return null;
@@ -285,6 +296,15 @@ export function buildLinkPreview(linkUrlRaw: unknown): MessageLinkPreview | null
       key: `vk:${vkVideo.oid}_${vkVideo.id}`,
       type: 'embed',
       src: `https://vk.com/video_ext.php?oid=${vkVideo.oid}&id=${vkVideo.id}&hd=2`,
+    };
+  }
+
+  const rutubeId = extractRutubeVideo(url);
+  if (rutubeId) {
+    return {
+      key: `rutube:${rutubeId}`,
+      type: 'embed',
+      src: `https://rutube.ru/play/embed/${rutubeId}`,
     };
   }
 

@@ -34,24 +34,67 @@ HTTP остаётся только для upload и web-push.
 - `auth:session({token})`
 - `auth:me({})`
 - `auth:logout({})`
-- `auth:updateProfile({name?, nicknameColor?, pushDisableAllMentions?})`
+- `auth:updateProfile({name?, info?, nicknameColor?, avatarPath?, pushDisableAllMentions?})`
 - `auth:changePassword({newPassword})`
 - `user:list({})`
+- `user:get({userId? , nickname?})`
+
+Public user payload:
+
+```ts
+{
+  id: number,
+  nickname: string,
+  name: string,
+  info: string | null,
+  avatarUrl: string | null,
+  nicknameColor: string | null,
+  donationBadgeUntil: string | null,
+  pushDisableAllMentions: boolean,
+}
+```
 
 HTTP `upload/*` и `push/*` требуют `Authorization: Bearer <token>`.
+
+## Contacts
+
+- `contacts:list({})`
+- `contacts:add({userId})`
+- `contacts:remove({userId})`
 
 ## Rooms
 
 - `room:group:get-default({})`
 - `room:list({kind:'direct'})`
+- `room:list({kind:'group', scope?:'joined'|'public'|'all'})`
 - `room:direct:get-or-create({userId})`
-- `room:get({roomId})`
-- `room:create({title?})`
+- `room:get({roomId, subscribe?})`
+- `room:create({title?, visibility?, commentsEnabled?, avatarPath?, postOnlyByAdmin?})`
+- `room:join({roomId})`
+- `room:leave({roomId})`
+- `room:members:list({roomId})`
+- `room:members:add({roomId, userIds})`
+- `room:members:remove({roomId, userIds})`
+- `room:settings:update({roomId, title?, visibility?, commentsEnabled?, avatarPath?, postOnlyByAdmin?})`
 - `room:delete({roomId, confirm:true})`
 - `room:surface:set({roomId, roomSurface})`
 - `room:pin:set({roomId, nodeId})`
 - `room:pin:clear({roomId})`
 - `room:runtime:get({roomId})`
+
+Room payload дополнительно содержит:
+
+```ts
+{
+  joined?: boolean,
+  visibility: 'public' | 'private',
+  commentsEnabled: boolean,
+  avatarUrl: string | null,
+  postOnlyByAdmin: boolean,
+}
+```
+
+`room:members:list` дополнительно отдаёт `isOnline:boolean`.
 
 ## Messages
 
@@ -68,10 +111,19 @@ HTTP `upload/*` и `push/*` требуют `Authorization: Bearer <token>`.
 - `commentRoomId` — id comment room-node (`rooms.kind='comment'`), дочерней к message-node;
 - `messages.room_id` и `messages.discussion_room_id` в БД отсутствуют;
 - pinned хранится в `rooms.pinned_node_id`, наружу отдаётся как `pinnedNodeId`.
+- если у source room `commentsEnabled === false`, `message:comment-room:create` вернёт `{ok:false,error:'comments_disabled'}`.
+- если у room `postOnlyByAdmin === true`, не-админ получит `{ok:false,error:'room_posting_restricted'}`.
+- `room:pin:set|clear` для `direct` возвращает `{ok:false,error:'forbidden'}`.
 
 ## Runtime
 
 - `runtime:action({nodeType, nodeId, actionType, payload?})`
+
+Runtime сейчас временно выключен:
+- `message:create({kind:'scriptable'})` -> `{ok:false,error:'scriptable_disabled'}`
+- `runtime:action(...)` -> `{ok:false,error:'scriptable_disabled'}`
+- `room:surface:set(...)` -> `{ok:false,error:'scriptable_disabled'}`
+- `room:runtime:get(...)` -> `{ok:true, roomRuntime:null}`
 
 Runtime snapshot:
 
@@ -85,6 +137,34 @@ Runtime snapshot:
   data: Record<string, any>
 }
 ```
+
+## Invites
+
+- `invites:create({roomIds?: number[]})`
+- `invites:list({})`
+- `invites:delete({inviteId})`
+- `invites:check({code})`
+- `invites:redeem({code, nickname?, password?, name?})`
+- `invites:available-rooms({})`
+
+Invite payload теперь может включать:
+
+```ts
+{
+  rooms: Array<{
+    roomId: number,
+    title: string,
+    visibility: 'public' | 'private',
+  }>
+}
+```
+
+Правила:
+- в invite можно включать только joined `group` комнаты;
+- `direct` и `comment` комнаты недопустимы;
+- после успешного redeem invite удаляется;
+- если `roomIds` не передан или старый invite пустой, fallback идёт в default group room.
+- если `invites:redeem` вызвал уже авторизованный пользователь, invite не регистрирует нового юзера, а просто добавляет доступ к room из invite (`appliedToExistingUser=true`, `addedRoomIds[]`).
 
 ## Games
 
@@ -102,7 +182,6 @@ Runtime snapshot:
 - `room:updated`
 - `room:deleted`
 - `room:pin:updated`
-- `runtime:data:updated`
 - `user:updated`
 - `game:session:updated`
 - `game:event`
@@ -119,6 +198,7 @@ Runtime snapshot:
 - `rawText`
 - `renderedHtml`
 - `renderedPreviews[]`
+- `commentCount`
 - `runtime: {clientScript, serverScript, data}`
 - `commentRoomId`
 - `createdAt`
@@ -130,12 +210,24 @@ Runtime snapshot:
 
 Ошибки: `{ok:false, error:'...'}`.
 
+Legacy `scriptable` сообщения backend всё ещё может вернуть из истории, но frontend должен показывать их как обычный fallback-text без активного runtime.
+
 ## HTTP
 
 ### Uploads
 
 - `POST /upload/image`
+- `POST /upload/media`
 - `GET /uploads/:name`
+
+`POST /upload/media`:
+- принимает `image/*` и `video/*`;
+- картинки на клиенте всегда пережимаются под `max 1024x1024` (aspect ratio сохраняется);
+- видео не перекодируется и не сжимается;
+- лимит image = `config.uploads.maxBytes`;
+- лимит video = `config.uploads.videoMaxBytes` или fallback `50MB`.
+- тот же endpoint используется для аватаров room/user (только image на клиенте) и обычных media-сообщений.
+- для avatar в `/console` перед upload есть crop UI (круглая маска + drag/zoom), результат отправляется как квадрат `1024x1024`.
 
 ### Push
 

@@ -148,6 +148,8 @@ export class ChatReactionsService {
             id: state.user!.id,
             nickname: state.user!.nickname,
             name: state.user!.name,
+            info: state.user!.info || null,
+            avatarUrl: state.user!.avatarUrl || null,
             nicknameColor: state.user!.nicknameColor,
             donationBadgeUntil: state.user!.donationBadgeUntil,
             pushDisableAllMentions: !!state.user!.pushDisableAllMentions,

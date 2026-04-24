@@ -23,6 +23,12 @@ import {
   sanitizeUploadName,
 } from '../common/uploads.js';
 
+const UPLOAD_INTERCEPTOR_CONFIG = {
+  limits: {
+    fileSize: Math.max(config.uploads.videoMaxBytes, config.uploads.maxBytes, 8 * 1024 * 1024),
+  },
+};
+
 @Controller()
 export class UploadsController {
   private resolveToken(req: any) {
@@ -39,17 +45,7 @@ export class UploadsController {
     return `${proto}://${host}`;
   }
 
-  @Post('upload/image')
-  @HttpCode(200)
-  @UseInterceptors(FileInterceptor('file', {
-    limits: {
-      fileSize: Math.max(config.uploads.maxBytes * 8, 8 * 1024 * 1024),
-    },
-  }))
-  async uploadImage(
-    @Req() req: any,
-    @UploadedFile() file: any,
-  ) {
+  private async uploadMediaFile(req: any, file: any, mode: 'image' | 'media') {
     const token = this.resolveToken(req);
     const session = token ? await resolveSession(token) : null;
     if (!session) {
@@ -61,7 +57,9 @@ export class UploadsController {
     }
 
     const mime = String(file.mimetype || '').toLowerCase();
-    if (!mime.startsWith('image/')) {
+    const isImage = mime.startsWith('image/');
+    const isVideo = mime.startsWith('video/');
+    if (mode === 'image' ? !isImage : (!isImage && !isVideo)) {
       throw new BadRequestException('invalid_file_type');
     }
 
@@ -70,7 +68,10 @@ export class UploadsController {
       throw new BadRequestException('empty_file');
     }
 
-    if (size > config.uploads.maxBytes) {
+    const maxBytes = isVideo
+      ? config.uploads.videoMaxBytes
+      : config.uploads.maxBytes;
+    if (size > maxBytes) {
       throw new BadRequestException('file_too_large');
     }
 
@@ -86,6 +87,26 @@ export class UploadsController {
       size,
       uploadedBy: session.user.id,
     };
+  }
+
+  @Post('upload/image')
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('file', UPLOAD_INTERCEPTOR_CONFIG))
+  async uploadImage(
+    @Req() req: any,
+    @UploadedFile() file: any,
+  ) {
+    return this.uploadMediaFile(req, file, 'image');
+  }
+
+  @Post('upload/media')
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('file', UPLOAD_INTERCEPTOR_CONFIG))
+  async uploadMedia(
+    @Req() req: any,
+    @UploadedFile() file: any,
+  ) {
+    return this.uploadMediaFile(req, file, 'media');
   }
 
   @Get('uploads/:name')

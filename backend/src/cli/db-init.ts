@@ -142,12 +142,6 @@ async function seedInitialData(connectionString: string) {
   });
 
   try {
-    const groupRoom = await createRoomNode(prisma, {
-      kind: 'group',
-      title: 'Общий чат',
-      nodeData: {},
-    });
-
     const [systemHash, ownerHash] = await Promise.all([
       argon2.hash(SYSTEM_PASSWORD),
       argon2.hash(OWNER_PASSWORD),
@@ -173,10 +167,37 @@ async function seedInitialData(connectionString: string) {
       select: {id: true},
     });
 
+    const groupRoom = await createRoomNode(prisma, {
+      kind: 'group',
+      title: 'Общий чат',
+      nodeData: {},
+    });
+
+    const marxRoom = await createRoomNode(prisma, {
+      kind: 'group',
+      title: 'Новости MARX',
+      createdById: systemUser.id,
+      nodeData: {},
+    });
+
+    await prisma.room.update({
+      where: {
+        id: marxRoom.room.id,
+      },
+      data: {
+        visibility: 'public',
+        commentsEnabled: true,
+        avatarPath: '/marx_logo.png',
+        postOnlyByAdmin: true,
+      },
+    });
+
     await prisma.roomUser.createMany({
       data: [
         {roomId: groupRoom.room.id, userId: systemUser.id},
         {roomId: groupRoom.room.id, userId: ownerUser.id},
+        {roomId: marxRoom.room.id, userId: systemUser.id},
+        {roomId: marxRoom.room.id, userId: ownerUser.id},
       ],
       skipDuplicates: true,
     });

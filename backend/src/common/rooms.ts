@@ -13,6 +13,10 @@ export type RoomRow = {
   id: number;
   kind: RoomKind;
   title: string | null;
+  visibility: 'public' | 'private';
+  comments_enabled: boolean;
+  avatar_path: string | null;
+  post_only_by_admin: boolean;
   created_by: number | null;
   pinned_node_id: number | null;
   surface_enabled: boolean;
@@ -29,6 +33,10 @@ type RoomWithUsers = {
   id: number;
   kind: string;
   title: string | null;
+  visibility: string;
+  commentsEnabled: boolean;
+  avatarPath: string | null;
+  postOnlyByAdmin: boolean;
   pinnedNodeId: number | null;
   node: {
     createdById: number | null;
@@ -94,6 +102,10 @@ function mapRoom(row: RoomWithUsers): RoomRow {
     id: row.id,
     kind: row.kind === 'direct' || row.kind === 'game' || row.kind === 'comment' ? row.kind : 'group',
     title: row.title || null,
+    visibility: normalizeRoomVisibility(row.visibility),
+    comments_enabled: !!row.commentsEnabled,
+    avatar_path: row.avatarPath?.trim() ? row.avatarPath.trim() : null,
+    post_only_by_admin: !!row.postOnlyByAdmin,
     created_by: Number(row.node?.createdById || 0) || null,
     pinned_node_id: Number(row.pinnedNodeId || 0) || null,
     surface_enabled: !!roomSurface.enabled,
@@ -128,6 +140,10 @@ function roomSelect() {
     id: true,
     kind: true,
     title: true,
+    visibility: true,
+    commentsEnabled: true,
+    avatarPath: true,
+    postOnlyByAdmin: true,
     pinnedNodeId: true,
     node: {
       select: {
@@ -146,25 +162,15 @@ function roomSelect() {
   } as const;
 }
 
+export function normalizeRoomVisibility(raw: unknown): 'public' | 'private' {
+  return String(raw || '').trim().toLowerCase() === 'private'
+    ? 'private'
+    : 'public';
+}
+
 export async function ensureUserInGroupRooms(userId: number) {
-  const groupRooms = await db.room.findMany({
-    where: {
-      kind: 'group',
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  if (!groupRooms.length) return;
-
-  await db.roomUser.createMany({
-    data: groupRooms.map((room) => ({
-      roomId: room.id,
-      userId,
-    })),
-    skipDuplicates: true,
-  });
+  const defaultRoom = await getOrCreateGroupRoom(userId);
+  await ensureRoomMembership(defaultRoom.id, userId);
 }
 
 export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<RoomRow> {
@@ -195,6 +201,16 @@ export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<Roo
             nodeData: {},
           });
 
+          await tx.room.update({
+            where: {
+              id: created.room.id,
+            },
+            data: {
+              visibility: 'public',
+              commentsEnabled: true,
+            },
+          });
+
           const users = await tx.user.findMany({
             select: {
               id: true,
@@ -215,6 +231,10 @@ export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<Roo
             id: created.room.id,
             kind: created.room.kind,
             title: created.room.title,
+            visibility: 'public',
+            commentsEnabled: true,
+            avatarPath: null,
+            postOnlyByAdmin: false,
             pinnedNodeId: created.room.pinnedNodeId,
             node: {
               createdById: created.node.createdById,
@@ -330,6 +350,10 @@ export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: n
             id: created.room.id,
             kind: created.room.kind,
             title: created.room.title,
+            visibility: 'private',
+            commentsEnabled: true,
+            avatarPath: null,
+            postOnlyByAdmin: false,
             pinnedNodeId: created.room.pinnedNodeId,
             node: {
               createdById: created.node.createdById,
@@ -359,8 +383,33 @@ export async function ensureUserInRoom(roomId: number, userId: number) {
 }
 
 export async function createPublicGroupRoom(createdById: number, titleRaw?: unknown): Promise<RoomRow> {
-  const title = String(titleRaw || '').trim();
+  return createGroupRoom(createdById, {
+    title: titleRaw,
+    visibility: 'public',
+    commentsEnabled: true,
+    avatarPath: null,
+    postOnlyByAdmin: false,
+  });
+}
+
+export async function createGroupRoom(
+  createdById: number,
+  inputRaw?: {
+    title?: unknown;
+    visibility?: unknown;
+    commentsEnabled?: unknown;
+    avatarPath?: unknown;
+    postOnlyByAdmin?: unknown;
+  },
+): Promise<RoomRow> {
+  const title = String(inputRaw?.title || '').trim();
   const normalizedTitle = title ? title.slice(0, 120) : null;
+  const visibility = normalizeRoomVisibility(inputRaw?.visibility);
+  const commentsEnabled = inputRaw?.commentsEnabled !== undefined
+    ? !!inputRaw.commentsEnabled
+    : true;
+  const avatarPath = String(inputRaw?.avatarPath || '').trim() || null;
+  const postOnlyByAdmin = !!inputRaw?.postOnlyByAdmin;
 
   const room = await db.$transaction(async (tx) => {
     const created = await createRoomNode(tx, {
@@ -370,26 +419,33 @@ export async function createPublicGroupRoom(createdById: number, titleRaw?: unkn
       nodeData: {},
     });
 
-    const users = await tx.user.findMany({
-      select: {
-        id: true,
+    await tx.room.update({
+      where: {
+        id: created.room.id,
+      },
+      data: {
+        visibility,
+        commentsEnabled,
+        avatarPath,
+        postOnlyByAdmin,
       },
     });
 
-    if (users.length > 0) {
-      await tx.roomUser.createMany({
-        data: users.map((user) => ({
-          roomId: created.room.id,
-          userId: user.id,
-        })),
-        skipDuplicates: true,
-      });
-    }
+    await tx.roomUser.create({
+      data: {
+        roomId: created.room.id,
+        userId: createdById,
+      },
+    });
 
     return {
       id: created.room.id,
       kind: created.room.kind,
       title: created.room.title,
+      visibility,
+      commentsEnabled,
+      avatarPath,
+      postOnlyByAdmin,
       pinnedNodeId: created.room.pinnedNodeId,
       node: {
         createdById: created.node.createdById,
@@ -398,7 +454,7 @@ export async function createPublicGroupRoom(createdById: number, titleRaw?: unkn
         serverScript: created.node.serverScript,
         data: created.node.data,
       },
-      roomUsers: users.map((user) => ({userId: user.id})),
+      roomUsers: [{userId: createdById}],
     } satisfies RoomWithUsers;
   });
 
@@ -406,6 +462,9 @@ export async function createPublicGroupRoom(createdById: number, titleRaw?: unkn
 }
 
 export function userCanAccessRoom(userId: number, room: RoomRow) {
+  if (room.kind === 'group' || room.kind === 'game') {
+    if (room.visibility === 'public') return true;
+  }
   return room.member_user_ids.includes(userId);
 }
 

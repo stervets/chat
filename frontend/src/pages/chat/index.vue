@@ -9,28 +9,60 @@
 
         <div class="drawer-layout">
           <div v-if="me" class="drawer-profile">
-            <div class="drawer-profile-name" :style="getUserNameStyle(me)">
-              <span v-if="hasDonationBadge(me)" class="donation-star" :style="getDonationBadgeStyle(me)">⭐</span>
-              {{ me.name }}
+            <div class="drawer-profile-main">
+              <img
+                v-if="me.avatarUrl"
+                class="nav-avatar"
+                :src="me.avatarUrl"
+                :alt="me.name || me.nickname"
+              />
+              <div v-else class="nav-avatar nav-avatar-fallback">
+                {{ ((me.name || me.nickname || '?').trim().charAt(0) || '?').toUpperCase() }}
+              </div>
+              <div class="drawer-profile-text">
+                <div class="drawer-profile-name" :style="getUserNameStyle(me)">
+                  <span v-if="isSystemUser(me)" class="system-star">★</span>
+                  <span v-if="hasDonationBadge(me)" class="donation-star" :style="getDonationBadgeStyle(me)">⭐</span>
+                  {{ me.name }}
+                </div>
+                <div class="drawer-profile-username">{{ formatUsername(me.nickname) }}</div>
+              </div>
             </div>
-            <div class="drawer-profile-username">{{ formatUsername(me.nickname) }}</div>
           </div>
 
-          <button
-            class="menu-item menu-item-general"
-            :class="{active: isGeneralDialogActive}"
-            @click="selectGeneral({haptic: true})"
-          >
-            Общий чат
-          </button>
+          <div class="left-nav-tabs">
+            <button class="left-nav-tab" :class="{active: leftNavMode === 'directs'}" @click="leftNavMode = 'directs'">
+              Директы
+            </button>
+            <button class="left-nav-tab" :class="{active: leftNavMode === 'rooms'}" @click="leftNavMode = 'rooms'">
+              Комнаты
+            </button>
+          </div>
 
-          <div class="directs-block">
-            <div class="section-title">Директы</div>
-            <div class="directs-scroll">
-              <div v-if="!sortedDirectDialogs.length" class="hint">Пока нет сообщений в директах</div>
+          <div v-if="leftNavMode === 'directs'" class="drawer-fixed drawer-fixed-top">
+            <input
+              v-model="searchQuery"
+              class="users-search"
+              type="text"
+              placeholder="Найти директ или пользователя..."
+            />
+          </div>
+
+          <div v-else class="drawer-fixed drawer-fixed-top">
+            <input
+              v-model="roomSearchQuery"
+              class="users-search"
+              type="text"
+              placeholder="Найти комнату..."
+            />
+          </div>
+
+          <div class="left-nav-scroll">
+            <template v-if="leftNavMode === 'directs'">
               <div class="menu-list">
+                <div v-if="!filteredDirectDialogs.length" class="hint">Пока нет директов</div>
                 <button
-                  v-for="dialog in sortedDirectDialogs"
+                  v-for="dialog in filteredDirectDialogs"
                   :key="dialog.roomId"
                   class="menu-item"
                   :class="{
@@ -39,55 +71,124 @@
                   }"
                   @click="selectDirectDialog(dialog)"
                 >
-                  <span class="name" :style="getUserNameStyle(dialog.targetUser)">
-                    <span
-                      v-if="hasDonationBadge(dialog.targetUser)"
-                      class="donation-star"
-                      :style="getDonationBadgeStyle(dialog.targetUser)"
-                    >⭐</span>
-                    {{ dialog.targetUser.name }}
-                  </span>
-                  <span class="nickname">{{ formatUsername(dialog.targetUser.nickname) }}</span>
+                  <img
+                    v-if="dialog.targetUser.avatarUrl"
+                    class="nav-avatar nav-avatar-sm"
+                    :src="dialog.targetUser.avatarUrl"
+                    :alt="dialog.targetUser.name"
+                  />
+                  <div v-else class="nav-avatar nav-avatar-fallback nav-avatar-sm">
+                    {{ ((dialog.targetUser.name || dialog.targetUser.nickname || '?').trim().charAt(0) || '?').toUpperCase() }}
+                  </div>
+                  <div class="menu-item-text">
+                    <span class="name" :style="getUserNameStyle(dialog.targetUser)">
+                      <span v-if="isSystemUser(dialog.targetUser)" class="system-star">★</span>
+                      <span
+                        v-if="hasDonationBadge(dialog.targetUser)"
+                        class="donation-star"
+                        :style="getDonationBadgeStyle(dialog.targetUser)"
+                      >⭐</span>
+                      {{ dialog.targetUser.name }}
+                    </span>
+                    <span class="nickname">{{ formatUsername(dialog.targetUser.nickname) }}</span>
+                  </div>
                   <span v-if="isDirectDialogUnread(dialog.roomId)" class="direct-unread-dot"/>
                 </button>
               </div>
-            </div>
+
+              <div v-if="searchQuery.trim()" class="section-title">Пользователи</div>
+              <div v-if="searchQuery.trim() && !filteredUsers.length" class="hint">Ничего не найдено</div>
+              <div class="menu-list users-list">
+                <button
+                  v-for="user in filteredUsers"
+                  :key="`search-${user.id}`"
+                  class="menu-item user-item"
+                  :class="{active: activeDialog?.kind === 'direct' && activeDialog?.targetUser?.id === user.id}"
+                  @click="selectUser(user)"
+                >
+                  <img
+                    v-if="user.avatarUrl"
+                    class="nav-avatar nav-avatar-sm"
+                    :src="user.avatarUrl"
+                    :alt="user.name"
+                  />
+                  <div v-else class="nav-avatar nav-avatar-fallback nav-avatar-sm">
+                    {{ ((user.name || user.nickname || '?').trim().charAt(0) || '?').toUpperCase() }}
+                  </div>
+                  <div class="menu-item-text">
+                    <span class="name" :style="getUserNameStyle(user)">
+                      <span v-if="isSystemUser(user)" class="system-star">★</span>
+                      <span v-if="hasDonationBadge(user)" class="donation-star" :style="getDonationBadgeStyle(user)">⭐</span>
+                      {{ user.name }}
+                    </span>
+                    <span class="nickname">{{ formatUsername(user.nickname) }}</span>
+                  </div>
+                </button>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="section-title">Мои комнаты</div>
+              <div class="menu-list">
+                <button
+                  v-for="dialog in filteredJoinedRooms"
+                  :key="`joined-${dialog.id}`"
+                  class="menu-item"
+                  :class="{active: activeDialog?.kind !== 'direct' && activeDialog?.id === dialog.id}"
+                  @click="selectRoomDialog(dialog)"
+                >
+                  <img
+                    v-if="resolveDialogAvatarUrl(dialog)"
+                    class="nav-avatar nav-avatar-sm"
+                    :src="resolveDialogAvatarUrl(dialog)"
+                    :alt="dialog.title || 'Комната'"
+                  />
+                  <div v-else class="nav-avatar nav-avatar-fallback nav-avatar-sm">
+                    {{ getDialogAvatarFallback(dialog) }}
+                  </div>
+                  <div class="menu-item-text">
+                    <span class="name">{{ dialog.title }}</span>
+                    <span class="nickname">
+                      {{ dialog.visibility === 'private' ? 'private' : 'public' }}
+                      · {{ dialog.postOnlyByAdmin ? 'пишет админ' : 'пишут все' }}
+                    </span>
+                  </div>
+                </button>
+              </div>
+
+              <div v-if="filteredPublicRooms.length" class="section-title">Публичные</div>
+              <div class="menu-list">
+                <div
+                  v-for="dialog in filteredPublicRooms"
+                  :key="`public-${dialog.id}`"
+                  class="menu-item menu-item-public-room"
+                >
+                  <img
+                    v-if="resolveDialogAvatarUrl(dialog)"
+                    class="nav-avatar nav-avatar-sm"
+                    :src="resolveDialogAvatarUrl(dialog)"
+                    :alt="dialog.title || 'Комната'"
+                  />
+                  <div v-else class="nav-avatar nav-avatar-fallback nav-avatar-sm">
+                    {{ getDialogAvatarFallback(dialog) }}
+                  </div>
+                  <div class="menu-item-text">
+                    <span class="name">{{ dialog.title }}</span>
+                    <span class="nickname">{{ dialog.postOnlyByAdmin ? 'канал' : 'public' }}</span>
+                  </div>
+                  <button class="ghost-btn room-join-btn" @click="joinPublicRoom(dialog)">Войти</button>
+                </div>
+              </div>
+            </template>
           </div>
 
-          <div class="drawer-fixed">
-            <div class="section-title">Поиск пользователей</div>
-            <input
-              v-model="searchQuery"
-              class="users-search"
-              type="text"
-              placeholder="Найти пользователя..."
-            />
-            <div v-if="searchQuery.trim() && !filteredUsers.length" class="hint">Ничего не найдено</div>
-            <div class="menu-list users-list">
-              <button
-                v-for="user in filteredUsers"
-                :key="`search-${user.id}`"
-                class="menu-item user-item"
-                :class="{active: activeDialog?.kind === 'direct' && activeDialog?.targetUser?.id === user.id}"
-                @click="selectUser(user)"
-              >
-                <span class="name" :style="getUserNameStyle(user)">
-                  <span v-if="hasDonationBadge(user)" class="donation-star" :style="getDonationBadgeStyle(user)">⭐</span>
-                  {{ user.name }}
-                </span>
-                <span class="nickname">{{ formatUsername(user.nickname) }}</span>
-              </button>
-            </div>
-
-            <NuxtLink class="menu-link" to="/invites">Инвайты</NuxtLink>
-            <!--NuxtLink class="menu-link" to="/games">Игры</NuxtLink-->
-            <button class="menu-logout" @click="onLogout">Выйти из аккаунта</button>
+          <div class="drawer-fixed drawer-fixed-bottom">
+            <button class="menu-logout" @click="onLogout">Выйти</button>
           </div>
         </div>
       </aside>
 
       <div v-if="isCompactLayout && leftMenuOpen" class="drawer-backdrop" @click="closeLeftMenu"/>
-      <div v-if="isCompactLayout && rightMenuOpen" class="drawer-backdrop" @click="closeRightMenu"/>
 
       <main
         class="chat-main"
@@ -97,25 +198,39 @@
         }"
       >
         <header class="chat-header">
-          <button class="icon-btn" @click="toggleLeftMenu">☰</button>
-          <!--button
-            v-if="activeDialog?.kind === 'direct'"
-            class="header-center-btn"
-            @click="onGoToGeneralChat"
+          <button class="icon-btn" @click="toggleLeftMenu">
+            <Menu :size="18" />
+          </button>
+          <button
+            v-if="activeDialog"
+            class="header-avatar-btn"
+            @click="onOpenActiveDialogInfoPage"
           >
-            Чат
-          </button-->
-          <div class="header-text">
-            <div class="title">
-              {{ activeDialog?.kind === 'direct' ? (activeDialog?.title || 'Чат') : (activeDialog?.title || 'Общий чат') }}
+            <img
+              v-if="resolveDialogAvatarUrl(activeDialog)"
+              class="header-avatar"
+              :src="resolveDialogAvatarUrl(activeDialog)"
+              :alt="activeDialog?.title || 'Чат'"
+            />
+            <div v-else class="header-avatar header-avatar-fallback">
+              {{ getDialogAvatarFallback(activeDialog) }}
             </div>
+          </button>
+          <div class="header-text">
+            <button class="title title-button" @click="onOpenActiveDialogInfoPage">
+              <span
+                v-if="activeDialog?.kind === 'direct' && isSystemNickname(activeDialog?.targetUser?.nickname)"
+                class="system-star"
+              >★</span>
+              {{ activeDialog?.kind === 'direct' ? (activeDialog?.title || 'Чат') : (activeDialog?.title || 'Общий чат') }}
+            </button>
             <div class="subtitle-row">
-              <div class="subtitle" v-if="activeDialog?.kind === 'direct'">
-                директ
+              <div class="subtitle" v-if="activeDialog?.kind === 'direct'">директ</div>
+              <div v-else-if="activeDialog?.visibility" class="subtitle">
+                {{ activeDialog.visibility === 'private' ? 'private' : 'public' }}
               </div>
-              <div v-if="isDiscussionRoom" class="subtitle subtitle-discussion">
-                комментарии
-              </div>
+              <div v-if="activeDialog?.postOnlyByAdmin" class="subtitle">пишет только админ</div>
+              <div v-if="isDiscussionRoom" class="subtitle subtitle-discussion">комментарии</div>
               <button
                 v-if="canBackToDiscussionSource"
                 class="subtitle subtitle-discussion-link"
@@ -126,18 +241,20 @@
               <div v-if="isDiscussionRoom && activeDiscussionSourceDeleted" class="subtitle subtitle-discussion-deleted">
                 исходный пост удалён
               </div>
-              <div v-if="isRoomSurfaceEnabled" class="subtitle subtitle-app">
-                {{ activeRoomSurfaceTypeLabel }}
-              </div>
-              <div
-                v-if="wsOffline"
-                class="ws-status"
-                :class="`ws-status-${wsConnectionState}`"
-              >
+              <div v-if="wsOffline" class="ws-status" :class="`ws-status-${wsConnectionState}`">
                 {{ wsStatusText }}
               </div>
             </div>
           </div>
+          <button
+            v-if="canPinActiveDialog"
+            class="icon-btn"
+            :disabled="navPinPending"
+            :title="activeDialog?.kind === 'direct' ? 'Закрепить директ' : 'Закрепить комнату'"
+            @click="onPinActiveDialog"
+          >
+            <Pin :size="18" />
+          </button>
           <button
             v-if="canDeleteActiveRoom"
             class="icon-btn delete-direct-btn"
@@ -145,65 +262,28 @@
             :title="activeDialog?.kind === 'direct' ? 'Удалить директ' : 'Удалить комнату'"
             @click="onDeleteActiveRoom"
           >
-            🗑
+            <Trash2 :size="18" />
           </button>
           <button
-            class="icon-btn vpn-btn"
-            title="VPN и прокси"
-            @click="onOpenVpnPage"
+            v-if="isActiveDialogAdmin && activeDialog?.kind !== 'direct'"
+            class="icon-btn"
+            :title="roomInviteOpen ? 'Скрыть приглашение' : 'Пригласить в комнату'"
+            @click="toggleRoomInvitePanel"
           >
-            <svg class="vpn-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M4 9.2a12.8 12.8 0 0 1 16 0"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-              />
-              <path
-                d="M7.2 12.6a8.2 8.2 0 0 1 9.6 0"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-              />
-              <path
-                d="M10.4 16a3.6 3.6 0 0 1 3.2 0"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-              />
-              <circle cx="12" cy="19" r="1.2" fill="currentColor"/>
-            </svg>
+            <UserPlus :size="18" />
           </button>
-          <button
-            ref="notificationButtonEl"
-            class="icon-btn notify-btn"
-            @click.stop="toggleNotificationsMenu"
-          >
-            <svg class="notify-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M12 4a4 4 0 0 0-4 4v2.4c0 .8-.3 1.6-.9 2.2L5.2 14.5c-.6.6-.2 1.5.7 1.5h12.2c.9 0 1.3-.9.7-1.5l-1.9-1.9a3.1 3.1 0 0 1-.9-2.2V8a4 4 0 0 0-4-4Z"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M10 18a2 2 0 0 0 4 0"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-              />
-            </svg>
+          <button class="icon-btn vpn-btn" title="VPN и прокси" @click="onOpenVpnPage">
+            <ShieldCheck :size="18" />
+          </button>
+          <button ref="notificationButtonEl" class="icon-btn notify-btn" @click.stop="toggleNotificationsMenu">
+            <Bell :size="18" />
             <span v-if="unreadNotificationsCount" class="notify-badge">
               {{ unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount }}
             </span>
           </button>
-          <button class="icon-btn icon-cog" @click="toggleRightMenu">⚙</button>
+          <button class="icon-btn icon-cog" @click="onOpenOwnProfilePage">
+            <Settings :size="18" />
+          </button>
           <div
             v-if="notificationsMenuOpen"
             ref="notificationMenuEl"
@@ -212,11 +292,7 @@
           >
             <div class="notifications-head-row">
               <div class="notifications-head">Уведомления</div>
-              <button
-                class="notifications-clear-btn"
-                :disabled="!notifications.length"
-                @click="clearNotifications"
-              >
+              <button class="notifications-clear-btn" :disabled="!notifications.length" @click="clearNotifications">
                 Очистить
               </button>
             </div>
@@ -244,17 +320,7 @@
             </button>
           </div>
         </header>
-        <!-- Временно отключено: плашка скрипта комнаты ("Счётчик комнаты"). -->
-        <!--div
-          v-if="activeRoomScriptViewModel && activeRoomScriptViewModel.kind === 'room_banner'"
-          class="room-script-banner"
-        >
-          <div class="room-script-title">{{ activeRoomScriptViewModel.title }}</div>
-          <div class="room-script-subtitle">{{ activeRoomScriptViewModel.subtitle }}</div>
-          <div v-if="activeRoomScriptViewModel.extra" class="room-script-extra">
-            {{ activeRoomScriptViewModel.extra }}
-          </div>
-        </div-->
+
         <div v-if="toasts.length" class="toast-stack">
           <div
             v-for="toast in toasts"
@@ -270,21 +336,110 @@
             <div class="toast-body">{{ toast.body }}</div>
           </div>
         </div>
+
         <div ref="chatContentEl" class="chat-content">
+          <div v-if="roomInviteOpen && isActiveDialogAdmin && activeDialog?.kind !== 'direct'" class="room-invite-panel">
+            <div class="room-invite-head">
+              <div class="room-invite-title">Пригласить в комнату</div>
+              <button class="ghost-btn" @click="toggleRoomInvitePanel">Закрыть</button>
+            </div>
+            <input
+              v-model="roomInviteSearchQuery"
+              class="users-search"
+              type="text"
+              placeholder="Контакты или поиск пользователей..."
+            />
+            <div v-if="roomInviteLoading" class="hint">Загрузка...</div>
+            <div v-else class="room-invite-body">
+              <div v-if="filteredRoomInviteContacts.length" class="room-invite-section">
+                <div class="section-title">Контакты</div>
+                <button
+                  v-for="user in filteredRoomInviteContacts"
+                  :key="`room-invite-contact-${user.id}`"
+                  class="menu-item room-invite-user"
+                  :class="{active: isRoomInviteSelected(user.id)}"
+                  @click="toggleRoomInviteSelection(user.id)"
+                >
+                  <img
+                    v-if="user.avatarUrl"
+                    class="nav-avatar nav-avatar-sm"
+                    :src="user.avatarUrl"
+                    :alt="user.name"
+                  />
+                  <div v-else class="nav-avatar nav-avatar-fallback nav-avatar-sm">
+                    {{ ((user.name || user.nickname || '?').trim().charAt(0) || '?').toUpperCase() }}
+                  </div>
+                  <div class="menu-item-text">
+                    <span class="name" :style="getUserNameStyle(user)">
+                      <span v-if="isSystemUser(user)" class="system-star">★</span>
+                      <span v-if="hasDonationBadge(user)" class="donation-star" :style="getDonationBadgeStyle(user)">⭐</span>
+                      {{ user.name }}
+                    </span>
+                    <span class="nickname">{{ formatUsername(user.nickname) }}</span>
+                  </div>
+                  <span class="room-invite-check">{{ isRoomInviteSelected(user.id) ? '✓' : '+' }}</span>
+                </button>
+              </div>
+
+              <div v-if="roomInviteSearchQuery.trim() && filteredRoomInviteUsers.length" class="room-invite-section">
+                <div class="section-title">Поиск</div>
+                <button
+                  v-for="user in filteredRoomInviteUsers"
+                  :key="`room-invite-user-${user.id}`"
+                  class="menu-item room-invite-user"
+                  :class="{active: isRoomInviteSelected(user.id)}"
+                  @click="toggleRoomInviteSelection(user.id)"
+                >
+                  <img
+                    v-if="user.avatarUrl"
+                    class="nav-avatar nav-avatar-sm"
+                    :src="user.avatarUrl"
+                    :alt="user.name"
+                  />
+                  <div v-else class="nav-avatar nav-avatar-fallback nav-avatar-sm">
+                    {{ ((user.name || user.nickname || '?').trim().charAt(0) || '?').toUpperCase() }}
+                  </div>
+                  <div class="menu-item-text">
+                    <span class="name" :style="getUserNameStyle(user)">
+                      <span v-if="isSystemUser(user)" class="system-star">★</span>
+                      <span v-if="hasDonationBadge(user)" class="donation-star" :style="getDonationBadgeStyle(user)">⭐</span>
+                      {{ user.name }}
+                    </span>
+                    <span class="nickname">{{ formatUsername(user.nickname) }}</span>
+                  </div>
+                  <span class="room-invite-check">{{ isRoomInviteSelected(user.id) ? '✓' : '+' }}</span>
+                </button>
+              </div>
+
+              <div
+                v-if="!filteredRoomInviteContacts.length && (!roomInviteSearchQuery.trim() || !filteredRoomInviteUsers.length)"
+                class="hint"
+              >
+                Нечего показывать. Ищи пользователя или добавь контакты.
+              </div>
+            </div>
+            <div v-if="roomInviteError" class="error">{{ roomInviteError }}</div>
+            <div class="room-invite-actions">
+              <div class="hint">Выбрано: {{ roomInviteSelectedIds.length }}</div>
+              <button
+                class="composer-format-btn"
+                :disabled="roomInviteLoading || !roomInviteSelectedIds.length"
+                @click="submitRoomInvite"
+              >
+                {{ roomInviteLoading ? 'Добавляю...' : 'Добавить' }}
+              </button>
+            </div>
+          </div>
+
           <div
             v-if="shouldShowPinnedPanel"
             class="pinned-panel"
             :class="{
               'pinned-panel-collapsed': pinnedCollapsed,
-              'pinned-panel-scriptable': activePinnedMessage?.kind === 'scriptable',
-              'pinned-panel-app-surface': isPinnedRoomSurface,
             }"
             :style="pinnedPanelStyle"
           >
             <div class="pinned-head">
-              <span v-if="isPinnedRoomSurface" class="pinned-app-label">
-                APP SURFACE · {{ activeRoomSurfaceTypeLabel }}
-              </span>
               <span class="pinned-author" :style="getAuthorStyle(activePinnedMessage)">
                 {{ activePinnedMessage.authorName }}
               </span>
@@ -307,38 +462,18 @@
               </div>
             </div>
             <div
-              v-if="!pinnedCollapsed && activePinnedMessage.kind !== 'scriptable'"
+              v-if="!pinnedCollapsed"
               class="pinned-body"
               @click="onPinnedBodyClick"
               v-html="getRenderedMessageHtml(activePinnedMessage, -1)"
             />
-            <div
-              v-else-if="!pinnedCollapsed && activePinnedMessage.kind === 'scriptable'"
-              class="pinned-body"
-              @click="onPinnedBodyClick"
-            >
-              <ScriptableMessage
-                :message="activePinnedMessage"
-                :view-model="getMessageScriptViewModel(activePinnedMessage)"
-                :passive-effects="isPinnedScriptPassive(activePinnedMessage)"
-                view-source="pinned"
-                @action="onMessageScriptAction"
-                @runtime-view-mounted="onScriptViewMounted"
-                @runtime-view-unmounted="onScriptViewUnmounted"
-              />
-            </div>
           </div>
           <ElDivider
             v-if="shouldShowPinnedPanel && !pinnedCollapsed"
             class="pinned-splitter"
             @pointerdown.prevent="onPinnedSplitterPointerDown"
           />
-          <div v-if="shouldShowRoomSurfacePlaceholder" class="app-surface-placeholder">
-            <div class="app-surface-placeholder-title">Surface room активен</div>
-            <div class="app-surface-placeholder-body">
-              Поверхность ещё не назначена. Закрепи scriptable message как room surface.
-            </div>
-          </div>
+
           <div class="chat-body" ref="messagesEl" @scroll="onMessagesScroll">
             <div class="chat-feed">
               <div v-if="historyLoading" class="hint">Загрузка...</div>
@@ -367,13 +502,13 @@
                 :can-open-direct="canOpenDirectFromMessage(item.message)"
                 :author-style="getAuthorStyle(item.message)"
                 :show-author-badge="hasMessageAuthorDonationBadge(item.message)"
+                :is-system-author="isSystemNickname(item.message.authorNickname)"
                 :author-badge-opacity="getMessageAuthorDonationBadgeOpacity(item.message)"
                 :formatted-username="formatUsername(item.message.authorNickname)"
                 :formatted-time="formatMessageTime(item.message.createdAt)"
                 :is-fresh-message="isFreshMessage(item.message.id)"
                 :rendered-html="getRenderedMessageHtml(item.message, item.sourceIndex)"
                 :extra-previews="getMessageExtraPreviews(item.message)"
-                :script-view-model="getMessageScriptViewModel(item.message)"
                 :reaction-picker-open="reactionPickerMessageId === item.message.id"
                 :reaction-palette="reactionPalette()"
                 @update:editing-message-text="onEditingMessageTextUpdate"
@@ -397,9 +532,6 @@
                 @reaction-mouseenter="onReactionMouseEnter"
                 @reaction-mousemove="onReactionMouseMove"
                 @reaction-mouseleave="onReactionMouseLeave"
-                @script-action="onMessageScriptAction"
-                @script-view-mounted="onScriptViewMounted"
-                @script-view-unmounted="onScriptViewUnmounted"
                 @height-change="onVirtualItemHeight"
               />
               <div
@@ -411,29 +543,16 @@
             </div>
           </div>
         </div>
-        <button
-          v-if="showScrollDown"
-          class="scroll-down-btn"
-          @click="onScrollDownClick"
-        >
-          ↓
-        </button>
-        <div
-          v-if="timeTooltipVisible"
-          class="time-tooltip"
-          :style="getTimeTooltipStyle()"
-        >
+
+        <button v-if="showScrollDown" class="scroll-down-btn" @click="onScrollDownClick">↓</button>
+        <div v-if="timeTooltipVisible" class="time-tooltip" :style="getTimeTooltipStyle()">
           {{ timeTooltipText }}
         </div>
-        <div
-          v-if="reactionTooltipVisible"
-          class="reaction-tooltip"
-          :style="getReactionTooltipStyle()"
-        >
+        <div v-if="reactionTooltipVisible" class="reaction-tooltip" :style="getReactionTooltipStyle()">
           {{ reactionTooltipText }}
         </div>
 
-        <div class="chat-input">
+        <div v-if="canComposeInActiveDialog" class="chat-input">
           <div class="composer-tools" @click.stop>
             <button
               class="composer-tools-toggle"
@@ -471,19 +590,9 @@
                     <span class="composer-color-label">{{ named.name }}</span>
                   </button>
                 </div>
-                <!--div class="composer-custom-color">
-                  <input
-                    v-model="composerColorPicker"
-                    class="composer-color-picker"
-                    type="color"
-                  />
-                  <button class="composer-format-btn composer-format-btn-color" @click="applyCustomColorWrapper">
-                    c{{ composerColorPicker.toUpperCase() }}
-                  </button>
-                </div-->
                 <div class="composer-upload-row">
                   <button class="composer-format-btn composer-format-btn-upload" @click="openGalleryPicker">
-                    Загрузить картинку
+                    Загрузить фото/видео
                   </button>
                 </div>
               </div>
@@ -504,36 +613,9 @@
 
               <div class="composer-section">
                 <label class="composer-checkbox-row">
-                  <input
-                    v-model="sendAnonymous"
-                    type="checkbox"
-                  />
+                  <input v-model="sendAnonymous" type="checkbox" />
                   <span>Отправить анонимно</span>
                 </label>
-              </div>
-
-              <div class="composer-section" v-if="activeDialog && activeDialog.kind !== 'direct' && isActiveDialogAdmin">
-                <div class="composer-section-title">Room app (MVP)</div>
-                <div class="composer-scriptable-row">
-                  <button class="composer-format-btn" @click="setupPollRoomSurfaceDemo">
-                    Poll surface
-                  </button>
-                  <button class="composer-format-btn" @click="setupBotControlRoomSurfaceDemo">
-                    Bot-control
-                  </button>
-                  <button class="composer-format-btn" @click="setupDashboardRoomSurfaceDemo">
-                    Dashboard
-                  </button>
-                  <button class="composer-format-btn" @click="disableCurrentRoomSurface">
-                    Disable app
-                  </button>
-                  <button class="composer-format-btn" @click="createSurfaceRoom('poll')">
-                    + Poll room
-                  </button>
-                  <button class="composer-format-btn" @click="createSurfaceRoom('bot_control')">
-                    + Bot room
-                  </button>
-                </div>
               </div>
             </div>
           </div>
@@ -555,7 +637,7 @@
             ref="galleryInputEl"
             class="gallery-input"
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             @change="onGalleryInputChange"
           />
@@ -565,14 +647,10 @@
             </svg>
           </button>
         </div>
-        <div v-if="pasteUploading" class="upload-hint">Загружаю картинку...</div>
+        <div v-if="canComposeInActiveDialog && pasteUploading" class="upload-hint">Загружаю файл...</div>
       </main>
 
-      <div
-        v-if="imageViewerVisible"
-        class="image-viewer"
-        @click="onImageViewerBackdropClick"
-      >
+      <div v-if="imageViewerVisible" class="image-viewer" @click="onImageViewerBackdropClick">
         <button class="image-viewer-close" aria-label="Закрыть" @click="closeImageViewer">×</button>
         <img
           class="image-viewer-media"
@@ -581,128 +659,6 @@
           @click.stop
         />
       </div>
-
-      <aside class="drawer drawer-right" :class="{open: rightMenuOpen}">
-        <div class="drawer-head">
-          <div class="drawer-title">Опции</div>
-          <button class="drawer-close" @click="onCloseRightMenuClick">Закрыть</button>
-        </div>
-
-        <div class="section-title">Профиль</div>
-        <div class="profile-username">{{ formatUsername(me?.nickname || '') }}</div>
-
-        <div class="field-label">Имя</div>
-        <input
-          v-model="profileName"
-          class="users-search"
-          type="text"
-          placeholder="Имя в чате"
-        />
-
-        <div class="field-label">Цвет никнейма</div>
-        <div class="color-row">
-          <input
-            v-model="profileColorPicker"
-            class="color-picker"
-            type="color"
-            @input="onColorPicked"
-          />
-          <button class="ghost-btn" @click="clearNicknameColor">Сбросить</button>
-        </div>
-        <div class="color-value">
-          {{ profileNicknameColor || 'без цвета' }}
-        </div>
-
-        <div class="section-title">Уведомления</div>
-        <label class="sound-toggle">
-          <input
-            v-model="soundEnabled"
-            type="checkbox"
-            @change="onSoundEnabledChange"
-          />
-          <span>Звук уведомлений</span>
-        </label>
-        <label class="sound-toggle">
-          <input
-            v-model="vibrationEnabled"
-            type="checkbox"
-            @change="onVibrationEnabledChange"
-          />
-          <span>Вибрация</span>
-        </label>
-        <label class="sound-toggle">
-          <input
-            v-model="pushDisableAllMentions"
-            type="checkbox"
-          />
-          <span>Не слать push от @all</span>
-        </label>
-        <label v-if="!isStandaloneApp" class="sound-toggle">
-          <input
-            v-model="browserNotificationsEnabled"
-            type="checkbox"
-            @change="onBrowserNotificationsEnabledChange"
-          />
-          <span>Уведомления браузера</span>
-        </label>
-        <div v-if="!isStandaloneApp" class="hint">
-          Статус: {{ browserNotificationPermission }}
-        </div>
-        <button
-          v-if="!isStandaloneApp && browserNotificationsEnabled && browserNotificationPermission !== 'granted'"
-          class="ghost-btn"
-          @click="requestBrowserNotificationPermission"
-        >
-          Разрешить уведомления
-        </button>
-
-        <div v-if="isStandaloneApp" class="hint">
-          Web Push: {{ webPushStatusText }}
-        </div>
-        <label v-if="isStandaloneApp" class="sound-toggle">
-          <input
-            v-model="webPushSettingEnabled"
-            type="checkbox"
-            :disabled="webPushBusy || !webPushSupported || !webPushAvailable"
-            @change="onWebPushEnabledChange"
-          />
-          <span>{{ webPushBusy ? 'Push-уведомления (обновляем...)' : 'Push-уведомления' }}</span>
-        </label>
-        <button
-          v-if="isDevMode && webPushSupported"
-          class="ghost-btn"
-          :disabled="webPushTestBusy || !canSendWebPushTest"
-          @click="sendWebPushTest"
-        >
-          {{ webPushTestBusy ? 'Отправляем тестовый push...' : 'Отправить тестовый push' }}
-        </button>
-        <div v-if="isDevMode && webPushTestStatus" class="hint">
-          {{ webPushTestStatus }}
-        </div>
-        <div v-if="isDevMode && webPushDiagnosticLines.length" class="hint">
-          <div v-for="(line, index) in webPushDiagnosticLines" :key="`web-push-diag-${index}`">
-            {{ line }}
-          </div>
-        </div>
-        <div v-if="isStandaloneApp && webPushRequiresIosInstall" class="hint">
-          На iPhone Web Push работает только в установленном приложении с экрана Домой.
-        </div>
-        <div v-if="webPushError" class="error">{{ webPushError }}</div>
-
-        <div class="section-title">Новый пароль</div>
-        <input
-          v-model="newPassword"
-          class="users-search"
-          type="password"
-          placeholder="Новый пароль"
-        />
-        <div class="hint">Если поле пустое, пароль не меняется.</div>
-
-        <div v-if="profileError" class="error">{{ profileError }}</div>
-        <button class="logout" :disabled="profileSaving" @click="onDone">
-          {{ profileSaving ? 'Сохранение...' : 'Сохранить' }}
-        </button>
-      </aside>
     </div>
   </div>
 </template>

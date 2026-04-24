@@ -35,6 +35,8 @@ export class ChatAuthService {
         id: true,
         nickname: true,
         name: true,
+        info: true,
+        avatarPath: true,
         nicknameColor: true,
         donationBadgeUntil: true,
         pushDisableAllMentions: true,
@@ -97,6 +99,8 @@ export class ChatAuthService {
       id: state.user.id,
       nickname: state.user.nickname,
       name: state.user.name,
+      info: state.user.info,
+      avatarUrl: state.user.avatarUrl,
       nicknameColor: state.user.nicknameColor,
       donationBadgeUntil: state.user.donationBadgeUntil,
       pushDisableAllMentions: !!state.user.pushDisableAllMentions,
@@ -121,10 +125,12 @@ export class ChatAuthService {
     if (authError) return authError;
 
     const hasName = Object.prototype.hasOwnProperty.call(payload || {}, 'name');
+    const hasInfo = Object.prototype.hasOwnProperty.call(payload || {}, 'info');
+    const hasAvatarPath = Object.prototype.hasOwnProperty.call(payload || {}, 'avatarPath');
     const hasNicknameColor = Object.prototype.hasOwnProperty.call(payload || {}, 'nicknameColor');
     const hasPushDisableAllMentions = Object.prototype.hasOwnProperty.call(payload || {}, 'pushDisableAllMentions');
 
-    if (!hasName && !hasNicknameColor && !hasPushDisableAllMentions) {
+    if (!hasName && !hasInfo && !hasAvatarPath && !hasNicknameColor && !hasPushDisableAllMentions) {
       return {ok: false, error: 'invalid_input'};
     }
 
@@ -137,6 +143,18 @@ export class ChatAuthService {
       }
 
       updateData.name = nextName.slice(0, MAX_USER_NAME_LENGTH);
+    }
+
+    if (hasInfo) {
+      updateData.info = this.ctx.normalizeUserInfo(payload?.info);
+    }
+
+    if (hasAvatarPath) {
+      const avatarPath = this.ctx.parseAvatarPath(payload?.avatarPath);
+      if (!avatarPath.ok) {
+        return {ok: false, error: avatarPath.error};
+      }
+      updateData.avatarPath = avatarPath.value ?? null;
     }
 
     if (hasNicknameColor) {
@@ -162,6 +180,8 @@ export class ChatAuthService {
         id: true,
         nickname: true,
         name: true,
+        info: true,
+        avatarPath: true,
         nicknameColor: true,
         donationBadgeUntil: true,
         pushDisableAllMentions: true,

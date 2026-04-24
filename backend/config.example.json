@@ -8,7 +8,8 @@
   ],
   "uploads": {
     "path": "./data/uploads",
-    "maxBytes": 1048576
+    "maxBytes": 20971520,
+    "videoMaxBytes": 52428800
   },
   "vpn": {
     "donationPhone": "+7-999-999-9999",
@@ -17,7 +18,7 @@
   "push": {
     "vapidPublicKey": "",
     "vapidPrivateKey": "",
-    "vapidSubject": ""d
+    "vapidSubject": ""
   },
   "db": {
     "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"

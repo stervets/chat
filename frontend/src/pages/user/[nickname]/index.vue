@@ -1,6 +1,6 @@
 <template>
-  <div class="page page-vpn-redirect">
-    <div class="hint">Перенаправляю...</div>
+  <div class="page page-user-redirect">
+    <div class="hint">Перенаправляю в console...</div>
   </div>
 </template>
 

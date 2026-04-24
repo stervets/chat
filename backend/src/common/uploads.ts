@@ -15,6 +15,11 @@ const MIME_TO_EXT: Record<string, string> = {
   'image/gif': '.gif',
   'image/avif': '.avif',
   'image/bmp': '.bmp',
+  'video/mp4': '.mp4',
+  'video/webm': '.webm',
+  'video/quicktime': '.mov',
+  'video/x-m4v': '.m4v',
+  'video/ogg': '.ogv',
 };
 
 const EXT_TO_MIME: Record<string, string> = {
@@ -25,6 +30,11 @@ const EXT_TO_MIME: Record<string, string> = {
   '.gif': 'image/gif',
   '.avif': 'image/avif',
   '.bmp': 'image/bmp',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
+  '.ogv': 'video/ogg',
 };
 
 export const UPLOADS_PUBLIC_PREFIX = '/uploads';

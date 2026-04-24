@@ -1,4 +1,5 @@
 import { computed } from 'vue';
+import {loadLastChatPath} from '@/composables/last-chat';
 
 export default {
   setup() {
@@ -33,7 +34,7 @@ export default {
 
   methods: {
     onGoHome(this: any) {
-      clearError({ redirect: '/chat' });
+      clearError({ redirect: loadLastChatPath() });
     },
 
     onRetry(this: any) {

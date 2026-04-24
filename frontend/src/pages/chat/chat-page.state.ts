@@ -1,5 +1,5 @@
 import {ref} from 'vue';
-import type {Dialog, User} from '@/composables/types';
+import type {Dialog, Message, User} from '@/composables/types';
 import {wsConnectionState} from '@/composables/ws-rpc';
 import type {DirectDialog, NotificationItem, ToastItem} from './chat-page.constants';
 import type {ScriptRuntimeManager} from '@/scriptable/runtime/manager';
@@ -9,6 +9,7 @@ export function createChatPageState() {
     me: ref<User | null>(null),
     users: ref<User[]>([]),
     directDialogs: ref<DirectDialog[]>([]),
+    pinnedDirectUserIds: ref<number[]>([]),
     generalDialog: ref<Dialog | null>(null),
     activeDialog: ref<Dialog | null>(null),
 
@@ -82,7 +83,21 @@ export function createChatPageState() {
     leftMenuOpen: ref(false),
     rightMenuOpen: ref(false),
     isCompactLayout: ref(false),
+    leftNavMode: ref<'directs' | 'rooms'>('directs'),
     searchQuery: ref(''),
+    roomSearchQuery: ref(''),
+    joinedRooms: ref<Dialog[]>([]),
+    publicRooms: ref<Dialog[]>([]),
+    roomCreateTitle: ref(''),
+    roomCreateVisibility: ref<'public' | 'private'>('public'),
+    roomCreateCommentsEnabled: ref(true),
+    roomCreating: ref(false),
+    roomInviteOpen: ref(false),
+    roomInviteLoading: ref(false),
+    roomInviteError: ref(''),
+    roomInviteSearchQuery: ref(''),
+    roomInviteContacts: ref<User[]>([]),
+    roomInviteSelectedIds: ref<number[]>([]),
     notificationsMenuOpen: ref(false),
     notifications: ref<NotificationItem[]>([]),
     notificationsSeq: ref(1),
@@ -102,6 +117,7 @@ export function createChatPageState() {
     profileSaving: ref(false),
     profileError: ref(''),
     roomDeletePending: ref(false),
+    navPinPending: ref(false),
     soundEnabled: ref(true),
     vibrationEnabled: ref(true),
     soundOverlayVisible: ref(false),

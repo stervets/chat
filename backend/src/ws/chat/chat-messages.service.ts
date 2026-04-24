@@ -1,5 +1,5 @@
 import {db} from '../../db.js';
-import {getRoomById, userCanAccessRoom, userIsRoomAdmin} from '../../common/rooms.js';
+import {ensureUserInRoom, getRoomById, userCanAccessRoom, userIsRoomAdmin} from '../../common/rooms.js';
 import {createMessageNode, createRoomNode} from '../../common/nodes.js';
 import {
   ANONYMOUS_AUTHOR_ID,
@@ -56,6 +56,12 @@ export class ChatMessagesService {
     if (!room || !userCanAccessRoom(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
+    if (room.post_only_by_admin && !userIsRoomAdmin(state.user!.id, room)) {
+      return {ok: false, error: 'room_posting_restricted'};
+    }
+    if ((room.kind === 'group' || room.kind === 'game') && room.visibility === 'public') {
+      await ensureUserInRoom(room.id, state.user!.id);
+    }
 
     const trimmed = String(bodyRaw ?? '').trim();
     if (!trimmed) {
@@ -101,6 +107,7 @@ export class ChatMessagesService {
           data: {},
         },
         commentRoomId: null,
+        commentCount: 0,
         createdAt: created.message.createdAt.toISOString(),
         reactions: [],
       },
@@ -360,6 +367,9 @@ export class ChatMessagesService {
     if (!sourceRoom || !userCanAccessRoom(state.user!.id, sourceRoom)) {
       return {ok: false, error: 'forbidden'};
     }
+    if (!sourceRoom.comments_enabled) {
+      return {ok: false, error: 'comments_disabled'};
+    }
 
     const existingCommentRoom = await db.room.findFirst({
       where: {
@@ -506,9 +516,6 @@ export class ChatMessagesService {
       return {ok: false, error: 'forbidden'};
     }
     if (room.kind === 'direct') {
-      return {ok: false, error: 'pin_not_supported'};
-    }
-    if (!userIsRoomAdmin(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 
@@ -579,9 +586,6 @@ export class ChatMessagesService {
       return {ok: false, error: 'forbidden'};
     }
     if (room.kind === 'direct') {
-      return {ok: false, error: 'pin_not_supported'};
-    }
-    if (!userIsRoomAdmin(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 

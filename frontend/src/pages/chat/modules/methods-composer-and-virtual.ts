@@ -179,6 +179,14 @@ export const chatMethodsComposerAndVirtual = {
       return `@${nickname}`;
     },
 
+    isSystemNickname(this: any, nicknameRaw: unknown) {
+      return String(nicknameRaw || '').trim().toLowerCase() === 'marx';
+    },
+
+    isSystemUser(this: any, user: User | null) {
+      return this.isSystemNickname(user?.nickname);
+    },
+
     parseDonationBadgeUntilTs(this: any, raw: unknown) {
       const value = String(raw || '').trim();
       if (!value) return 0;
@@ -236,7 +244,9 @@ export const chatMethodsComposerAndVirtual = {
     },
 
     normalizeMessage(this: any, message: any): Message {
+      const sourceKind = String(message?.kind || 'text').trim().toLowerCase();
       const rawText = String(message?.rawText ?? message?.body ?? '');
+      const fallbackText = rawText.trim() || '[scriptable disabled]';
       const renderedPreviews = Array.isArray(message?.renderedPreviews) ? message.renderedPreviews : [];
       const runtimeRaw = message?.runtime && typeof message.runtime === 'object' && !Array.isArray(message.runtime)
         ? message.runtime
@@ -244,25 +254,25 @@ export const chatMethodsComposerAndVirtual = {
       const runtimeData = runtimeRaw?.data && typeof runtimeRaw.data === 'object' && !Array.isArray(runtimeRaw.data)
         ? runtimeRaw.data
         : {};
-      const messageKind = String(message?.kind || 'text').trim().toLowerCase();
       const commentRoomId = Number(message?.commentRoomId || 0);
       return {
         ...message,
-        kind: messageKind === 'scriptable'
-          ? 'scriptable'
-          : (messageKind === 'system' ? 'system' : 'text'),
-        rawText,
+        kind: sourceKind === 'system' ? 'system' : 'text',
+        rawText: sourceKind === 'scriptable' ? fallbackText : rawText,
         authorDonationBadgeUntil: message?.authorDonationBadgeUntil
           ? String(message.authorDonationBadgeUntil)
           : null,
-        renderedHtml: String(message?.renderedHtml ?? ''),
+        renderedHtml: sourceKind === 'scriptable'
+          ? String(message?.renderedHtml || fallbackText)
+          : String(message?.renderedHtml ?? ''),
         renderedPreviews,
         runtime: {
-          clientScript: runtimeRaw?.clientScript ? String(runtimeRaw.clientScript) : null,
-          serverScript: runtimeRaw?.serverScript ? String(runtimeRaw.serverScript) : null,
-          data: runtimeData,
+          clientScript: null,
+          serverScript: null,
+          data: sourceKind === 'scriptable' ? {} : runtimeData,
         },
         commentRoomId: Number.isFinite(commentRoomId) && commentRoomId > 0 ? commentRoomId : null,
+        commentCount: Math.max(0, Number(message?.commentCount || 0)),
         reactions: Array.isArray(message?.reactions) ? message.reactions : [],
       } as Message;
     },
@@ -439,7 +449,7 @@ export const chatMethodsComposerAndVirtual = {
       input.click();
     },
 
-    async attachImageFiles(this: any, filesRaw: File[]) {
+    async attachMediaFiles(this: any, filesRaw: File[]) {
       const files = Array.isArray(filesRaw) ? filesRaw : [];
       if (!files.length) return;
       if (!this.activeDialog || this.pasteUploading) return;
@@ -449,21 +459,24 @@ export const chatMethodsComposerAndVirtual = {
 
       try {
         for (const sourceFile of files) {
-          const preparedFile = await this.preparePastedImage(sourceFile);
+          const preparedFile = await this.prepareUploadMediaFile(sourceFile);
           if (!preparedFile) {
-            this.error = 'Картинка слишком большая даже после сжатия.';
+            this.error = 'Файл слишком большой.';
             continue;
           }
 
-          const uploadResult = await this.uploadImageFile(preparedFile);
+          const uploadResult = await this.uploadMediaFile(preparedFile);
           if (!(uploadResult as any)?.ok || !(uploadResult as any)?.url) {
-            this.error = 'Не удалось загрузить картинку.';
+            const uploadError = String((uploadResult as any)?.error || '').toLowerCase();
+            this.error = uploadError.includes('file_too_large')
+              ? 'Файл слишком большой.'
+              : 'Не удалось загрузить файл.';
             continue;
           }
 
           const url = String((uploadResult as any).url || '').trim();
           if (!url) {
-            this.error = 'Не удалось загрузить картинку.';
+            this.error = 'Не удалось загрузить файл.';
             continue;
           }
 
@@ -483,7 +496,7 @@ export const chatMethodsComposerAndVirtual = {
         return;
       }
 
-      await this.attachImageFiles(files);
+      await this.attachMediaFiles(files);
       if (input) input.value = '';
     },
 
@@ -533,6 +546,7 @@ export const chatMethodsComposerAndVirtual = {
     canOpenDiscussionFromMessage(this: any, message: Message) {
       if (!this.activeDialog) return false;
       if (this.activeDialog.kind === 'direct') return false;
+      if (this.activeDialog.commentsEnabled === false) return false;
       const messageId = Number(message?.id || 0);
       return Number.isFinite(messageId) && messageId > 0;
     },
@@ -594,7 +608,9 @@ export const chatMethodsComposerAndVirtual = {
         if (!Number.isFinite(commentRoomId) || commentRoomId <= 0) {
           const result = await ws.request('message:comment-room:create', {messageId});
           if (!(result as any)?.ok) {
-            this.error = 'Не удалось открыть комментарии.';
+            this.error = (result as any)?.error === 'comments_disabled'
+              ? 'Комментарии в этой комнате отключены.'
+              : 'Не удалось открыть комментарии.';
             return;
           }
 
