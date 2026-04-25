@@ -276,10 +276,15 @@ export const chatMethodsRuntimeAndRouting = {
     showBrowserNotification(this: any, notification: NotificationItem) {
       if (this.isStandaloneApp) return;
       if (!this.browserNotificationsEnabled) return;
-      if (this.webPushEnabled) return;
       if (this.browserNotificationPermission !== 'granted') return;
-      if (!this.isWindowInactive()) return;
       if (!this.isBrowserNotificationsSupported()) return;
+
+      const activeDialogId = Number(this.activeDialog?.id || 0);
+      const notificationRoomId = Number(notification?.roomId || 0);
+      const sameDialog = activeDialogId > 0
+        && notificationRoomId > 0
+        && activeDialogId === notificationRoomId;
+      if (sameDialog && !this.isWindowInactive()) return;
 
       const systemNotification = new Notification(
         this.getNotificationDialogTitle(notification),

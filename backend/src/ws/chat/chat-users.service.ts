@@ -1,5 +1,6 @@
 import {db} from '../../db.js';
 import {normalizeNickname} from '../../common/nickname.js';
+import {ANONYMOUS_AUTHOR_NICKNAME} from './chat-context.types.js';
 import {ChatContext, type ApiError, type ApiOk, type PublicUser} from './chat-context.js';
 import type {SocketState} from '../protocol.js';
 
@@ -29,6 +30,9 @@ export class ChatUsersService {
       where: {
         id: {
           not: state.user!.id,
+        },
+        nickname: {
+          not: ANONYMOUS_AUTHOR_NICKNAME,
         },
       },
       orderBy: [
@@ -85,6 +89,11 @@ export class ChatUsersService {
       db.userContact.findMany({
         where: {
           ownerId: state.user!.id,
+          contact: {
+            nickname: {
+              not: ANONYMOUS_AUTHOR_NICKNAME,
+            },
+          },
         },
         orderBy: {
           createdAt: 'desc',
@@ -134,6 +143,9 @@ export class ChatUsersService {
     });
     if (!user) {
       return {ok: false, error: 'user_not_found'};
+    }
+    if (String(user.nickname || '').trim().toLowerCase() === ANONYMOUS_AUTHOR_NICKNAME) {
+      return {ok: false, error: 'forbidden'};
     }
 
     await db.userContact.upsert({

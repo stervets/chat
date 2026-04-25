@@ -89,6 +89,10 @@ Frontend:
 - `/vpn` — redirect в `/console?tab=vpn`;
 - `/invites` — redirect в `/console?tab=invites`.
 
+## Пользователи и уведомления
+- `anonymous` не должен попадать в `user:list` и `contacts:list`, а также не должен добавляться в контакты;
+- browser notifications в `/chat` не завязаны на флаг `webPushEnabled`: если событие не из текущего открытого диалога, нотификация может показываться даже при активной вкладке.
+
 ## Конфиги
 - `backend/config.json`
 - `frontend/config.json`
