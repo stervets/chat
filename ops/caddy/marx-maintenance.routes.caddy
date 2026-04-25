@@ -1,5 +1,5 @@
 @backend {
-    path /ws /ws/* /push /push/* /upload/image /uploads /uploads/*
+    path /ws /ws/* /push /push/* /upload/image /upload/media /uploads /uploads/*
 }
 
 handle @backend {
