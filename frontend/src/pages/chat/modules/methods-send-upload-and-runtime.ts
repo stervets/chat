@@ -533,6 +533,38 @@ export const chatMethodsSendUploadAndRuntime = {
       await this.fetchDirectDialogs();
     },
 
+    async onRoomMessagesCleared(this: any, payload: any) {
+      const roomId = Number(payload?.roomId || payload?.dialogId || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+
+      const kind = String(payload?.kind || '').trim().toLowerCase();
+      if (kind && kind !== 'direct') return;
+
+      this.notifications = this.notifications.filter((notification: NotificationItem) => notification.roomId !== roomId);
+      this.notificationsMenuOpen = false;
+      this.updateFaviconBlinkByUnread();
+
+      if (Number(this.activeDialog?.id || 0) !== roomId) {
+        await this.fetchDirectDialogs();
+        await this.fetchPinnedDirectUserIds();
+        return;
+      }
+
+      this.historyLoadSeq = Number(this.historyLoadSeq || 0) + 1;
+      this.messages = [];
+      this.activePinnedMessage = null;
+      this.notifyMessagesChanged();
+      this.cancelMessageEdit();
+      this.reactionPickerMessageId = null;
+      this.reactionTooltipVisible = false;
+      this.discussionOpenPendingMessageId = null;
+      this.resetMessagePreviewCache();
+      this.clearFreshMessageMarks();
+
+      await this.fetchDirectDialogs();
+      await this.fetchPinnedDirectUserIds();
+    },
+
     async onDialogDeleted(this: any, payload: any) {
       const roomId = Number(payload?.roomId);
       if (!Number.isFinite(roomId)) return;

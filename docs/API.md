@@ -96,6 +96,13 @@ Room payload дополнительно содержит:
 
 `room:members:list` дополнительно отдаёт `isOnline:boolean`.
 
+Семантика:
+- `room:group:get-default` может создать default room, но не создаёт membership в `room_users`; поле `joined` отражает фактическое членство.
+- `room:delete` для `group/game/comment` удаляет room по текущим правам доступа.
+- `room:delete` для `direct` не удаляет комнату: очищает сообщения для обоих участников, сбрасывает `pinnedNodeId`, оставляет room и участников.
+- direct clear может выполнить любой участник direct.
+- после direct clear backend рассылает `room:messages:cleared({roomId, dialogId, kind:'direct'})`.
+
 ## Messages
 
 - `message:list({roomId, limit?, beforeMessageId?})`
@@ -163,7 +170,11 @@ Invite payload теперь может включать:
 - в invite можно включать только joined `group` комнаты;
 - `direct` и `comment` комнаты недопустимы;
 - после успешного redeem invite удаляется;
-- если `roomIds` не передан или старый invite пустой, fallback идёт в default group room.
+- `invites:create({})` сохраняет legacy fallback: invite может быть привязан к fallback/default group room.
+- `invites:create({roomIds:[]})` создаёт invite без `invites_rooms`.
+- `invites:create({roomIds:[id...]})` привязывает только доступные creator'у `group` комнаты, иначе `invalid_rooms`.
+- при redeem пользователь добавляется в комнаты из invite + в системную комнату `Новости MARX`/`MARX` (если существует).
+- explicit empty invite (`roomIds:[]`) не добавляет пользователя в `Общий чат`.
 - если `invites:redeem` вызвал уже авторизованный пользователь, invite не регистрирует нового юзера, а просто добавляет доступ к room из invite (`appliedToExistingUser=true`, `addedRoomIds[]`).
 
 ## Games
@@ -181,6 +192,7 @@ Invite payload теперь может включать:
 - `message:reaction:notify`
 - `room:updated`
 - `room:deleted`
+- `room:messages:cleared`
 - `room:pin:updated`
 - `user:updated`
 - `game:session:updated`

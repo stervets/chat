@@ -163,9 +163,10 @@ yarn run frontend:dev
   - `roomIds` не передан: остаётся legacy fallback-комната;
   - `roomIds: []`: создаётся invite без `invites_rooms`;
   - `roomIds` с id: строгая проверка доступности, иначе `invalid_rooms`.
-- `room:group:get-default` больше не делает auto-join в `room_users`; в ответе есть `joined`.
+- `room:group:get-default` больше не делает auto-join в `room_users`; даже если default room создаётся этим вызовом, membership не создаётся. В ответе есть `joined`.
 - `/chat` на фронте выбирает дефолт через joined-комнаты, а не форсит `generalDialog`; при отсутствии joined-комнат автоджойна в `Общий чат` нет.
 - `room:pin:set`/`room:pin:clear` разрешены только администратору комнаты (`userIsRoomAdmin`), direct по-прежнему запрещён.
 - `room:delete` для direct теперь очищает переписку (и сбрасывает `pinnedNodeId`), но не удаляет саму room/node и участников.
 - gateway для direct-clear не шлёт `room:deleted` и не закрывает room subscriptions.
+- после direct-clear gateway рассылает `room:messages:cleared` всем участникам direct (включая инициатора).
 - из invite-модели убраны `used_by/used_at` и relation `InviteUsedBy`; consume invite теперь single-use через атомарный delete в одной transaction.

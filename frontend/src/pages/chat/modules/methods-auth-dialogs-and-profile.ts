@@ -746,21 +746,11 @@ export const chatMethodsAuthDialogsAndProfile = {
           return;
         }
         if (roomKind === 'direct') {
-          const seq = this.historyLoadSeq + 1;
-          this.historyLoadSeq = seq;
-          this.messages = [];
-          this.activePinnedMessage = null;
-          this.notifyMessagesChanged();
-          this.cancelMessageEdit();
-          this.reactionPickerMessageId = null;
-          this.reactionTooltipVisible = false;
-          this.resetMessagePreviewCache();
-          await this.loadHistory(roomId, seq);
-          if (seq === this.historyLoadSeq && Number(this.activeDialog?.id || 0) === roomId) {
-            await this.joinDialog(roomId);
-          }
-          await this.fetchDirectDialogs();
-          await this.fetchPinnedDirectUserIds();
+          await this.onRoomMessagesCleared({
+            roomId,
+            dialogId: roomId,
+            kind: 'direct',
+          });
           return;
         }
 

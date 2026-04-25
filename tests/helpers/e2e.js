@@ -46,6 +46,8 @@ class WsRpcClient {
     this.ws = null;
     this.seq = 0;
     this.pending = new Map();
+    this.eventQueue = new Map();
+    this.eventWaiters = new Map();
   }
 
   async connect() {
@@ -105,6 +107,120 @@ class WsRpcClient {
       pending.reject(error);
     }
     this.pending.clear();
+
+    for (const waiters of this.eventWaiters.values()) {
+      for (const waiter of waiters) {
+        clearTimeout(waiter.timer);
+        waiter.reject(error);
+      }
+    }
+    this.eventWaiters.clear();
+    this.eventQueue.clear();
+  }
+
+  onEvent(event, payload, senderId, recipientId) {
+    const waiters = this.eventWaiters.get(event) || [];
+    if (waiters.length > 0) {
+      for (let index = 0; index < waiters.length; index += 1) {
+        const waiter = waiters[index];
+        let matched = true;
+        if (typeof waiter.predicate === 'function') {
+          try {
+            matched = !!waiter.predicate(payload, senderId, recipientId);
+          } catch {
+            matched = false;
+          }
+        }
+        if (!matched) continue;
+
+        waiters.splice(index, 1);
+        if (waiters.length > 0) {
+          this.eventWaiters.set(event, waiters);
+        } else {
+          this.eventWaiters.delete(event);
+        }
+        clearTimeout(waiter.timer);
+        waiter.resolve({
+          event,
+          payload,
+          senderId,
+          recipientId,
+        });
+        return;
+      }
+    }
+
+    const queue = this.eventQueue.get(event) || [];
+    queue.push({
+      event,
+      payload,
+      senderId,
+      recipientId,
+    });
+    if (queue.length > 50) {
+      queue.shift();
+    }
+    this.eventQueue.set(event, queue);
+  }
+
+  async waitForEvent(eventRaw, options = {}) {
+    const event = String(eventRaw || '').trim();
+    if (!event) {
+      throw new Error('invalid_event_name');
+    }
+
+    const timeoutMs = Number(options.timeoutMs || 5_000);
+    const predicate = typeof options.predicate === 'function'
+      ? options.predicate
+      : null;
+
+    const queued = this.eventQueue.get(event) || [];
+    for (let index = 0; index < queued.length; index += 1) {
+      const item = queued[index];
+      let matched = true;
+      if (predicate) {
+        try {
+          matched = !!predicate(item.payload, item.senderId, item.recipientId);
+        } catch {
+          matched = false;
+        }
+      }
+      if (!matched) continue;
+
+      queued.splice(index, 1);
+      if (queued.length > 0) {
+        this.eventQueue.set(event, queued);
+      } else {
+        this.eventQueue.delete(event);
+      }
+      return item;
+    }
+
+    return new Promise((resolvePromise, rejectPromise) => {
+      const waiters = this.eventWaiters.get(event) || [];
+      const waiter = {
+        predicate,
+        resolve: resolvePromise,
+        reject: rejectPromise,
+        timer: null,
+      };
+      const effectiveTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+        ? timeoutMs
+        : 5_000;
+      waiter.timer = setTimeout(() => {
+        const currentWaiters = this.eventWaiters.get(event) || [];
+        const nextWaiters = currentWaiters.filter((item) => item !== waiter);
+        if (nextWaiters.length > 0) {
+          this.eventWaiters.set(event, nextWaiters);
+        } else {
+          this.eventWaiters.delete(event);
+        }
+        rejectPromise(new Error(`ws_event_timeout:${event}`));
+      }, effectiveTimeoutMs);
+
+      waiters.push(waiter);
+      this.eventWaiters.set(event, waiters);
+    });
   }
 
   onMessage(rawPayload) {
@@ -115,18 +231,29 @@ class WsRpcClient {
       return;
     }
 
-    if (!Array.isArray(parsed) || parsed[0] !== '[res]') return;
-    const requestId = String(parsed[4] || '');
-    if (!requestId) return;
+    if (!Array.isArray(parsed) || parsed.length < 4) return;
 
-    const pending = this.pending.get(requestId);
-    if (!pending) return;
+    if (parsed[0] === '[res]') {
+      const requestId = String(parsed[4] || '');
+      if (!requestId) return;
 
-    clearTimeout(pending.timer);
-    this.pending.delete(requestId);
+      const pending = this.pending.get(requestId);
+      if (!pending) return;
 
-    const payload = Array.isArray(parsed[1]) ? parsed[1][0] : undefined;
-    pending.resolve(payload);
+      clearTimeout(pending.timer);
+      this.pending.delete(requestId);
+
+      const payload = Array.isArray(parsed[1]) ? parsed[1][0] : undefined;
+      pending.resolve(payload);
+      return;
+    }
+
+    const event = String(parsed[0] || '').trim();
+    if (!event) return;
+    const payload = parsed[1] && typeof parsed[1] === 'object' && !Array.isArray(parsed[1])
+      ? parsed[1]
+      : {};
+    this.onEvent(event, payload, String(parsed[2] || ''), String(parsed[3] || ''));
   }
 
   async request(com, args = {}, timeoutMs = 20_000) {

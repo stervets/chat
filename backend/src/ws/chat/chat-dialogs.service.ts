@@ -252,7 +252,10 @@ export class ChatDialogsService {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    const room = await getOrCreateGroupRoom(state.user!.id);
+    const room = await getOrCreateGroupRoom(state.user!.id, {
+      backfillUsers: false,
+      addCreator: false,
+    });
     const roomRuntime = await this.loadRoomRuntime(room.id);
     return {
       roomId: room.id,

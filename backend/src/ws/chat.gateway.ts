@@ -506,6 +506,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const result = this.normalizeResult<RoomDeleteData>(await this.chatService.roomDelete(client.state, payload.roomId, payload));
         if (result.ok && result.data.changed) {
           const isDirectClear = result.data.kind === 'direct';
+          if (roomBeforeDelete && isDirectClear) {
+            this.broadcastToRoomMembers(roomBeforeDelete, 'room:messages:cleared', {
+              roomId: result.data.roomId,
+              dialogId: result.data.dialogId,
+              kind: result.data.kind,
+            });
+          }
           if (roomBeforeDelete && !isDirectClear) {
             this.broadcastToRoomMembers(roomBeforeDelete, 'room:deleted', {
               roomId: result.data.roomId,

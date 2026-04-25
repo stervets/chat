@@ -298,6 +298,12 @@ test('black-box: invite with roomIds=[] keeps invite rooms empty and does not jo
           .map((room) => Number(room?.roomId || room?.dialogId || room?.id || 0))
           .filter((roomId) => Number.isFinite(roomId) && roomId > 0),
       );
+      const joinedBeforeTitles = new Set(
+        (Array.isArray(joinedBeforeDefault) ? joinedBeforeDefault : [])
+          .map((room) => String(room?.title || '').trim())
+          .filter((title) => title.length > 0),
+      );
+      expect(joinedBeforeTitles.has('Общий чат')).toBe(false);
 
       const defaultGroup = assertNoApiError(
         await newcomer.request('room:group:get-default', {}),
@@ -305,6 +311,7 @@ test('black-box: invite with roomIds=[] keeps invite rooms empty and does not jo
       );
       const defaultRoomId = Number(defaultGroup?.roomId || 0);
       expect(defaultRoomId).toBeGreaterThan(0);
+      expect(defaultGroup?.joined).toBe(false);
       expect(joinedBeforeIds.has(defaultRoomId)).toBe(false);
 
       const joinedAfterDefault = assertNoApiError(
@@ -316,7 +323,13 @@ test('black-box: invite with roomIds=[] keeps invite rooms empty and does not jo
           .map((room) => Number(room?.roomId || room?.dialogId || room?.id || 0))
           .filter((roomId) => Number.isFinite(roomId) && roomId > 0),
       );
+      const joinedAfterTitles = new Set(
+        (Array.isArray(joinedAfterDefault) ? joinedAfterDefault : [])
+          .map((room) => String(room?.title || '').trim())
+          .filter((title) => title.length > 0),
+      );
       expect(joinedAfterIds.has(defaultRoomId)).toBe(false);
+      expect(joinedAfterTitles.has('Общий чат')).toBe(false);
     } finally {
       await newcomer.close();
     }
@@ -419,6 +432,12 @@ test('black-box: direct room delete clears messages but keeps direct room', asyn
       expect(directRoomId).toBeGreaterThan(0);
       expect(Number(directByB?.roomId || 0)).toBe(directRoomId);
 
+      const directByBSubscribed = assertNoApiError(await userBClient.request('room:get', {
+        roomId: directRoomId,
+        subscribe: true,
+      }), 'B room:get subscribe direct');
+      expect(Number(directByBSubscribed?.roomId || 0)).toBe(directRoomId);
+
       assertNoApiError(await userAClient.request('message:create', {
         roomId: directRoomId,
         text: `bb-direct-clear-a-${Date.now()}`,
@@ -435,12 +454,28 @@ test('black-box: direct room delete clears messages but keeps direct room', asyn
       expect(Array.isArray(messagesBeforeDelete)).toBe(true);
       expect(messagesBeforeDelete.length).toBeGreaterThan(0);
 
+      const directClearedEventByBPromise = userBClient.waitForEvent('room:messages:cleared', {
+        timeoutMs: 10_000,
+        predicate: (payload) => Number(payload?.roomId || 0) === directRoomId,
+      });
+      const directDeletedEventByBPromise = userBClient.waitForEvent('room:deleted', {
+        timeoutMs: 2_000,
+        predicate: (payload) => Number(payload?.roomId || 0) === directRoomId,
+      });
+
       const clearByA = assertNoApiError(await userAClient.request('room:delete', {
         roomId: directRoomId,
         confirm: true,
       }), 'A room:delete direct clear');
       expect(clearByA.changed).toBe(true);
       expect(clearByA.kind).toBe('direct');
+
+      const directClearedEventByB = await directClearedEventByBPromise;
+      expect(directClearedEventByB?.event).toBe('room:messages:cleared');
+      expect(Number(directClearedEventByB?.payload?.roomId || 0)).toBe(directRoomId);
+      expect(Number(directClearedEventByB?.payload?.dialogId || 0)).toBe(directRoomId);
+      expect(String(directClearedEventByB?.payload?.kind || '')).toBe('direct');
+      await expect(directDeletedEventByBPromise).rejects.toThrow('ws_event_timeout:room:deleted');
 
       const roomByAAfterClear = assertNoApiError(await userAClient.request('room:get', {
         roomId: directRoomId,

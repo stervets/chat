@@ -194,10 +194,19 @@ export async function ensureUserInMarxNewsRoom(userId: number) {
   return room;
 }
 
-export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<RoomRow> {
+export async function getOrCreateGroupRoom(
+  createdByIdRaw?: number,
+  options?: {
+    backfillUsers?: boolean;
+    addCreator?: boolean;
+  },
+): Promise<RoomRow> {
   return withRoomCreateLock(DEFAULT_GROUP_ROOM_LOCK_KEY, async () => {
     const createdById = Number(createdByIdRaw || 0);
-    const canAssignCreator = Number.isFinite(createdById) && createdById > 0;
+    const shouldBackfillUsers = options?.backfillUsers !== false;
+    const canAssignCreator = options?.addCreator !== false
+      && Number.isFinite(createdById)
+      && createdById > 0;
 
     let room = await db.room.findFirst({
       where: {
@@ -232,20 +241,35 @@ export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<Roo
             },
           });
 
-          const users = await tx.user.findMany({
-            select: {
-              id: true,
-            },
-          });
+          let roomUsers: Array<{userId: number}> = [];
+          if (shouldBackfillUsers) {
+            const users = await tx.user.findMany({
+              select: {
+                id: true,
+              },
+            });
 
-          if (users.length > 0) {
+            if (users.length > 0) {
+              await tx.roomUser.createMany({
+                data: users.map((user) => ({
+                  roomId: created.room.id,
+                  userId: user.id,
+                })),
+                skipDuplicates: true,
+              });
+            }
+            roomUsers = users.map((user) => ({userId: user.id}));
+          } else if (canAssignCreator) {
             await tx.roomUser.createMany({
-              data: users.map((user) => ({
-                roomId: created.room.id,
-                userId: user.id,
-              })),
+              data: [
+                {
+                  roomId: created.room.id,
+                  userId: createdById,
+                },
+              ],
               skipDuplicates: true,
             });
+            roomUsers = [{userId: createdById}];
           }
 
           return {
@@ -264,7 +288,7 @@ export async function getOrCreateGroupRoom(createdByIdRaw?: number): Promise<Roo
               serverScript: created.node.serverScript,
               data: created.node.data,
             },
-            roomUsers: users.map((user) => ({userId: user.id})),
+            roomUsers,
           } satisfies RoomWithUsers;
         });
       } catch {

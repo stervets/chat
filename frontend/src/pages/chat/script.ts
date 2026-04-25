@@ -396,6 +396,9 @@ export default {
     this.dialogsDeletedHandler = (payload: any) => {
       void this.onDialogDeleted(payload);
     };
+    this.dialogMessagesClearedHandler = (payload: any) => {
+      void this.onRoomMessagesCleared(payload);
+    };
     this.chatReactionNotifyHandler = (payload: any) => {
       this.onChatReactionNotify(payload);
     };
@@ -426,6 +429,7 @@ export default {
     on('room:updated', this.chatRoomUpdatedHandler);
     on('message:reactions:updated', this.chatReactionsHandler);
     on('room:deleted', this.dialogsDeletedHandler);
+    on('room:messages:cleared', this.dialogMessagesClearedHandler);
     on('message:reaction:notify', this.chatReactionNotifyHandler);
     on('message:comment:notify', this.chatCommentNotifyHandler);
     on('user:updated', this.usersUpdatedHandler);
@@ -467,6 +471,7 @@ export default {
     this.chatRoomUpdatedHandler && off('room:updated', this.chatRoomUpdatedHandler);
     this.chatReactionsHandler && off('message:reactions:updated', this.chatReactionsHandler);
     this.dialogsDeletedHandler && off('room:deleted', this.dialogsDeletedHandler);
+    this.dialogMessagesClearedHandler && off('room:messages:cleared', this.dialogMessagesClearedHandler);
     this.chatReactionNotifyHandler && off('message:reaction:notify', this.chatReactionNotifyHandler);
     this.chatCommentNotifyHandler && off('message:comment:notify', this.chatCommentNotifyHandler);
     this.usersUpdatedHandler && off('user:updated', this.usersUpdatedHandler);
