@@ -1,28 +1,13 @@
 import {emit} from '@/composables/event-bus';
 
-const STRICT_WS_COMMANDS = new Set([
-  'auth:login',
-  'auth:session',
-  'auth:me',
-  'auth:logout',
-  'auth:updateProfile',
-  'auth:changePassword',
-  'room:get',
-  'room:list',
-  'room:create',
-  'room:delete',
-  'message:create',
-  'message:update',
-  'message:delete',
-  'message:list',
-  'message:reaction:set',
-  'runtime:action',
-]);
+export type WsResult<T = any> =
+  | {ok: true; data: T}
+  | {ok: false; error: any};
 
 export class WsClient {
   socket: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
-  private readonly requests: Record<string, {resolve: (result: any) => void; com: string}> = {};
+  private readonly requests: Record<string, {resolve: (result: WsResult) => void}> = {};
   private lastUrl = '';
 
   private parsePacket(raw: string): [string, Record<string, any> | any[], string, string, string?] | null {
@@ -49,29 +34,19 @@ export class WsClient {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   }
 
-  private adaptStrictResponseToLegacy(com: string, result: any) {
-    if (!STRICT_WS_COMMANDS.has(com)) return result;
-    if (!result || typeof result !== 'object') return result;
-    if (!((result as any).ok) || !Object.prototype.hasOwnProperty.call(result, 'data')) {
-      return result;
-    }
-
-    const data = (result as any).data;
-    if (com === 'auth:me' || com === 'room:list' || com === 'message:list') {
-      return data;
-    }
-
-    if (data && typeof data === 'object' && !Array.isArray(data)) {
+  private normalizeIncomingResult(value: any): WsResult {
+    if (value && typeof value === 'object' && value.ok === false) {
       return {
-        ok: true,
-        ...data,
+        ok: false,
+        error: Object.prototype.hasOwnProperty.call(value, 'error') ? value.error : 'server_error',
       };
     }
 
-    return {
-      ok: true,
-      data,
-    };
+    if (value && typeof value === 'object' && value.ok === true && Object.prototype.hasOwnProperty.call(value, 'data')) {
+      return {ok: true, data: value.data};
+    }
+
+    return {ok: true, data: value};
   }
 
   connect(url: string) {
@@ -100,10 +75,7 @@ export class WsClient {
         if (com === '[res]') {
           if (!requestId || !this.requests[requestId]) return;
           const pending = this.requests[requestId];
-          pending.resolve(this.adaptStrictResponseToLegacy(
-            pending.com,
-            Array.isArray(args) ? args[0] : undefined,
-          ));
+          pending.resolve(this.normalizeIncomingResult(Array.isArray(args) ? args[0] : undefined));
           delete this.requests[requestId];
           return;
         }
@@ -138,7 +110,7 @@ export class WsClient {
     this.socket = null;
   }
 
-  async request(com: string, args: Record<string, any> = {}) {
+  async request(com: string, args: Record<string, any> = {}): Promise<WsResult> {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       if (!this.lastUrl) {
         return {ok: false, error: 'not_connected'};
@@ -167,10 +139,7 @@ export class WsClient {
     ];
 
     return new Promise((resolve) => {
-      this.requests[requestId] = {
-        resolve,
-        com,
-      };
+      this.requests[requestId] = {resolve};
       try {
         this.socket!.send(JSON.stringify(packet));
       } catch (error: any) {

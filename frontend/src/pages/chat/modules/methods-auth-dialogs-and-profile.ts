@@ -5,6 +5,8 @@ import {
   getSessionToken,
   wsChangePassword,
   wsUpdateProfile,
+  wsData,
+  wsObject,
   COLOR_HEX_RE,
   HISTORY_BATCH_SIZE,
 } from './shared';
@@ -180,8 +182,9 @@ export const chatMethodsAuthDialogsAndProfile = {
 
       for (let attempt = 0; attempt < 6; attempt += 1) {
         const session = await restoreSession();
-        if ((session as any)?.ok && (session as any)?.user?.id) {
-          this.applyMe((session as any).user as User);
+        const data = wsObject(session);
+        if ((session as any)?.ok && data.user?.id) {
+          this.applyMe(data.user as User);
           this.loadHandledMessageNotificationIds();
           return true;
         }
@@ -201,33 +204,24 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchUsers(this: any) {
-      const result = await ws.request('user:list');
-      if (Array.isArray(result)) {
-        this.users = result
-          .map((row: any) => this.normalizeUser(row))
-          .filter(Boolean) as User[];
-      }
+      const rows = wsData<any[]>(await ws.request('user:list'), []);
+      this.users = rows
+        .map((row: any) => this.normalizeUser(row))
+        .filter(Boolean) as User[];
     },
 
     async fetchDirectDialogs(this: any) {
-      const result = await ws.request('room:list', {kind: 'direct'});
-      if (Array.isArray(result)) {
-        this.directDialogs = result.map((dialogRaw: any) => ({
-          ...dialogRaw,
-          targetUser: this.normalizeUser(dialogRaw?.targetUser) || dialogRaw?.targetUser,
-          roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
-        }));
-      }
+      const rows = wsData<any[]>(await ws.request('room:list', {kind: 'direct'}), []);
+      this.directDialogs = rows.map((dialogRaw: any) => ({
+        ...dialogRaw,
+        targetUser: this.normalizeUser(dialogRaw?.targetUser) || dialogRaw?.targetUser,
+        roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
+      }));
     },
 
     async fetchPinnedDirectUserIds(this: any) {
-      const result = await ws.request('contacts:list');
-      if (!Array.isArray(result)) {
-        this.pinnedDirectUserIds = [];
-        return;
-      }
-
-      this.pinnedDirectUserIds = result
+      const rows = wsData<any[]>(await ws.request('contacts:list'), []);
+      this.pinnedDirectUserIds = rows
         .map((row: any) => Number(row?.id || 0))
         .filter((id: number) => Number.isFinite(id) && id > 0);
     },
@@ -253,35 +247,32 @@ export const chatMethodsAuthDialogsAndProfile = {
         discussion: null,
       });
 
-      this.joinedRooms = Array.isArray(joinedResult)
-        ? joinedResult
-          .map((row: any) => normalizeRoomDialog(row))
-          .filter((dialog: Dialog) => Number(dialog.id || 0) > 0)
-        : [];
+      this.joinedRooms = wsData<any[]>(joinedResult, [])
+        .map((row: any) => normalizeRoomDialog(row))
+        .filter((dialog: Dialog) => Number(dialog.id || 0) > 0);
 
       const joinedIds = new Set(this.joinedRooms.map((dialog: Dialog) => Number(dialog.id || 0)));
-      this.publicRooms = Array.isArray(publicResult)
-        ? publicResult
-          .map((row: any) => normalizeRoomDialog(row))
-          .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !joinedIds.has(Number(dialog.id || 0)))
-        : [];
+      this.publicRooms = wsData<any[]>(publicResult, [])
+        .map((row: any) => normalizeRoomDialog(row))
+        .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !joinedIds.has(Number(dialog.id || 0)));
     },
 
     async fetchGeneralDialog(this: any) {
       const result = await ws.request('room:group:get-default');
       if ((result as any)?.error || (result as any)?.ok === false) return null;
+      const data = wsObject(result);
       return {
-        id: (result as any).roomId,
+        id: data.roomId,
         kind: 'group',
-        joined: (result as any).joined !== undefined ? !!(result as any).joined : true,
-        title: (result as any).title,
-        visibility: (result as any).visibility === 'private' ? 'private' : 'public',
-        commentsEnabled: (result as any).commentsEnabled !== undefined ? !!(result as any).commentsEnabled : true,
-        avatarUrl: resolveMediaUrl((result as any).avatarUrl) || null,
-        postOnlyByAdmin: !!(result as any).postOnlyByAdmin,
-        createdById: Number((result as any).createdById || 0) || null,
-        pinnedNodeId: Number((result as any).pinnedNodeId || 0) || null,
-        roomSurface: this.normalizeRoomSurface((result as any).roomSurface, (result as any).pinnedNodeId),
+        joined: data.joined !== undefined ? !!data.joined : true,
+        title: data.title,
+        visibility: data.visibility === 'private' ? 'private' : 'public',
+        commentsEnabled: data.commentsEnabled !== undefined ? !!data.commentsEnabled : true,
+        avatarUrl: resolveMediaUrl(data.avatarUrl) || null,
+        postOnlyByAdmin: !!data.postOnlyByAdmin,
+        createdById: Number(data.createdById || 0) || null,
+        pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
+        roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
         discussion: null,
       } as Dialog;
     },
@@ -290,7 +281,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (Array.isArray(this.joinedRooms) && this.joinedRooms.length > 0) {
         return this.joinedRooms[0] as Dialog;
       }
-      if (this.generalDialog && this.generalDialog.joined !== false) {
+      if (this.generalDialog) {
         return this.generalDialog as Dialog;
       }
       return null;
@@ -327,9 +318,10 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.error = 'Не удалось открыть диалог.';
         return null;
       }
-      const normalizedTargetUser = this.normalizeUser((result as any).targetUser) || (result as any).targetUser;
+      const data = wsObject(result);
+      const normalizedTargetUser = this.normalizeUser(data.targetUser) || data.targetUser;
       return {
-        id: (result as any).roomId,
+        id: data.roomId,
         kind: 'direct',
         joined: true,
         targetUser: normalizedTargetUser,
@@ -337,8 +329,8 @@ export const chatMethodsAuthDialogsAndProfile = {
         visibility: 'private',
         commentsEnabled: false,
         createdById: null,
-        pinnedNodeId: Number((result as any).pinnedNodeId || 0) || null,
-        roomSurface: this.normalizeRoomSurface((result as any).roomSurface, (result as any).pinnedNodeId),
+        pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
+        roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
         discussion: null,
       } as Dialog;
     },
@@ -363,12 +355,13 @@ export const chatMethodsAuthDialogsAndProfile = {
           beforeMessageId,
         });
         if (seq !== this.historyLoadSeq) return;
-        if (!Array.isArray(result)) {
+        const rows = wsData<any[]>(result, []);
+        if (!(result as any)?.ok) {
           this.error = 'Не удалось загрузить историю.';
           return;
         }
 
-        const nextChunk = result.map((message: any) => this.normalizeMessage(message));
+        const nextChunk = rows.map((message: any) => this.normalizeMessage(message));
         this.historyHasMore = nextChunk.length >= HISTORY_BATCH_SIZE;
         if (isInitialLoad) {
           this.seedNotificationsFromMessages(nextChunk);
@@ -428,41 +421,42 @@ export const chatMethodsAuthDialogsAndProfile = {
         return;
       }
 
+      const data = wsObject(result);
       if (this.activeDialog && Number(this.activeDialog.id || 0) === roomId) {
-        const joinedKind = String((result as any).kind || '').trim().toLowerCase();
+        const joinedKind = String(data.kind || '').trim().toLowerCase();
         const nextKind = joinedKind === 'direct' || joinedKind === 'game'
           ? joinedKind
           : 'group';
-        const directTargetUser = this.normalizeUser((result as any).targetUser) || this.activeDialog?.targetUser || null;
+        const directTargetUser = this.normalizeUser(data.targetUser) || this.activeDialog?.targetUser || null;
         const resolvedTitle = nextKind === 'direct'
           ? String(directTargetUser?.name || directTargetUser?.nickname || this.activeDialog?.title || 'Чат')
-          : ((result as any).title
-            ? String((result as any).title)
+          : (data.title
+            ? String(data.title)
             : (this.activeDialog?.title || 'Комната'));
-        const nextPinnedNodeId = Number((result as any).pinnedNodeId || 0) || null;
+        const nextPinnedNodeId = Number(data.pinnedNodeId || 0) || null;
         this.activeDialog = {
           ...this.activeDialog,
           kind: nextKind,
-          joined: (result as any).joined !== undefined ? !!(result as any).joined : (this.activeDialog?.joined !== false),
+          joined: data.joined !== undefined ? !!data.joined : (this.activeDialog?.joined !== false),
           title: resolvedTitle,
-          visibility: (result as any).visibility === 'private' ? 'private' : (this.activeDialog?.visibility || 'public'),
-          commentsEnabled: (result as any).commentsEnabled !== undefined
-            ? !!(result as any).commentsEnabled
+          visibility: data.visibility === 'private' ? 'private' : (this.activeDialog?.visibility || 'public'),
+          commentsEnabled: data.commentsEnabled !== undefined
+            ? !!data.commentsEnabled
             : (this.activeDialog?.commentsEnabled !== undefined ? !!this.activeDialog.commentsEnabled : true),
-          avatarUrl: resolveMediaUrl((result as any).avatarUrl) || (this.activeDialog?.avatarUrl || null),
-          postOnlyByAdmin: (result as any).postOnlyByAdmin !== undefined
-            ? !!(result as any).postOnlyByAdmin
+          avatarUrl: resolveMediaUrl(data.avatarUrl) || (this.activeDialog?.avatarUrl || null),
+          postOnlyByAdmin: data.postOnlyByAdmin !== undefined
+            ? !!data.postOnlyByAdmin
             : !!this.activeDialog?.postOnlyByAdmin,
-          createdById: Number((result as any).createdById || 0) || null,
+          createdById: Number(data.createdById || 0) || null,
           pinnedNodeId: nextPinnedNodeId,
-          roomSurface: this.normalizeRoomSurface((result as any).roomSurface, nextPinnedNodeId),
-          discussion: this.normalizeDiscussionMeta((result as any).discussion),
+          roomSurface: this.normalizeRoomSurface(data.roomSurface, nextPinnedNodeId),
+          discussion: this.normalizeDiscussionMeta(data.discussion),
           targetUser: nextKind === 'direct' ? directTargetUser : this.activeDialog?.targetUser,
         };
       }
 
-      this.setActiveRoomScript((result as any).roomRuntime || null);
-      const pinnedMessageRaw = (result as any).pinnedMessage;
+      this.setActiveRoomScript(data.roomRuntime || null);
+      const pinnedMessageRaw = data.pinnedMessage;
       this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
         ? this.normalizeMessage(pinnedMessageRaw)
         : null;
@@ -811,18 +805,19 @@ export const chatMethodsAuthDialogsAndProfile = {
           return;
         }
 
+        const data = wsObject(result);
         const dialog: Dialog = {
-          id: Number((result as any).roomId || 0),
+          id: Number(data.roomId || 0),
           kind: 'group',
           joined: true,
-          title: String((result as any).title || 'Комната'),
-          visibility: (result as any).visibility === 'private' ? 'private' : 'public',
-          commentsEnabled: (result as any).commentsEnabled !== undefined ? !!(result as any).commentsEnabled : true,
-          avatarUrl: resolveMediaUrl((result as any).avatarUrl) || null,
-          postOnlyByAdmin: !!(result as any).postOnlyByAdmin,
-          createdById: Number((result as any).createdById || 0) || null,
-          pinnedNodeId: Number((result as any).pinnedNodeId || 0) || null,
-          roomSurface: this.normalizeRoomSurface((result as any).roomSurface, (result as any).pinnedNodeId),
+          title: String(data.title || 'Комната'),
+          visibility: data.visibility === 'private' ? 'private' : 'public',
+          commentsEnabled: data.commentsEnabled !== undefined ? !!data.commentsEnabled : true,
+          avatarUrl: resolveMediaUrl(data.avatarUrl) || null,
+          postOnlyByAdmin: !!data.postOnlyByAdmin,
+          createdById: Number(data.createdById || 0) || null,
+          pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
+          roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
           discussion: null,
         };
         this.roomCreateTitle = '';
@@ -850,17 +845,11 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async loadRoomInviteContacts(this: any) {
-      const result = await ws.request('contacts:list');
-      if (!Array.isArray(result)) {
-        this.roomInviteContacts = [];
-        this.pinnedDirectUserIds = [];
-        return;
-      }
-
-      this.roomInviteContacts = result
+      const rows = wsData<any[]>(await ws.request('contacts:list'), []);
+      this.roomInviteContacts = rows
         .map((row: any) => this.normalizeUser(row))
         .filter(Boolean) as User[];
-      this.pinnedDirectUserIds = result
+      this.pinnedDirectUserIds = rows
         .map((row: any) => Number(row?.id || 0))
         .filter((id: number) => Number.isFinite(id) && id > 0);
     },

@@ -22,7 +22,7 @@ export class ChatUsersService {
   constructor(private readonly ctx: ChatContext) {}
 
   async usersList(state: SocketState): Promise<ApiError | PublicUser[]> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const rows = await db.user.findMany({
@@ -38,14 +38,14 @@ export class ChatUsersService {
       select: publicUserSelect(),
     });
 
-    return rows.map((row) => this.ctx.toPublicUser(row));
+    return rows.map((row) => this.ctx.users.toPublicUser(row));
   }
 
   async userGet(
     state: SocketState,
     payload: {userId?: unknown; nickname?: unknown},
   ): Promise<ApiError | ApiOk<{user: PublicUser}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const userId = Number.parseInt(String(payload?.userId ?? ''), 10);
@@ -73,12 +73,12 @@ export class ChatUsersService {
 
     return {
       ok: true,
-      user: this.ctx.toPublicUser(user),
+      user: this.ctx.users.toPublicUser(user),
     };
   }
 
   async contactsList(state: SocketState): Promise<ApiError | PublicUser[]> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const [rows, systemUser] = await Promise.all([
@@ -103,11 +103,11 @@ export class ChatUsersService {
       }),
     ]);
 
-    const contacts = rows.map((row) => this.ctx.toPublicUser(row.contact));
+    const contacts = rows.map((row) => this.ctx.users.toPublicUser(row.contact));
     if (systemUser && Number(systemUser.id || 0) !== Number(state.user!.id || 0)) {
       const hasSystemUser = contacts.some((user) => Number(user.id || 0) === Number(systemUser.id || 0));
       if (!hasSystemUser) {
-        contacts.unshift(this.ctx.toPublicUser(systemUser));
+        contacts.unshift(this.ctx.users.toPublicUser(systemUser));
       }
     }
 
@@ -115,7 +115,7 @@ export class ChatUsersService {
   }
 
   async contactsAdd(state: SocketState, payload: {userId?: unknown}): Promise<ApiError | ApiOk<{user: PublicUser}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const userId = Number.parseInt(String(payload?.userId ?? ''), 10);
@@ -152,12 +152,12 @@ export class ChatUsersService {
 
     return {
       ok: true,
-      user: this.ctx.toPublicUser(user),
+      user: this.ctx.users.toPublicUser(user),
     };
   }
 
   async contactsRemove(state: SocketState, payload: {userId?: unknown}): Promise<ApiError | ApiOk<{removed: boolean}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const userId = Number.parseInt(String(payload?.userId ?? ''), 10);

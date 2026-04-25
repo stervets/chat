@@ -23,7 +23,7 @@ export class ChatReactionsService {
       createdAt: string;
     };
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const messageId = Number.parseInt(String(messageIdRaw ?? ''), 10);
@@ -31,7 +31,7 @@ export class ChatReactionsService {
       return {ok: false, error: 'invalid_message'};
     }
 
-    const parsedEmoji = this.ctx.parseReactionEmoji(reactionRaw);
+    const parsedEmoji = this.ctx.input.parseReactionEmoji(reactionRaw);
     if (!parsedEmoji.ok) {
       return {ok: false, error: parsedEmoji.error};
     }
@@ -123,7 +123,7 @@ export class ChatReactionsService {
       changed = true;
     }
 
-    const reactions = await this.ctx.loadMessageReactions(messageId);
+    const reactions = await this.ctx.messages.loadMessageReactions(messageId);
     const shouldNotify = reactionSetForNotify
       && !!finalEmoji
       && typeof message.senderId === 'number'

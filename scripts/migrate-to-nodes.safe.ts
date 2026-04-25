@@ -109,6 +109,8 @@ async function alreadyMigrated(client: Client) {
 }
 
 async function renameOwnedSequence(client: Client, legacyTableName: string, columnName: string) {
+  if (!await columnExists(client, legacyTableName, columnName)) return;
+
   const result = await client.query(
     `select pg_get_serial_sequence($1, $2) as sequence_name`,
     [`public.${legacyTableName}`, columnName],

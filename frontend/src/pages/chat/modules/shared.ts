@@ -10,6 +10,9 @@ export {
   wsChangePassword,
   wsLogout,
   wsUpdateProfile,
+  wsData,
+  wsObject,
+  wsError,
 } from '@/composables/ws-rpc';
 export {
   BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY,

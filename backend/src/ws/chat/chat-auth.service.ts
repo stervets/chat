@@ -19,7 +19,7 @@ export class ChatAuthService {
     expiresAt: string;
     user: PublicUser;
   }>> {
-    const nicknameParsed = this.ctx.parseNickname(payload?.nickname);
+    const nicknameParsed = this.ctx.input.parseNickname(payload?.nickname);
     if (!nicknameParsed.ok) {
       return {ok: false, error: nicknameParsed.error};
     }
@@ -58,10 +58,10 @@ export class ChatAuthService {
       userAgent: state.userAgent,
     });
 
-    const publicUser = this.ctx.toPublicUser(user);
+    const publicUser = this.ctx.users.toPublicUser(user);
     state.user = publicUser;
     state.token = session.token;
-    await this.ctx.ensureSystemDirectForUser(publicUser.id);
+    await this.ctx.system.ensureSystemDirectForUser(publicUser.id);
 
     return {
       ok: true,
@@ -77,14 +77,14 @@ export class ChatAuthService {
     user: PublicUser;
   }>> {
     const token = (tokenRaw || '').toString().trim();
-    if (!token) return this.ctx.unauthorized();
+    if (!token) return this.ctx.result.unauthorized();
 
     const session = await resolveSession(token);
-    if (!session) return this.ctx.unauthorized();
+    if (!session) return this.ctx.result.unauthorized();
 
     state.user = session.user;
     state.token = session.token;
-    await this.ctx.ensureSystemDirectForUser(session.user.id);
+    await this.ctx.system.ensureSystemDirectForUser(session.user.id);
     return {
       ok: true,
       token: session.token,
@@ -94,7 +94,7 @@ export class ChatAuthService {
   }
 
   async authMe(state: SocketState): Promise<ApiError | PublicUser> {
-    if (!state.user) return this.ctx.unauthorized();
+    if (!state.user) return this.ctx.result.unauthorized();
     return {
       id: state.user.id,
       nickname: state.user.nickname,
@@ -108,7 +108,7 @@ export class ChatAuthService {
   }
 
   async authLogout(state: SocketState): Promise<ApiError | ApiOk<{}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     if (state.token) {
@@ -121,7 +121,7 @@ export class ChatAuthService {
   }
 
   async authUpdateProfile(state: SocketState, payload: any): Promise<ApiError | ApiOk<{user: PublicUser}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const hasName = Object.prototype.hasOwnProperty.call(payload || {}, 'name');
@@ -146,11 +146,11 @@ export class ChatAuthService {
     }
 
     if (hasInfo) {
-      updateData.info = this.ctx.normalizeUserInfo(payload?.info);
+      updateData.info = this.ctx.input.normalizeUserInfo(payload?.info);
     }
 
     if (hasAvatarPath) {
-      const avatarPath = this.ctx.parseAvatarPath(payload?.avatarPath);
+      const avatarPath = this.ctx.input.parseAvatarPath(payload?.avatarPath);
       if (!avatarPath.ok) {
         return {ok: false, error: avatarPath.error};
       }
@@ -158,7 +158,7 @@ export class ChatAuthService {
     }
 
     if (hasNicknameColor) {
-      const color = this.ctx.parseNicknameColor(payload?.nicknameColor);
+      const color = this.ctx.input.parseNicknameColor(payload?.nicknameColor);
       if (!color.ok) {
         return {ok: false, error: color.error};
       }
@@ -188,12 +188,12 @@ export class ChatAuthService {
       },
     });
 
-    state.user = this.ctx.toPublicUser(updated);
+    state.user = this.ctx.users.toPublicUser(updated);
     return {ok: true, user: state.user};
   }
 
   async authChangePassword(state: SocketState, payload: any): Promise<ApiError | ApiOk<{}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const newPassword = (payload?.newPassword || '').toString();

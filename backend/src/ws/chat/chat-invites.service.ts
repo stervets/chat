@@ -84,7 +84,7 @@ export class ChatInvitesService {
   }
 
   async invitesList(state: SocketState): Promise<ApiError | any[]> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const result = await db.invite.findMany({
@@ -127,7 +127,7 @@ export class ChatInvitesService {
     createdAt: string;
     rooms: Array<{roomId: number; title: string; visibility: 'public' | 'private'}>;
   }> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const hasRoomIds = Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'roomIds');
@@ -226,7 +226,7 @@ export class ChatInvitesService {
           })),
         };
       } catch (err) {
-        if (this.ctx.isUniqueError(err)) continue;
+        if (this.ctx.result.isUniqueError(err)) continue;
         throw err;
       }
     }
@@ -240,7 +240,7 @@ export class ChatInvitesService {
     visibility: 'public' | 'private';
     checkedByDefault: boolean;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const marxNewsRoomId = await this.resolveMarxNewsRoomId();
@@ -272,7 +272,7 @@ export class ChatInvitesService {
   }
 
   async invitesDelete(state: SocketState, payloadRaw: {inviteId?: unknown}): Promise<ApiError | ApiOk<{deleted: boolean; inviteId: number}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const inviteId = Number.parseInt(String(payloadRaw?.inviteId ?? ''), 10);
@@ -339,11 +339,11 @@ export class ChatInvitesService {
     configText: string;
     qrText: string;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const awgUserName = String(state.user?.nickname || '').trim();
-    if (!awgUserName) return this.ctx.unauthorized();
+    if (!awgUserName) return this.ctx.result.unauthorized();
 
     try {
       const artifacts = await this.wgAdminClient.createOrGetUser(awgUserName);
@@ -369,7 +369,7 @@ export class ChatInvitesService {
   }
 
   async publicVpnDonation(state: SocketState, payload: any): Promise<ApiError | ApiOk<{user: PublicUser}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const hasSent = Object.prototype.hasOwnProperty.call(payload || {}, 'sent');
@@ -388,7 +388,7 @@ export class ChatInvitesService {
       select: this.publicUserSelect(),
     });
 
-    state.user = this.ctx.toPublicUser(updatedUser);
+    state.user = this.ctx.users.toPublicUser(updatedUser);
     return {ok: true, user: state.user};
   }
 
@@ -490,7 +490,7 @@ export class ChatInvitesService {
       }
     }
 
-    const nicknameParsed = this.ctx.parseNickname(payload?.nickname);
+    const nicknameParsed = this.ctx.input.parseNickname(payload?.nickname);
     if (!nicknameParsed.ok) {
       return {ok: false, error: nicknameParsed.error};
     }
@@ -502,7 +502,7 @@ export class ChatInvitesService {
     }
 
     const passwordHash = await hashPassword(password);
-    const name = this.ctx.normalizeName(payload?.name, nickname);
+    const name = this.ctx.input.normalizeName(payload?.name, nickname);
 
     try {
       const createdUser = await db.$transaction(async (tx) => {
@@ -604,7 +604,7 @@ export class ChatInvitesService {
         userAgent: state.userAgent,
       });
 
-      state.user = this.ctx.toPublicUser(createdUser);
+      state.user = this.ctx.users.toPublicUser(createdUser);
       state.token = session.token;
 
       return {
@@ -618,7 +618,7 @@ export class ChatInvitesService {
       if (knownError === 'invite_not_found' || knownError === 'invite_invalid' || knownError === 'nickname_taken') {
         return {ok: false, error: knownError};
       }
-      if (this.ctx.isUniqueError(err)) {
+      if (this.ctx.result.isUniqueError(err)) {
         return {ok: false, error: 'nickname_taken'};
       }
       throw err;

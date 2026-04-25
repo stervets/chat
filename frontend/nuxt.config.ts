@@ -24,7 +24,6 @@ const config = {
 export default defineNuxtConfig({
   modules: [
     '@nuxtjs/tailwindcss',
-    '@element-plus/nuxt',
   ],
 
   compatibilityDate: '2026-03-27',
@@ -42,7 +41,6 @@ export default defineNuxtConfig({
     shim: false,
   },
 
-  elementPlus: {},
 
   srcDir: 'src/',
 

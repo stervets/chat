@@ -1,6 +1,7 @@
 import {
   nextTick,
   ws,
+  wsObject,
   MENTION_TAG_RE,
   VIRTUAL_MAX_ITEMS,
   VIRTUAL_OVERSCAN,
@@ -619,7 +620,7 @@ export const chatMethodsComposerAndVirtual = {
           if (!(current as any)?.ok) {
             commentRoomId = 0;
           } else {
-            commentRoomId = Number((current as any).commentRoomId || 0);
+            commentRoomId = Number(wsObject(current).commentRoomId || 0);
           }
         }
 
@@ -632,13 +633,14 @@ export const chatMethodsComposerAndVirtual = {
             return;
           }
 
-          commentRoomId = Number((result as any).commentRoomId || 0);
+          const data = wsObject(result);
+          commentRoomId = Number(data.commentRoomId || 0);
           if (!Number.isFinite(commentRoomId) || commentRoomId <= 0) {
             this.error = 'Не удалось открыть комментарии.';
             return;
           }
 
-          const updatedMessageRaw = (result as any).message;
+          const updatedMessageRaw = data.message;
           if (updatedMessageRaw && typeof updatedMessageRaw === 'object') {
             this.applyMessageUpdate(updatedMessageRaw);
           } else {
@@ -773,7 +775,7 @@ export const chatMethodsComposerAndVirtual = {
           return;
         }
 
-        this.applyMessageUpdate((result as any).message);
+        this.applyMessageUpdate(wsObject(result).message);
         this.cancelMessageEdit();
       } finally {
         this.messageActionPendingId = null;
@@ -793,7 +795,8 @@ export const chatMethodsComposerAndVirtual = {
           return;
         }
 
-        this.applyMessageDelete((result as any).roomId, (result as any).messageId);
+        const data = wsObject(result);
+        this.applyMessageDelete(data.roomId, data.messageId);
         await this.fetchDirectDialogs();
       } finally {
         this.messageActionPendingId = null;

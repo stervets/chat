@@ -116,7 +116,7 @@ export class ChatGamesService {
   }
 
   private async ensureSystemSenderId() {
-    return this.ctx.findSystemUserId();
+    return this.ctx.system.findSystemUserId();
   }
 
   private toMessagePayload(input: {
@@ -146,7 +146,7 @@ export class ChatGamesService {
       authorNickname: input.author.nickname,
       authorName: input.author.name || input.author.nickname,
       authorNicknameColor: input.author.nicknameColor || DEFAULT_NICKNAME_COLOR,
-      authorDonationBadgeUntil: this.ctx.normalizeDonationBadgeUntil(input.author.donationBadgeUntil),
+      authorDonationBadgeUntil: this.ctx.users.normalizeDonationBadgeUntil(input.author.donationBadgeUntil),
       rawText: input.message.rawText,
       renderedHtml: input.message.renderedHtml,
       renderedPreviews: input.message.renderedPreviews,
@@ -179,7 +179,7 @@ export class ChatGamesService {
 
     if (!sender) return null;
 
-    const compiled = await this.ctx.compileMessageForRoom(input.roomId, input.rawText);
+    const compiled = await this.ctx.messages.compileMessageForRoom(input.roomId, input.rawText);
     const created = await createMessageNode(db, {
       roomId: input.roomId,
       senderId: sender.id,
@@ -251,7 +251,7 @@ export class ChatGamesService {
           nickname: player.user.nickname,
           name: player.user.name,
           nicknameColor: player.user.nicknameColor || DEFAULT_NICKNAME_COLOR,
-          donationBadgeUntil: this.ctx.normalizeDonationBadgeUntil(player.user.donationBadgeUntil),
+          donationBadgeUntil: this.ctx.users.normalizeDonationBadgeUntil(player.user.donationBadgeUntil),
           isBot: player.user.isBot,
           info: player.user.info,
         },
@@ -352,7 +352,7 @@ export class ChatGamesService {
     messages: ChatContextMessagePayload[];
     events: ModuleEvent[];
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const moduleKey = String(payloadRaw?.moduleKey || 'king').trim().toLowerCase();
@@ -499,7 +499,7 @@ export class ChatGamesService {
       }
     }
 
-    await this.ctx.pruneRoomOverflow(created.roomId);
+    await this.ctx.uploads.pruneRoomOverflow(created.roomId);
 
     const sessionPayload = this.buildSessionPayload(createdSession, state.user!.id);
 
@@ -528,7 +528,7 @@ export class ChatGamesService {
     sessionId: number;
     session: any;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const sessionId = this.parseSessionId(sessionIdRaw);
@@ -568,7 +568,7 @@ export class ChatGamesService {
     events: ModuleEvent[];
     messages: ChatContextMessagePayload[];
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const sessionId = this.parseSessionId(payloadRaw?.sessionId);
@@ -685,7 +685,7 @@ export class ChatGamesService {
       botCast: botProfiles,
     });
 
-    await this.ctx.pruneRoomOverflow(session.roomId);
+    await this.ctx.uploads.pruneRoomOverflow(session.roomId);
 
     const updatedSession = await this.loadSession(sessionId);
     if (!updatedSession) {

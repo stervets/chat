@@ -1,6 +1,8 @@
 import {
   nextTick,
   ws,
+  wsData,
+  wsObject,
   getApiBase,
   getSessionToken,
   wsLogout,
@@ -90,9 +92,10 @@ export const chatMethodsSendUploadAndRuntime = {
         roomId,
         limit: HISTORY_BATCH_SIZE,
       });
-      if (!Array.isArray(result)) return false;
+      if (!(result as any)?.ok) return false;
+      const rows = wsData<any[]>(result, []);
 
-      const incoming = result
+      const incoming = rows
         .map((row: any) => this.normalizeMessage(row))
         .filter((message: Message) => Number(message.roomId || 0) === roomId);
       if (!incoming.length) return true;
@@ -321,11 +324,11 @@ export const chatMethodsSendUploadAndRuntime = {
       if (!(result as any)?.ok) {
         const errorCode = String((result as any)?.error || '');
         this.error = errorCode === 'room_posting_restricted'
-          ? 'В эту комнату может писать только админ.'
+          ? 'Канал: писать может админ.'
           : 'Не удалось отправить сообщение.';
         return false;
       }
-      const createdMessageId = Number((result as any)?.message?.id || 0);
+      const createdMessageId = Number(wsObject(result).message?.id || 0);
 
       if (anonymous) {
         this.pendingAnonymousOwnMessage = {

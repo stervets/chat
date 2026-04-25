@@ -1,5 +1,5 @@
 import {ref} from 'vue';
-import {restoreSession, wsCheckInvite, wsRedeemInvite} from '@/composables/ws-rpc';
+import {restoreSession, wsCheckInvite, wsObject, wsRedeemInvite} from '@/composables/ws-rpc';
 import {vibrateConfirm, vibrateError} from '@/utils/vibrate';
 
 export default {
@@ -64,7 +64,7 @@ export default {
 
     async tryRedeemForAuthorizedUser(this: any) {
       const session = await restoreSession();
-      if (!(session as any)?.ok || !(session as any)?.user?.id) return;
+      if (!(session as any)?.ok || !wsObject(session).user?.id) return;
       if (!this.inviteValid) return;
 
       this.loading = true;
@@ -74,9 +74,10 @@ export default {
           this.error = this.mapInviteError((result as any)?.error);
           return;
         }
-        if ((result as any)?.appliedToExistingUser) {
+        const data = wsObject(result);
+        if (data.appliedToExistingUser) {
           this.existingUserApplied = true;
-          this.existingUserMessage = this.buildExistingUserInviteMessage(result);
+          this.existingUserMessage = this.buildExistingUserInviteMessage(data);
           vibrateConfirm();
         }
       } catch {

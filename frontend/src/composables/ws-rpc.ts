@@ -1,6 +1,6 @@
 import {ref} from 'vue';
 import {getWsUrlCandidates} from '@/composables/api';
-import {ws} from '@/composables/classes/ws';
+import {ws, type WsResult} from '@/composables/classes/ws';
 import {emit, on} from '@/composables/event-bus';
 
 const SESSION_TOKEN_KEY = 'marx_session_token';
@@ -10,6 +10,26 @@ const RECONNECT_MAX_DELAY_MS = 12000;
 const hasWindow = () => typeof window !== 'undefined';
 
 type WsConnectionState = 'disconnected' | 'connecting' | 'connected';
+
+export function wsData<T>(result: any, fallback: T): T {
+  return result && result.ok === true && Object.prototype.hasOwnProperty.call(result, 'data')
+    ? result.data as T
+    : fallback;
+}
+
+export function wsObject(result: any): Record<string, any> {
+  const data = wsData<Record<string, any>>(result, {});
+  return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+}
+
+export function wsError(result: any, fallback = 'unknown') {
+  const error = result?.error;
+  if (typeof error === 'string') return error || fallback;
+  if (error && typeof error === 'object') {
+    return String(error.message || error.code || fallback);
+  }
+  return fallback;
+}
 
 export const wsConnectionState = ref<WsConnectionState>('disconnected');
 
@@ -228,8 +248,9 @@ export async function wsLogin(nickname: string, password: string) {
 
   const normalizedNickname = String(nickname || '').trim().toLowerCase();
   const result = await ws.request('auth:login', {nickname: normalizedNickname, password});
-  if ((result as any)?.ok && (result as any)?.token) {
-    setSessionToken((result as any).token);
+  const data = wsObject(result);
+  if ((result as any)?.ok && data.token) {
+    setSessionToken(data.token);
   }
   return result;
 }
@@ -240,8 +261,9 @@ export async function wsRedeemInvite(code: string, nickname: string, password: s
 
   const normalizedNickname = String(nickname || '').trim().toLowerCase();
   const result = await ws.request('invites:redeem', {code, nickname: normalizedNickname, password});
-  if ((result as any)?.ok && (result as any)?.token) {
-    setSessionToken((result as any).token);
+  const data = wsObject(result);
+  if ((result as any)?.ok && data.token) {
+    setSessionToken(data.token);
   }
   return result;
 }

@@ -109,7 +109,7 @@ export class ChatDialogsService {
       },
     });
 
-    return membership?.user ? this.ctx.toPublicUser(membership.user) : null;
+    return membership?.user ? this.ctx.users.toPublicUser(membership.user) : null;
   }
 
   private buildDiscussionPreview(rawTextRaw: unknown) {
@@ -229,7 +229,7 @@ export class ChatDialogsService {
       sourceRoomId,
       sourceRoomKind: (sourceRoom?.kind as DiscussionPayload['sourceRoomKind']) || null,
       sourceRoomTitle: sourceRoom?.title || null,
-      sourceRoomAvatarUrl: this.ctx.toRoomAvatarUrl(sourceRoom?.avatarPath),
+      sourceRoomAvatarUrl: this.ctx.users.toRoomAvatarUrl(sourceRoom?.avatarPath),
       sourceMessagePreview: this.buildDiscussionPreview(sourceMessage.rawText),
       sourceMessageDeleted: false,
     };
@@ -249,7 +249,7 @@ export class ChatDialogsService {
     pinnedNodeId: number | null;
     roomSurface: RoomSurfacePayload;
   }> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const room = await getOrCreateGroupRoom(state.user!.id, {
@@ -265,7 +265,7 @@ export class ChatDialogsService {
       title: room.title || 'Общий чат',
       visibility: room.visibility,
       commentsEnabled: room.comments_enabled,
-      avatarUrl: this.ctx.toRoomAvatarUrl(room.avatar_path),
+      avatarUrl: this.ctx.users.toRoomAvatarUrl(room.avatar_path),
       postOnlyByAdmin: !!room.post_only_by_admin,
       createdById: room.created_by || null,
       pinnedNodeId: room.pinned_node_id || null,
@@ -282,7 +282,7 @@ export class ChatDialogsService {
     pinnedNodeId: number | null;
     roomSurface: RoomSurfacePayload;
   }> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const userId = Number.parseInt(String(userIdRaw ?? ''), 10);
@@ -308,7 +308,7 @@ export class ChatDialogsService {
       roomId: room.id,
       dialogId: room.id,
       type: 'direct',
-      targetUser: this.ctx.toPublicUser(targetUser),
+      targetUser: this.ctx.users.toPublicUser(targetUser),
       createdById: null,
       pinnedNodeId: null,
       roomSurface: this.toRoomSurfacePayload(room, null, null),
@@ -324,7 +324,7 @@ export class ChatDialogsService {
     pinnedNodeId: number | null;
     roomSurface: RoomSurfacePayload;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const userId = state.user!.id;
@@ -385,7 +385,7 @@ export class ChatDialogsService {
         roomId: row.id,
         dialogId: row.id,
         lastMessageAt: lastMessageAtByRoomId.get(row.id) || new Date(0).toISOString(),
-        targetUser: this.ctx.toPublicUser(targetUser),
+        targetUser: this.ctx.users.toPublicUser(targetUser),
         createdById: null,
         pinnedNodeId: null,
         roomSurface: this.toRoomSurfacePayload({
@@ -432,7 +432,7 @@ export class ChatDialogsService {
         mapped.push({
           roomId: systemRoom.id,
           dialogId: systemRoom.id,
-          targetUser: this.ctx.toPublicUser(systemUser),
+          targetUser: this.ctx.users.toPublicUser(systemUser),
           lastMessageAt: new Date(0).toISOString(),
           createdById: null,
           pinnedNodeId: null,
@@ -462,7 +462,7 @@ export class ChatDialogsService {
     joined: boolean;
     roomSurface: RoomSurfacePayload;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const scope = String(scopeRaw || 'all').trim().toLowerCase();
@@ -540,7 +540,7 @@ export class ChatDialogsService {
         title: row.title || 'Комната',
         visibility: room.visibility,
         commentsEnabled: room.comments_enabled,
-        avatarUrl: this.ctx.toRoomAvatarUrl(room.avatar_path),
+        avatarUrl: this.ctx.users.toRoomAvatarUrl(room.avatar_path),
         postOnlyByAdmin: !!room.post_only_by_admin,
         createdById: room.created_by,
         pinnedNodeId: room.pinned_node_id,
@@ -556,9 +556,9 @@ export class ChatDialogsService {
     limitRaw?: unknown,
     beforeMessageIdRaw?: unknown,
   ): Promise<ApiError | any[]> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -572,9 +572,9 @@ export class ChatDialogsService {
       return {ok: false, error: 'forbidden'};
     }
 
-    await this.ctx.pruneRoomOverflow(roomId);
-    const limit = this.ctx.parseLimit(limitRaw);
-    const beforeMessageId = this.ctx.parseBeforeMessageId(beforeMessageIdRaw);
+    await this.ctx.uploads.pruneRoomOverflow(roomId);
+    const limit = this.ctx.input.parseLimit(limitRaw);
+    const beforeMessageId = this.ctx.input.parseBeforeMessageId(beforeMessageIdRaw);
 
     const result = await db.message.findMany({
       where: {
@@ -658,21 +658,21 @@ export class ChatDialogsService {
       });
     }
 
-    const renderContext = await this.ctx.buildRoomMessageRenderContext(
+    const renderContext = await this.ctx.messages.buildRoomMessageRenderContext(
       roomId,
       result.map((row) => String(row.rawText || '')),
     );
 
     const ordered = result.reverse().map((row) => {
       const sourceText = row.kind === 'scriptable'
-        ? this.ctx.getDisabledScriptableFallbackText(row.rawText)
+        ? this.ctx.messages.getDisabledScriptableFallbackText(row.rawText)
         : String(row.rawText || '');
-      const compiled = this.ctx.compileMessageWithContext(
+      const compiled = this.ctx.messages.compileMessageWithContext(
         sourceText,
         renderContext,
         row.id,
       );
-      const author = this.ctx.toMessageAuthor({
+      const author = this.ctx.users.toMessageAuthor({
         senderId: row.senderId,
         sender: row.sender,
       });
@@ -702,7 +702,7 @@ export class ChatDialogsService {
       };
     });
 
-    return this.ctx.attachMessageReactions(ordered);
+    return this.ctx.messages.attachMessageReactions(ordered);
   }
 
   async roomGet(state: SocketState, roomIdRaw: unknown): Promise<ApiError | ApiOk<{
@@ -723,10 +723,10 @@ export class ChatDialogsService {
     pinnedMessage: any | null;
     targetUser?: PublicUser | null;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -745,7 +745,7 @@ export class ChatDialogsService {
     state.roomId = roomId;
     const pinnedNodeId = Number(roomRuntime?.pinnedNodeId || 0);
     const pinnedMessage = pinnedNodeId > 0
-      ? await this.ctx.loadMessagePayloadById(roomId, pinnedNodeId)
+      ? await this.ctx.messages.loadMessagePayloadById(roomId, pinnedNodeId)
       : null;
     const discussion = await this.loadDiscussionPayload(roomId, room.kind);
     const directTargetUser = room.kind === 'direct'
@@ -756,7 +756,7 @@ export class ChatDialogsService {
       : String(room.title || (room.kind === 'comment' ? 'Комментарии' : 'Комната'));
     const resolvedAvatarUrl = room.kind === 'direct'
       ? (directTargetUser?.avatarUrl || null)
-      : this.ctx.toRoomAvatarUrl(room.avatar_path);
+      : this.ctx.users.toRoomAvatarUrl(room.avatar_path);
 
     return {
       ok: true,
@@ -798,12 +798,12 @@ export class ChatDialogsService {
     pinnedNodeId: null;
     roomSurface: RoomSurfacePayload;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
     const title = String(payload?.title || '').trim() || 'Комната';
-    const avatarPath = this.ctx.parseRoomAvatarPath(payload?.avatarPath);
+    const avatarPath = this.ctx.input.parseRoomAvatarPath(payload?.avatarPath);
     if (!avatarPath.ok) {
       return {ok: false, error: avatarPath.error};
     }
@@ -824,7 +824,7 @@ export class ChatDialogsService {
       title: room.title || 'Комната',
       visibility: room.visibility,
       commentsEnabled: room.comments_enabled,
-      avatarUrl: this.ctx.toRoomAvatarUrl(room.avatar_path),
+      avatarUrl: this.ctx.users.toRoomAvatarUrl(room.avatar_path),
       postOnlyByAdmin: !!room.post_only_by_admin,
       createdById: Number(room.created_by || state.user!.id),
       pinnedNodeId: null,
@@ -836,10 +836,10 @@ export class ChatDialogsService {
     roomId: number;
     joined: boolean;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -869,10 +869,10 @@ export class ChatDialogsService {
     kind: 'group' | 'game';
     left: boolean;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -908,10 +908,10 @@ export class ChatDialogsService {
   }
 
   async roomMembersList(state: SocketState, roomIdRaw: unknown): Promise<ApiError | PublicUser[]> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -935,14 +935,14 @@ export class ChatDialogsService {
       },
     });
 
-    return rows.map((row) => this.ctx.toPublicUser(row.user));
+    return rows.map((row) => this.ctx.users.toPublicUser(row.user));
   }
 
   async roomMembersAdd(state: SocketState, payloadRaw: any): Promise<ApiError | ApiOk<{addedUserIds: number[]}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(payloadRaw?.roomId);
+    const roomId = this.ctx.input.parseRoomId(payloadRaw?.roomId);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -997,10 +997,10 @@ export class ChatDialogsService {
   }
 
   async roomMembersRemove(state: SocketState, payloadRaw: any): Promise<ApiError | ApiOk<{removedUserIds: number[]}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(payloadRaw?.roomId);
+    const roomId = this.ctx.input.parseRoomId(payloadRaw?.roomId);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -1081,10 +1081,10 @@ export class ChatDialogsService {
     roomSurface: RoomSurfacePayload;
     discussion: DiscussionPayload | null;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(payloadRaw?.roomId);
+    const roomId = this.ctx.input.parseRoomId(payloadRaw?.roomId);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -1112,7 +1112,7 @@ export class ChatDialogsService {
       updateData.commentsEnabled = !!payloadRaw?.commentsEnabled;
     }
     if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'avatarPath')) {
-      const avatarPath = this.ctx.parseRoomAvatarPath(payloadRaw?.avatarPath);
+      const avatarPath = this.ctx.input.parseRoomAvatarPath(payloadRaw?.avatarPath);
       if (!avatarPath.ok) {
         return {ok: false, error: avatarPath.error};
       }
@@ -1145,7 +1145,7 @@ export class ChatDialogsService {
       title: updatedRoom.title,
       visibility: updatedRoom.visibility,
       commentsEnabled: updatedRoom.comments_enabled,
-      avatarUrl: this.ctx.toRoomAvatarUrl(updatedRoom.avatar_path),
+      avatarUrl: this.ctx.users.toRoomAvatarUrl(updatedRoom.avatar_path),
       postOnlyByAdmin: !!updatedRoom.post_only_by_admin,
       createdById: updatedRoom.created_by,
       pinnedNodeId: updatedRoom.pinned_node_id,
@@ -1177,10 +1177,10 @@ export class ChatDialogsService {
     dialogId: number;
     kind: 'group' | 'direct' | 'game' | 'comment';
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -1203,7 +1203,7 @@ export class ChatDialogsService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const uploadNames = await this.ctx.collectUploadNamesFromNodeSubtree(roomId);
+    const uploadNames = await this.ctx.uploads.collectUploadNamesFromNodeSubtree(roomId);
 
     if (room.kind === 'direct') {
       const clearResult = await db.$transaction(async (tx) => {
@@ -1231,7 +1231,7 @@ export class ChatDialogsService {
       });
 
       if (clearResult.changed) {
-        await this.ctx.cleanupUnusedUploads(uploadNames);
+        await this.ctx.uploads.cleanupUnusedUploads(uploadNames);
       }
 
       return {
@@ -1247,7 +1247,7 @@ export class ChatDialogsService {
       where: {id: roomId},
     });
     if (result.count > 0) {
-      await this.ctx.cleanupUnusedUploads(uploadNames);
+      await this.ctx.uploads.cleanupUnusedUploads(uploadNames);
       if (state.roomId === roomId) {
         state.roomId = null;
       }

@@ -8,7 +8,7 @@
 
 Репа:
 - `backend` — NestJS HTTP + WebSocket + Prisma/PostgreSQL;
-- `frontend` — Nuxt 3 SPA (`ssr:false`), Vue 3, Element Plus, Tailwind, Less;
+- `frontend` — Nuxt 3 SPA (`ssr:false`), Vue 3, Tailwind, Less;
 - `scripts` — smoke/e2e/stress.
 
 ## Каноническая модель данных
@@ -64,7 +64,9 @@ Backend:
 - `backend/src/main.ts`
 - `backend/src/app.module.ts`
 - `backend/src/ws/chat.gateway.ts`
-- `backend/src/ws/chat/chat.service.ts`
+- `backend/src/ws/chat.domain.ts`
+- `backend/src/ws/chat.commands.ts`
+- `backend/src/ws/chat/chat-context*.ts`
 - `backend/src/db.ts`
 - `backend/prisma/schema.prisma`
 
@@ -123,50 +125,7 @@ yarn run frontend:dev
 ## Что проверять после правок
 - после каждого изменения актуализировать `AGENTS.md`;
 - после задачи — визуальная проверка через headless Chromium;
+- на мобильной вёрстке проверять длинные названия комнат в левом drawer (без горизонтального скролла/переполнения);
 - для существенных изменений поведения обновлять `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/SMOKE_TEST.md`;
 - после фронтовых/WS правок прогонять `yarn run test:login` или `yarn run smoke`;
 - после локального запуска сервисов — остановить процессы.
-
-## Актуализация 2026-04-23
-- `getOrCreateGroupRoom/getOrCreateDirectRoom` защищены per-key in-memory lock без изменения схемы БД.
-- cleanup upload-ссылок при `message:delete` и `room:delete` теперь собирает ссылки по всему subtree через `nodes`.
-- `roomListDirect` берёт last message батчем (один SQL-запрос), без N+1.
-- в compile-пайплайне сообщений добавлен tail-режим time-ref для новых сообщений без полного скана таймлайна; полный скан оставлен только там, где нужен точный nearest по индексу.
-- добавлены black-box e2e тесты для login/session restore, group/direct send, comment room, upload cleanup при удалении source.
-- для hot WS-команд введён единый ответ `{ok:true,data}` / `{ok:false,error}` на границе `chat.gateway.ts`, с нормализацией ошибок.
-- для тех же WS-команд добавлены явные payload/data типы на boundary; старый формат на фронте поддержан локальным compat-адаптером в `frontend/src/composables/classes/ws.ts`.
-
-## Актуализация 2026-04-24
-- `Room` теперь хранит `visibility` (`public|private`) и `comments_enabled`.
-- `Room` теперь также хранит `avatar_path` и `post_only_by_admin`; это нужно для каналов и room info.
-- public group/game комнаты видны всем авторизованным, join делается через `room:join`; private/direct/comment — только участникам.
-- invite теперь привязывается к конкретным комнатам через `invites_rooms`, а redeem больше не кидает пользователя во все group room подряд.
-- использованный invite удаляется после redeem; вручную его можно снести через `invites:delete`.
-- добавлены простые контакты `users_contacts` и WS-команды `contacts:list/add/remove`.
-- у пользователя есть `info` и `avatar_path`; наружу уходит `avatarUrl` вида `/uploads/...`.
-- аватары есть и у room; в `db:init` создаётся публичная room `MARX` с `/marx_logo.png`, комментариями и режимом `post_only_by_admin=true`.
-- загрузка медиа идёт через `POST /upload/media`; картинки и видео лежат в тех же `/uploads/*`.
-- лимит image upload поднят до ~20MB (`config.uploads.maxBytes`); client-side картинки и аватары пережимаются до `max 1024x1024` с сохранением пропорций.
-- при смене avatar в `/console` есть crop-оверлей (drag/zoom + круглая маска), на сервер уходит уже обрезанный `1024x1024`.
-- в сообщениях есть `commentCount`; кнопка комментариев живёт внизу справа у сообщения.
-- Rutube ссылки (`rutube.ru/video/<id>`) компилируются в embed-preview.
-- клиент хранит последний открытый `/chat` или `/direct/...` маршрут в `localStorage` и возвращается туда после relogin/возврата.
-- pin message в direct запрещён (`room:pin:set|clear` для direct -> `forbidden`), но в header есть pin текущего dialog:
-  - direct pin = `contacts:add` (попадает в закреплённые директы);
-  - room pin = `room:join` (попадает в список комнат навигации).
-- unpin вынесен в `/console`: для direct это `убрать из контактов`, для room это `Покинуть комнату` (`room:leave`).
-- admin комнаты может исключать участников через `room:members:remove`, исключённый пользователь получает `room:deleted`.
-- `invites:redeem` теперь работает и для уже авторизованного пользователя: invite добавляет доступы к новым room и затем удаляется.
-
-## Актуализация 2026-04-25
-- `invites:create` теперь различает `roomIds`:
-  - `roomIds` не передан: остаётся legacy fallback-комната;
-  - `roomIds: []`: создаётся invite без `invites_rooms`;
-  - `roomIds` с id: строгая проверка доступности, иначе `invalid_rooms`.
-- `room:group:get-default` больше не делает auto-join в `room_users`; даже если default room создаётся этим вызовом, membership не создаётся. В ответе есть `joined`.
-- `/chat` на фронте выбирает дефолт через joined-комнаты, а не форсит `generalDialog`; при отсутствии joined-комнат автоджойна в `Общий чат` нет.
-- `room:pin:set`/`room:pin:clear` разрешены только администратору комнаты (`userIsRoomAdmin`), direct по-прежнему запрещён.
-- `room:delete` для direct теперь очищает переписку (и сбрасывает `pinnedNodeId`), но не удаляет саму room/node и участников.
-- gateway для direct-clear не шлёт `room:deleted` и не закрывает room subscriptions.
-- после direct-clear gateway рассылает `room:messages:cleared` всем участникам direct (включая инициатора).
-- из invite-модели убраны `used_by/used_at` и relation `InviteUsedBy`; consume invite теперь single-use через атомарный delete в одной transaction.

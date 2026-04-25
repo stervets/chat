@@ -281,7 +281,7 @@ async function closeLeftDrawerIfOpen(page) {
     const invitePage = await ctx1.newPage();
     await invitePage.goto(`${BASE_URL}/invites`, {waitUntil: 'networkidle'});
     await invitePage.getByRole('button', {name: 'Создать инвайт'}).click();
-    const linkEl = invitePage.locator('.invite-link .link');
+    const linkEl = invitePage.locator('.invite-link-card .mono-link');
     await linkEl.waitFor({timeout: 10000});
     const inviteLink = (await linkEl.textContent())?.trim();
     if (!inviteLink || !inviteLink.includes('/invite/')) {
@@ -388,7 +388,7 @@ async function closeLeftDrawerIfOpen(page) {
     await sendMessage(page1, editableText);
     await page2.waitForSelector(`text=${editableText}`, {timeout: 30000});
     const editableMessagePage1 = page1.locator('.message', {hasText: editableText}).last();
-    await editableMessagePage1.locator('.message-inline-btn', {hasText: 'ред.'}).click();
+    await editableMessagePage1.locator('.message-icon-btn[title="Редактировать"]').click();
     const editedText = `${editableText}-edited`;
     await page1.locator('.message-edit-input').last().fill(editedText);
     await page1.locator('.message-edit-save').last().click();
@@ -397,7 +397,7 @@ async function closeLeftDrawerIfOpen(page) {
 
     const editedMessagePage1 = page1.locator('.message', {hasText: editedText}).last();
     page1.once('dialog', (dialog) => dialog.accept());
-    await editedMessagePage1.locator('.message-inline-btn', {hasText: 'удал.'}).click();
+    await editedMessagePage1.locator('.message-icon-btn[title="Удалить"]').click();
     await page1.waitForSelector(`text=${editedText}`, {state: 'detached', timeout: 30000});
     await page2.waitForSelector(`text=${editedText}`, {state: 'detached', timeout: 30000});
 

@@ -93,7 +93,7 @@ export class ScriptableService {
     const rawText = String(textRaw || '').trim();
     if (!rawText) return null;
 
-    const systemUserId = await this.ctx.findSystemUserId();
+    const systemUserId = await this.ctx.system.findSystemUserId();
     if (!systemUserId) return null;
 
     const sender = await db.user.findUnique({
@@ -108,7 +108,7 @@ export class ScriptableService {
     });
     if (!sender) return null;
 
-    const compiled = await this.ctx.compileMessageForRoom(roomId, rawText);
+    const compiled = await this.ctx.messages.compileMessageForRoom(roomId, rawText);
     const created = await createMessageNode(db, {
       roomId,
       senderId: sender.id,
@@ -127,7 +127,7 @@ export class ScriptableService {
       authorNickname: sender.nickname,
       authorName: sender.name || sender.nickname,
       authorNicknameColor: sender.nicknameColor || DEFAULT_NICKNAME_COLOR,
-      authorDonationBadgeUntil: this.ctx.normalizeDonationBadgeUntil(sender.donationBadgeUntil),
+      authorDonationBadgeUntil: this.ctx.users.normalizeDonationBadgeUntil(sender.donationBadgeUntil),
       rawText: compiled.rawText,
       renderedHtml: compiled.renderedHtml,
       renderedPreviews: compiled.renderedPreviews,
@@ -166,10 +166,10 @@ export class ScriptableService {
     roomIdRaw: unknown,
     payloadRaw: any,
   ): Promise<ApiError | ApiOk<{message: ChatContextMessagePayload}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -207,7 +207,7 @@ export class ScriptableService {
       nodeData,
     });
 
-    await this.ctx.pruneRoomOverflow(roomId);
+    await this.ctx.uploads.pruneRoomOverflow(roomId);
 
     const message: ChatContextMessagePayload = {
       id: created.message.id,
@@ -294,10 +294,10 @@ export class ScriptableService {
     state: any,
     roomIdRaw: unknown,
   ): Promise<ApiError | ApiOk<{roomId: number; roomRuntime: any | null}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -445,7 +445,7 @@ export class ScriptableService {
     state: any,
     payloadRaw: any,
   ): Promise<ApiError | ApiOk<{roomId: number; nodeType: ScriptNodeType; nodeId: number; data: any}>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const nodeTypeRaw = String(payloadRaw?.nodeType || '').trim().toLowerCase();

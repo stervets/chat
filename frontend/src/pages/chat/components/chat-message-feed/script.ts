@@ -1,0 +1,104 @@
+import ChatMessageItem from '../../message-item/index.vue';
+
+export default {
+  components: {
+    ChatMessageItem,
+  },
+
+  props: {
+    activePinnedMessage: Object,
+    blinkMessageId: Number,
+    canManagePinnedMessages: Boolean,
+    canOpenDirectFromMessage: {type: Function, required: true},
+    canOpenDiscussionFromMessage: {type: Function, required: true},
+    discussionOpenPendingMessageId: Number,
+    editingMessageId: Number,
+    editingMessageText: String,
+    error: String,
+    formatMessageTime: {type: Function, required: true},
+    formatUsername: {type: Function, required: true},
+    getAuthorStyle: {type: Function, required: true},
+    getMessageAuthorDonationBadgeOpacity: {type: Function, required: true},
+    getMessageExtraPreviews: {type: Function, required: true},
+    getRenderedMessageHtml: {type: Function, required: true},
+    hasMessageAuthorDonationBadge: {type: Function, required: true},
+    historyLoading: Boolean,
+    historyLoadingMore: Boolean,
+    isFreshMessage: {type: Function, required: true},
+    isMentionedForMe: {type: Function, required: true},
+    isSystemNickname: {type: Function, required: true},
+    me: Object,
+    messageActionPendingId: Number,
+    messages: {type: Array, default: () => []},
+    reactionPalette: {type: Function, required: true},
+    reactionPickerMessageId: Number,
+    virtualBottomSpacerHeight: Number,
+    virtualMessages: {type: Array, default: () => []},
+    virtualTopSpacerHeight: Number,
+  },
+
+  emits: [
+    'author-avatar-click',
+    'author-click',
+    'cancel-edit',
+    'delete-message',
+    'direct-jump-click',
+    'edit-input-keydown',
+    'height-change',
+    'image-preview-click',
+    'message-body-click',
+    'message-body-mouseleave',
+    'message-body-mousemove',
+    'open-discussion',
+    'page-ref',
+    'reaction-chip-click',
+    'reaction-mouseenter',
+    'reaction-mouseleave',
+    'reaction-mousemove',
+    'reaction-select',
+    'save-edit',
+    'scroll',
+    'start-edit',
+    'time-click',
+    'toggle-pinned-message',
+    'toggle-reaction-picker',
+    'update:editing-message-text',
+  ],
+
+  methods: {
+    setPageRef(this: any, name: string, el: any) {
+      this.$emit('page-ref', name, el);
+    },
+
+    onMessagesScroll(this: any, event: Event) {
+      this.$emit('scroll', event);
+    },
+
+    onEditingMessageTextUpdate(this: any, value: string) {
+      this.$emit('update:editing-message-text', value);
+    },
+
+    onAuthorClick(this: any, ...args: any[]) { this.$emit('author-click', ...args); },
+    onMessageAuthorAvatarClick(this: any, ...args: any[]) { this.$emit('author-avatar-click', ...args); },
+    onDirectFromMessageClick(this: any, ...args: any[]) { this.$emit('direct-jump-click', ...args); },
+    onMessageTimeClick(this: any, ...args: any[]) { this.$emit('time-click', ...args); },
+    startMessageEdit(this: any, ...args: any[]) { this.$emit('start-edit', ...args); },
+    deleteOwnMessage(this: any, ...args: any[]) { this.$emit('delete-message', ...args); },
+    onTogglePinnedMessage(this: any, ...args: any[]) { this.$emit('toggle-pinned-message', ...args); },
+    openMessageDiscussion(this: any, ...args: any[]) { this.$emit('open-discussion', ...args); },
+    onEditMessageKeydown(this: any, ...args: any[]) { this.$emit('edit-input-keydown', ...args); },
+    saveMessageEdit(this: any, ...args: any[]) { this.$emit('save-edit', ...args); },
+    cancelMessageEdit(this: any, ...args: any[]) { this.$emit('cancel-edit', ...args); },
+    onMessageBodyClick(this: any, ...args: any[]) { this.$emit('message-body-click', ...args); },
+    onMessageImageClick(this: any, ...args: any[]) { this.$emit('image-preview-click', ...args); },
+    onMessageBodyMouseMove(this: any, ...args: any[]) { this.$emit('message-body-mousemove', ...args); },
+    onMessageBodyMouseLeave(this: any, ...args: any[]) { this.$emit('message-body-mouseleave', ...args); },
+    toggleReactionPicker(this: any, ...args: any[]) { this.$emit('toggle-reaction-picker', ...args); },
+    onReactionSelect(this: any, ...args: any[]) { this.$emit('reaction-select', ...args); },
+    onReactionChipClick(this: any, ...args: any[]) { this.$emit('reaction-chip-click', ...args); },
+    onReactionMouseEnter(this: any, ...args: any[]) { this.$emit('reaction-mouseenter', ...args); },
+    onReactionMouseMove(this: any, ...args: any[]) { this.$emit('reaction-mousemove', ...args); },
+    onReactionMouseLeave(this: any, ...args: any[]) { this.$emit('reaction-mouseleave', ...args); },
+    onVirtualItemHeight(this: any, ...args: any[]) { this.$emit('height-change', ...args); },
+  },
+};

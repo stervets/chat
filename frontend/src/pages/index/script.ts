@@ -1,4 +1,4 @@
-import {getSessionToken, restoreSession} from '@/composables/ws-rpc';
+import {getSessionToken, restoreSession, wsObject} from '@/composables/ws-rpc';
 
 export default {
   async setup() {
@@ -18,7 +18,7 @@ export default {
       for (let attempt = 0; attempt < 6; attempt += 1) {
         try {
           const session = await restoreSession();
-          if ((session as any)?.ok && (session as any)?.user?.id) {
+          if ((session as any)?.ok && wsObject(session).user?.id) {
             await this.router.replace('/chat');
             return;
           }

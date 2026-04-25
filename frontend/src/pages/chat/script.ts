@@ -1,9 +1,15 @@
 import type {Message, User} from '@/composables/types';
-import {Bell, Menu, Pin, Settings, ShieldCheck, Trash2, UserPlus} from 'lucide-vue-next';
 import {on, off} from '@/composables/event-bus';
 import {setWsReconnectDialogResolver} from '@/composables/ws-rpc';
 import {isStandaloneDisplayMode} from '@/composables/use-web-push';
-import ChatMessageItem from './message-item/index.vue';
+import ChatHeader from './components/chat-header/index.vue';
+import ChatLeftDrawer from './components/chat-left-drawer/index.vue';
+import ChatToasts from './components/chat-toasts/index.vue';
+import RoomInvitePanel from './components/room-invite-panel/index.vue';
+import PinnedPanel from './components/pinned-panel/index.vue';
+import ChatMessageFeed from './components/chat-message-feed/index.vue';
+import ChatComposer from './components/chat-composer/index.vue';
+import ChatImageViewer from './components/chat-image-viewer/index.vue';
 import {
   VIRTUAL_MAX_ITEMS,
   type DirectDialog,
@@ -20,14 +26,14 @@ import {chatMethodsScriptableRuntime} from './modules/methods-scriptable-runtime
 
 export default {
   components: {
-    ChatMessageItem,
-    Bell,
-    Menu,
-    Pin,
-    Settings,
-    ShieldCheck,
-    Trash2,
-    UserPlus,
+    ChatLeftDrawer,
+    ChatToasts,
+    RoomInvitePanel,
+    PinnedPanel,
+    ChatMessageFeed,
+    ChatComposer,
+    ChatImageViewer,
+    ChatHeader,
   },
 
   async setup() {
@@ -276,7 +282,7 @@ export default {
     },
 
     canComposeInActiveDialog(this: any) {
-      if (!this.activeDialog) return true;
+      if (!this.activeDialog) return false;
       if (this.activeDialog.kind === 'direct') return true;
       if (!this.activeDialog.postOnlyByAdmin) return true;
       return !!this.isActiveDialogAdmin;
@@ -355,6 +361,10 @@ export default {
   },
 
   methods: {
+    setPageRef(this: any, name: string, el: any) {
+      this[name] = el || null;
+    },
+
     ...chatMethodsRuntimeAndRouting,
     ...chatMethodsComposerAndVirtual,
     ...chatMethodsNotifications,

@@ -76,7 +76,7 @@ export class ChatMessagesService {
     const targetUserId = Number(sourceMessage?.senderId || 0);
     if (!Number.isFinite(targetUserId) || targetUserId <= 0 || targetUserId === actorUserId) return null;
 
-    const commentMessage = await this.ctx.loadMessagePayloadById(roomId, commentMessageId);
+    const commentMessage = await this.ctx.messages.loadMessagePayloadById(roomId, commentMessageId);
     if (!commentMessage) return null;
 
     return {
@@ -122,11 +122,11 @@ export class ChatMessagesService {
       createdAt: string;
     };
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
     const options = this.parseMessageCreateOptions(optionsRaw);
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -150,7 +150,7 @@ export class ChatMessagesService {
     const rawText = trimmed.length > MAX_MESSAGE_LENGTH
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
-    const compiled = await this.ctx.compileMessageForRoom(roomId, rawText);
+    const compiled = await this.ctx.messages.compileMessageForRoom(roomId, rawText);
     const anonymous = options.anonymous;
     const senderId = anonymous ? null : state.user!.id;
 
@@ -163,9 +163,9 @@ export class ChatMessagesService {
       renderedHtml: compiled.renderedHtml,
     });
 
-    await this.ctx.pruneRoomOverflow(roomId);
+    await this.ctx.uploads.pruneRoomOverflow(roomId);
 
-    const message = await this.ctx.loadMessagePayloadById(roomId, created.message.id);
+    const message = await this.ctx.messages.loadMessagePayloadById(roomId, created.message.id);
     if (!message) {
       return {ok: false, error: 'message_not_found'};
     }
@@ -183,7 +183,7 @@ export class ChatMessagesService {
     changed: boolean;
     message: ChatContextMessagePayload;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
     const messageId = this.parseMessageId(messageIdRaw);
     if (!messageId) {
@@ -236,7 +236,7 @@ export class ChatMessagesService {
     const rawText = trimmed.length > MAX_MESSAGE_LENGTH
       ? trimmed.slice(0, MAX_MESSAGE_LENGTH)
       : trimmed;
-    const compiled = await this.ctx.compileMessageForRoom(roomId, rawText, existing.id);
+    const compiled = await this.ctx.messages.compileMessageForRoom(roomId, rawText, existing.id);
 
     const changed = compiled.rawText !== (existing.rawText || '') || compiled.renderedHtml !== (existing.renderedHtml || '');
     if (changed) {
@@ -249,7 +249,7 @@ export class ChatMessagesService {
       });
     }
 
-    const message = await this.ctx.loadMessagePayloadById(roomId, existing.id);
+    const message = await this.ctx.messages.loadMessagePayloadById(roomId, existing.id);
     if (!message) {
       return {ok: false, error: 'message_not_found'};
     }
@@ -268,7 +268,7 @@ export class ChatMessagesService {
     messageId: number;
     pinnedCleared: boolean;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
     const messageId = this.parseMessageId(messageIdRaw);
     if (!messageId) {
@@ -306,13 +306,13 @@ export class ChatMessagesService {
       return {ok: false, error: 'forbidden'};
     }
 
-    const uploadNames = await this.ctx.collectUploadNamesFromNodeSubtree(messageId);
+    const uploadNames = await this.ctx.uploads.collectUploadNamesFromNodeSubtree(messageId);
     const pinnedCleared = Number(room.pinned_node_id || 0) === messageId;
     const result = await db.node.deleteMany({
       where: {id: messageId},
     });
     if (result.count > 0) {
-      await this.ctx.cleanupUnusedUploads(uploadNames);
+      await this.ctx.uploads.cleanupUnusedUploads(uploadNames);
     }
     return {
       ok: true,
@@ -331,7 +331,7 @@ export class ChatMessagesService {
     messageId: number;
     commentRoomId: number | null;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const messageId = this.parseMessageId(messageIdRaw);
@@ -396,7 +396,7 @@ export class ChatMessagesService {
     commentRoomId: number;
     message: ChatContextMessagePayload | null;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
     const messageId = this.parseMessageId(messageIdRaw);
@@ -455,7 +455,7 @@ export class ChatMessagesService {
         messageId: existingMessage.id,
         sourceRoomId,
         commentRoomId: existingCommentRoom.id,
-        message: await this.ctx.loadMessagePayloadById(sourceRoomId, existingMessage.id),
+        message: await this.ctx.messages.loadMessagePayloadById(sourceRoomId, existingMessage.id),
       };
     }
 
@@ -549,7 +549,7 @@ export class ChatMessagesService {
 
     return {
       ...(created as any),
-      message: await this.ctx.loadMessagePayloadById(
+      message: await this.ctx.messages.loadMessagePayloadById(
         Number((created as any).sourceRoomId || 0),
         Number((created as any).messageId || 0),
       ),
@@ -563,10 +563,10 @@ export class ChatMessagesService {
     pinnedNodeId: number | null;
     pinnedMessage: ChatContextMessagePayload | null;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }
@@ -623,7 +623,7 @@ export class ChatMessagesService {
       });
     }
 
-    const pinnedMessage = await this.ctx.loadMessagePayloadById(roomId, messageId);
+    const pinnedMessage = await this.ctx.messages.loadMessagePayloadById(roomId, messageId);
     return {
       ok: true,
       changed,
@@ -641,10 +641,10 @@ export class ChatMessagesService {
     pinnedNodeId: null;
     pinnedMessage: null;
   }>> {
-    const authError = this.ctx.requireAuth(state);
+    const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const roomId = this.ctx.parseRoomId(roomIdRaw);
+    const roomId = this.ctx.input.parseRoomId(roomIdRaw);
     if (!roomId) {
       return {ok: false, error: 'invalid_room'};
     }

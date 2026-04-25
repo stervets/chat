@@ -7,6 +7,7 @@ import {
   persistBooleanSetting,
   persistNumberSetting,
   ws,
+  wsObject,
   REACTION_EMOJIS,
   VIRTUAL_MAX_ITEMS,
 } from './shared';
@@ -329,7 +330,7 @@ export const chatMethodsMessageBodyAndReactions = {
         return false;
       }
 
-      const pinnedMessageRaw = (result as any).pinnedMessage;
+      const pinnedMessageRaw = wsObject(result).pinnedMessage;
       this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
         ? this.normalizeMessage(pinnedMessageRaw)
         : this.normalizeMessage(message);
@@ -466,7 +467,8 @@ export const chatMethodsMessageBodyAndReactions = {
         return false;
       }
 
-      this.applyMessageReactions((result as any).roomId, (result as any).messageId, (result as any).reactions);
+      const data = wsObject(result);
+      this.applyMessageReactions(data.roomId, data.messageId, data.reactions);
       return true;
     },
 

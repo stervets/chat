@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import { wsLogin, restoreSession, getSessionToken } from '@/composables/ws-rpc';
+import { wsLogin, restoreSession, getSessionToken, wsObject } from '@/composables/ws-rpc';
 import {vibrateConfirm, vibrateError} from '@/utils/vibrate';
 
 export default {
@@ -43,7 +43,7 @@ export default {
 
             try {
                 const session = await restoreSession();
-                if (!(session as any)?.ok || !(session as any)?.user?.id) {
+                if (!(session as any)?.ok || !wsObject(session).user?.id) {
                     this.checkingSession = false;
                     return false;
                 }

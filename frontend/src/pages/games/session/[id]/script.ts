@@ -1,7 +1,7 @@
 import {ref} from 'vue';
 import {on, off} from '@/composables/event-bus';
 import {ws} from '@/composables/classes/ws';
-import {restoreSession, wsGamesAction, wsGamesSessionGet} from '@/composables/ws-rpc';
+import {restoreSession, wsData, wsGamesAction, wsGamesSessionGet, wsObject} from '@/composables/ws-rpc';
 import {
   kingCardImage,
   kingRoundLabel,
@@ -134,8 +134,9 @@ export default {
   methods: {
     async ensureAuth(this: any) {
       const session = await restoreSession();
-      if ((session as any)?.ok && (session as any)?.user?.id) {
-        this.meId = Number((session as any).user.id || 0);
+      const data = wsObject(session);
+      if ((session as any)?.ok && data.user?.id) {
+        this.meId = Number(data.user.id || 0);
         return true;
       }
       await this.router.replace('/login');
@@ -243,7 +244,7 @@ export default {
         return;
       }
 
-      const payload = (result as any)?.session;
+      const payload = wsObject(result).session;
       if (payload) {
         this.applySessionPayload(payload);
       }
@@ -258,8 +259,9 @@ export default {
         roomId: this.session.roomId,
         limit: 60,
       });
-      if (!Array.isArray(result)) return;
-      const normalized = result
+      if (!(result as any)?.ok) return;
+      const rows = wsData<any[]>(result, []);
+      const normalized = rows
         .map((item: any) => this.normalizeRoomMessage(item))
         .filter(Boolean);
       this.chatMessages = normalized;
@@ -291,7 +293,7 @@ export default {
         return;
       }
 
-      this.applySessionPayload((result as any).session);
+      this.applySessionPayload(wsObject(result).session);
       await this.loadRoomMessages();
       this.loading = false;
     },

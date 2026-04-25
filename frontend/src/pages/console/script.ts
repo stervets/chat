@@ -1,25 +1,20 @@
 import {ref} from 'vue';
 import QRCode from 'qrcode';
-import {
-  ArrowLeft,
-  Copy,
-  ImagePlus,
-  MessageCircleMore,
-  MessagesSquare,
-  Plus,
-  Save,
-  ShieldCheck,
-  Ticket,
-  Trash2,
-  UserRound,
-  UserRoundMinus,
-  UserRoundPlus,
-} from 'lucide-vue-next';
 import {getApiBase} from '@/composables/api';
+import AvatarCropModal from './components/avatar-crop-modal/index.vue';
+import ConsoleMediaViewer from './components/media-viewer/index.vue';
+import ConsoleTopbar from './components/console-topbar/index.vue';
+import ConsoleTabs from './components/console-tabs/index.vue';
+import ConsoleCopyToast from './components/copy-toast/index.vue';
+import DonationCard from './components/donation-card/index.vue';
+import InvitesTab from './components/invites-tab/index.vue';
+import ProfileTab from './components/profile-tab/index.vue';
+import RoomsTab from './components/rooms-tab/index.vue';
+import VpnTab from './components/vpn-tab/index.vue';
 import {resolveMediaUrl} from '@/composables/media-url';
 import {loadLastChatPath} from '@/composables/last-chat';
 import {ws} from '@/composables/classes/ws';
-import {getSessionToken, restoreSession, wsChangePassword, wsProvisionVpn, wsSetVpnDonation, wsUpdateProfile} from '@/composables/ws-rpc';
+import {getSessionToken, restoreSession, wsChangePassword, wsData, wsObject, wsProvisionVpn, wsSetVpnDonation, wsUpdateProfile} from '@/composables/ws-rpc';
 import {
   BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY,
   SOUND_ENABLED_STORAGE_KEY,
@@ -65,19 +60,16 @@ const clampNumber = (valueRaw: unknown, minRaw: unknown, maxRaw: unknown) => {
 
 export default {
   components: {
-    ArrowLeft,
-    Copy,
-    ImagePlus,
-    MessageCircleMore,
-    MessagesSquare,
-    Plus,
-    Save,
-    ShieldCheck,
-    Ticket,
-    Trash2,
-    UserRound,
-    UserRoundMinus,
-    UserRoundPlus,
+    AvatarCropModal,
+    ConsoleMediaViewer,
+    ConsoleTabs,
+    ConsoleTopbar,
+    ConsoleCopyToast,
+    DonationCard,
+    InvitesTab,
+    ProfileTab,
+    RoomsTab,
+    VpnTab,
   },
 
   async setup() {
@@ -484,11 +476,12 @@ export default {
 
     async ensureAuth(this: any) {
       const session = await restoreSession();
-      if (!(session as any)?.ok || !(session as any)?.user?.id) {
+      const data = wsObject(session);
+      if (!(session as any)?.ok || !data.user?.id) {
         await this.router.push('/login');
         return false;
       }
-      this.me = (session as any).user;
+      this.me = data.user;
       this.isAuthed = true;
       return true;
     },
@@ -1115,9 +1108,7 @@ export default {
       this.error = '';
       const nickname = this.routeNickname() || String(this.me?.nickname || '').trim().toLowerCase();
       const result = await ws.request('user:get', {nickname});
-      const profile = (result as any)?.user
-        || (result as any)?.data?.user
-        || result;
+      const profile = wsObject(result).user;
       if (!(profile as any)?.id) {
         const ownNickname = String(this.me?.nickname || '').trim().toLowerCase();
         if (nickname === ownNickname && Number(this.me?.id || 0) > 0) {
@@ -1136,18 +1127,15 @@ export default {
     },
 
     async fetchContacts(this: any) {
-      const result = await ws.request('contacts:list');
-      this.contacts = Array.isArray(result) ? result : [];
+      this.contacts = wsData<any[]>(await ws.request('contacts:list'), []);
     },
 
     async fetchRooms(this: any) {
       this.roomsLoading = true;
       this.roomsError = '';
       try {
-        const result = await ws.request('room:list', {kind: 'group', scope: 'all'});
-        this.allRooms = Array.isArray(result)
-          ? result.map((row: any) => this.normalizeRoom(row)).filter(Boolean)
-          : [];
+        const rows = wsData<any[]>(await ws.request('room:list', {kind: 'group', scope: 'all'}), []);
+        this.allRooms = rows.map((row: any) => this.normalizeRoom(row)).filter(Boolean);
       } finally {
         this.roomsLoading = false;
       }
@@ -1171,14 +1159,15 @@ export default {
         return;
       }
 
-      this.selectedRoom = this.normalizeRoom(result) || {
+      const data = wsObject(result);
+      this.selectedRoom = this.normalizeRoom(data) || {
         id: roomId,
-        title: String((result as any).title || 'Комната'),
-        visibility: (result as any).visibility === 'private' ? 'private' : 'public',
-        commentsEnabled: (result as any).commentsEnabled !== undefined ? !!(result as any).commentsEnabled : true,
-        avatarUrl: (result as any).avatarUrl ? String((result as any).avatarUrl) : null,
-        postOnlyByAdmin: !!(result as any).postOnlyByAdmin,
-        createdById: Number((result as any).createdById || 0) || null,
+        title: String(data.title || 'Комната'),
+        visibility: data.visibility === 'private' ? 'private' : 'public',
+        commentsEnabled: data.commentsEnabled !== undefined ? !!data.commentsEnabled : true,
+        avatarUrl: data.avatarUrl ? String(data.avatarUrl) : null,
+        postOnlyByAdmin: !!data.postOnlyByAdmin,
+        createdById: Number(data.createdById || 0) || null,
       };
       this.applyRoomForm(this.selectedRoom);
       await this.fetchRoomMembers(roomId);
@@ -1192,8 +1181,7 @@ export default {
       }
       this.roomMembersLoading = true;
       try {
-        const result = await ws.request('room:members:list', {roomId});
-        this.roomMembers = Array.isArray(result) ? result : [];
+        this.roomMembers = wsData<any[]>(await ws.request('room:members:list', {roomId}), []);
       } finally {
         this.roomMembersLoading = false;
       }
@@ -1412,7 +1400,7 @@ export default {
         this.roomCreateAvatarPath = null;
         this.roomCreateFormOpen = false;
         await this.fetchRooms();
-        await this.updateRoute({tab: 'rooms', roomId: (result as any).roomId});
+        await this.updateRoute({tab: 'rooms', roomId: wsObject(result).roomId});
       } finally {
         this.roomCreating = false;
       }
@@ -1505,9 +1493,10 @@ export default {
           return;
         }
 
-        const link = String((result as any)?.link || '').trim();
-        const configText = String((result as any)?.configText || '');
-        const qrText = String((result as any)?.qrText || '').trim();
+        const data = wsObject(result);
+        const link = String(data.link || '').trim();
+        const configText = String(data.configText || '');
+        const qrText = String(data.qrText || '').trim();
         if (!link || !configText || !qrText) {
           this.vpnProvisionState = 'error';
           this.vpnProvisionError = 'Сервер вернул неполные данные VPN.';
@@ -1547,8 +1536,9 @@ export default {
           this.vpnInfoError = 'Не удалось получить реквизиты.';
           return;
         }
-        this.donationPhone = String((result as any).donationPhone || '').trim();
-        this.donationBank = String((result as any).donationBank || '').trim();
+        const data = wsObject(result);
+        this.donationPhone = String(data.donationPhone || '').trim();
+        this.donationBank = String(data.donationBank || '').trim();
       } catch {
         this.vpnInfoError = 'Сервер недоступен.';
       } finally {
@@ -1562,12 +1552,13 @@ export default {
       this.inviteError = '';
       try {
         const result = await ws.request('invites:available-rooms');
-        if (!Array.isArray(result)) {
+        if (!(result as any)?.ok) {
           this.inviteError = 'Не удалось загрузить комнаты для инвайта.';
           return;
         }
-        this.inviteRooms = result;
-        this.selectedInviteRoomIds = result
+        const rows = wsData<any[]>(result, []);
+        this.inviteRooms = rows;
+        this.selectedInviteRoomIds = rows
           .filter((room: any) => !!room.checkedByDefault)
           .map((room: any) => Number(room.roomId || 0))
           .filter((roomId: number) => Number.isFinite(roomId) && roomId > 0);
@@ -1578,8 +1569,7 @@ export default {
 
     async fetchInvites(this: any) {
       if (!this.isAuthed) return;
-      const result = await ws.request('invites:list');
-      this.invites = Array.isArray(result) ? result : [];
+      this.invites = wsData<any[]>(await ws.request('invites:list'), []);
     },
 
     buildInviteLink(this: any, codeRaw: unknown) {
@@ -1608,11 +1598,12 @@ export default {
         const result = await ws.request('invites:create', {
           roomIds: this.selectedInviteRoomIds,
         });
-        if (!(result as any)?.id || !(result as any)?.code) {
+        const data = wsObject(result);
+        if (!data.id || !data.code) {
           this.inviteError = 'Не удалось создать инвайт.';
           return;
         }
-        const link = this.buildInviteLink((result as any).code);
+        const link = this.buildInviteLink(data.code);
         this.lastInviteLink = link;
         await this.copyInviteLink(link);
         await this.fetchInvites();

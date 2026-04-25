@@ -1,6 +1,6 @@
 import {ref} from 'vue';
 import {loadLastChatPath} from '@/composables/last-chat';
-import {restoreSession, wsGamesSoloCreate} from '@/composables/ws-rpc';
+import {restoreSession, wsGamesSoloCreate, wsObject} from '@/composables/ws-rpc';
 
 export default {
   async setup() {
@@ -14,7 +14,7 @@ export default {
   methods: {
     async ensureAuth(this: any) {
       const session = await restoreSession();
-      if ((session as any)?.ok && (session as any)?.user?.id) {
+      if ((session as any)?.ok && wsObject(session).user?.id) {
         return true;
       }
       await this.router.replace('/login');
@@ -43,7 +43,7 @@ export default {
           return;
         }
 
-        const sessionId = Number((result as any)?.sessionId || 0);
+        const sessionId = Number(wsObject(result).sessionId || 0);
         if (!Number.isFinite(sessionId) || sessionId <= 0) {
           this.error = 'Сервер вернул некорректный sessionId.';
           return;
