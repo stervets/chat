@@ -36,6 +36,7 @@ export function createChatPageState() {
     messageActionPendingId: ref<number | null>(null),
     discussionOpenPendingMessageId: ref<number | null>(null),
     error: ref(''),
+    dialogSwitching: ref(false),
     historyLoading: ref(false),
     historyLoadingMore: ref(false),
     historyHasMore: ref(true),

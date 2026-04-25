@@ -186,7 +186,28 @@ export default {
     sortedDirectDialogs(this: any) {
       const unreadIds = this.unreadDirectDialogIds || {};
       const pinnedIds = new Set((this.pinnedDirectUserIds || []).map((value: number) => Number(value || 0)));
-      return [...this.directDialogs].sort((left: DirectDialog, right: DirectDialog) => {
+      const dialogsByUserId = new Set(
+        (this.directDialogs || [])
+          .map((dialog: DirectDialog) => Number(dialog?.targetUser?.id || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0)
+      );
+      const syntheticPinnedDialogs: DirectDialog[] = [];
+      pinnedIds.forEach((userIdRaw: number) => {
+        const userId = Number(userIdRaw || 0);
+        if (!Number.isFinite(userId) || userId <= 0) return;
+        if (dialogsByUserId.has(userId)) return;
+
+        const targetUser = this.users.find((user: User) => Number(user?.id || 0) === userId);
+        if (!targetUser) return;
+
+        syntheticPinnedDialogs.push({
+          roomId: -userId,
+          targetUser,
+          lastMessageAt: '',
+        });
+      });
+
+      return [...this.directDialogs, ...syntheticPinnedDialogs].sort((left: DirectDialog, right: DirectDialog) => {
         const leftPinned = pinnedIds.has(Number(left?.targetUser?.id || 0));
         const rightPinned = pinnedIds.has(Number(right?.targetUser?.id || 0));
         if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;

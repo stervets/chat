@@ -1,9 +1,9 @@
 <template>
           <div class="chat-body" :ref="el => setPageRef('messagesEl', el)" @scroll="onMessagesScroll">
             <div class="chat-feed">
-              <div v-if="historyLoading" class="hint">Загрузка...</div>
+              <div v-if="dialogSwitching || historyLoading" class="hint">Загрузка...</div>
               <div v-else-if="!messages.length" class="hint">Нет сообщений</div>
-              <div v-if="historyLoadingMore && messages.length" class="hint">Загружаю ещё...</div>
+              <div v-if="!dialogSwitching && historyLoadingMore && messages.length" class="hint">Загружаю ещё...</div>
               <div
                 v-if="virtualTopSpacerHeight > 0"
                 class="chat-feed-spacer"

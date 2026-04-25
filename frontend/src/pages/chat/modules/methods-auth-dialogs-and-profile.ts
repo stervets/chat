@@ -466,6 +466,8 @@ export const chatMethodsAuthDialogsAndProfile = {
     async selectDialog(this: any, dialog: Dialog, optionsRaw?: {routeMode?: RouteMode}) {
       const seq = this.historyLoadSeq + 1;
       this.historyLoadSeq = seq;
+      this.dialogSwitching = true;
+      this.historyLoading = true;
       this.clearFreshMessageMarks();
       this.activeDialog = dialog;
       this.setActiveRoomScript(null);
@@ -489,19 +491,25 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.virtualTotalHeight = 0;
       this.virtualRangeStart = 0;
       this.virtualRangeEnd = 0;
-      await this.loadHistory(dialog.id, seq);
-      if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
+      try {
+        await this.loadHistory(dialog.id, seq);
+        if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
-      await this.joinDialog(dialog.id);
-      if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
+        await this.joinDialog(dialog.id);
+        if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
-      await this.loadActiveRoomScript(dialog.id);
-      if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
+        await this.loadActiveRoomScript(dialog.id);
+        if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
-      await this.catchUpRoomMessages(dialog.id);
-      if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
+        await this.catchUpRoomMessages(dialog.id);
+        if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
-      await this.syncRouteForDialog(dialog, optionsRaw?.routeMode || 'push');
+        await this.syncRouteForDialog(dialog, optionsRaw?.routeMode || 'push');
+      } finally {
+        if (seq === this.historyLoadSeq) {
+          this.dialogSwitching = false;
+        }
+      }
     },
 
     async selectGeneral(this: any, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; haptic?: boolean}) {
@@ -655,8 +663,18 @@ export const chatMethodsAuthDialogsAndProfile = {
 
     async selectDirectDialog(this: any, dialog: DirectDialog) {
       this.hapticTap();
+      const roomId = Number(dialog?.roomId || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) {
+        await this.selectPrivate(dialog.targetUser, {
+          routeMode: 'push',
+          closeMenu: true,
+          refreshDirects: true,
+        });
+        return;
+      }
+
       await this.selectDialog({
-        id: dialog.roomId,
+        id: roomId,
         kind: 'direct',
         joined: true,
         targetUser: dialog.targetUser,

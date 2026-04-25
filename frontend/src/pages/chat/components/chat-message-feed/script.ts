@@ -12,6 +12,7 @@ export default {
     canOpenDirectFromMessage: {type: Function, required: true},
     canOpenDiscussionFromMessage: {type: Function, required: true},
     discussionOpenPendingMessageId: Number,
+    dialogSwitching: Boolean,
     editingMessageId: Number,
     editingMessageText: String,
     error: String,

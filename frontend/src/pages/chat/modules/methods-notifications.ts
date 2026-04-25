@@ -7,7 +7,22 @@ import type {
 } from './shared';
 export const chatMethodsNotifications = {
     getNotificationDialogTitle(this: any, notification: NotificationItem) {
-      if (notification.roomKind === 'group') return 'Общий чат';
+      if (notification.roomKind === 'group') {
+        const notificationRoomId = Number(notification.roomId || 0);
+        const fromJoined = Array.isArray(this.joinedRooms)
+          ? this.joinedRooms.find((dialog: any) => Number(dialog?.id || 0) === notificationRoomId)
+          : null;
+        const fromPublic = Array.isArray(this.publicRooms)
+          ? this.publicRooms.find((dialog: any) => Number(dialog?.id || 0) === notificationRoomId)
+          : null;
+        const title = String(
+          fromJoined?.title
+          || fromPublic?.title
+          || this.generalDialog?.title
+          || 'Комната'
+        ).trim();
+        return title || 'Комната';
+      }
       if (notification.roomKind === 'comment') return 'Комментарии';
       if (notification.targetUser) return `Директ: ${notification.targetUser.name}`;
       return 'Чат';

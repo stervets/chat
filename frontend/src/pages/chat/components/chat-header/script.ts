@@ -83,10 +83,11 @@ export default {
 
   computed: {
     dialogTitle(this: any) {
+      if (!this.activeDialog) return '';
       if (this.activeDialog?.kind === 'direct') {
         return this.activeDialog?.title || 'Чат';
       }
-      return this.activeDialog?.title || 'Общий чат';
+      return this.activeDialog?.title || 'Комната';
     },
 
     hasSubtitleRow(this: any) {

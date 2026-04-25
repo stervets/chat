@@ -141,6 +141,7 @@
             :get-message-extra-previews="getMessageExtraPreviews"
             :get-rendered-message-html="getRenderedMessageHtml"
             :has-message-author-donation-badge="hasMessageAuthorDonationBadge"
+            :dialog-switching="dialogSwitching"
             :history-loading="historyLoading"
             :history-loading-more="historyLoadingMore"
             :is-fresh-message="isFreshMessage"

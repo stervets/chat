@@ -655,6 +655,17 @@ export const chatMethodsRuntimeAndRouting = {
       return String(nicknameRaw || '').trim().toLowerCase();
     },
 
+    normalizeRoutePath(this: any, pathRaw: unknown) {
+      const rawPath = String(pathRaw || '').trim();
+      if (!rawPath) return '/';
+      if (rawPath === '/') return '/';
+      return rawPath.replace(/\/+$/, '') || '/';
+    },
+
+    isChatRoutePath(this: any, pathRaw: unknown) {
+      return this.normalizeRoutePath(pathRaw) === '/chat';
+    },
+
     buildDirectRoutePath(this: any, nicknameRaw: unknown) {
       const nickname = this.normalizeRouteNickname(nicknameRaw);
       if (!nickname) return '/chat';
@@ -735,13 +746,13 @@ export const chatMethodsRuntimeAndRouting = {
       const raw = Array.isArray(this.route?.params?.username)
         ? this.route.params.username[0]
         : this.route?.params?.username;
-      const decoded = this.safeDecodeRouteParam(raw);
+      const fallbackFromPath = path.slice('/direct/'.length).split('/')[0] || '';
+      const decoded = this.safeDecodeRouteParam(raw || fallbackFromPath);
       return this.normalizeRouteNickname(decoded);
     },
 
     getRoomIdFromRoute(this: any) {
-      const path = String(this.route?.path || '');
-      if (path !== '/chat') return null;
+      if (!this.isChatRoutePath(this.route?.path)) return null;
       return this.getRoomRouteContext().roomId;
     },
 
@@ -787,6 +798,26 @@ export const chatMethodsRuntimeAndRouting = {
       const generalRoomId = Number(this.generalDialog?.id || 0);
       if (generalRoomId > 0 && roomId === generalRoomId && this.generalDialog) {
         return this.generalDialog as Dialog;
+      }
+
+      const fromJoined = Array.isArray(this.joinedRooms)
+        ? this.joinedRooms.find((dialog: Dialog) => Number(dialog?.id || 0) === roomId)
+        : null;
+      if (fromJoined) {
+        return {
+          ...fromJoined,
+          roomSurface: this.normalizeRoomSurface(fromJoined?.roomSurface, fromJoined?.pinnedNodeId),
+        } as Dialog;
+      }
+
+      const fromPublic = Array.isArray(this.publicRooms)
+        ? this.publicRooms.find((dialog: Dialog) => Number(dialog?.id || 0) === roomId)
+        : null;
+      if (fromPublic) {
+        return {
+          ...fromPublic,
+          roomSurface: this.normalizeRoomSurface(fromPublic?.roomSurface, fromPublic?.pinnedNodeId),
+        } as Dialog;
       }
 
       const direct = this.findDirectDialogByRoomId(roomId);
@@ -871,21 +902,21 @@ export const chatMethodsRuntimeAndRouting = {
         const lastPath = loadLastChatPath();
         if (replaceInvalid && this.isSelfDirectPath(lastPath)) {
           persistLastChatPath('/chat');
-        } else if (replaceInvalid && lastPath && lastPath !== '/chat' && String(this.route?.fullPath || this.route?.path || '') === '/chat') {
+        } else if (replaceInvalid && lastPath && lastPath !== '/chat' && this.isChatRoutePath(this.route?.path)) {
           await this.router.replace(lastPath);
           return;
         }
 
         const selected = await this.selectDefaultGroupDialog({routeMode: 'none', closeMenu: false});
         if (!selected) {
-          if (replaceInvalid && String(this.route?.path || '') !== '/chat') {
+          if (replaceInvalid && !this.isChatRoutePath(this.route?.path)) {
             await this.router.replace('/chat');
           }
           persistLastChatPath('/chat');
           return;
         }
 
-        if (replaceInvalid && String(this.route?.path || '') !== '/chat') {
+        if (replaceInvalid && !this.isChatRoutePath(this.route?.path)) {
           await this.router.replace('/chat');
         }
         persistLastChatPath('/chat');
@@ -934,7 +965,7 @@ export const chatMethodsRuntimeAndRouting = {
       if (!this.routeSyncReady) return;
 
       const path = String(this.route?.path || '');
-      if (path === '/chat') {
+      if (this.isChatRoutePath(path)) {
         const roomIdFromRoute = this.getRoomIdFromRoute();
         if (!roomIdFromRoute) {
           const defaultDialog = this.resolveDefaultGroupDialog();
