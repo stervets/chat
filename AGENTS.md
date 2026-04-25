@@ -157,3 +157,15 @@ yarn run frontend:dev
 - unpin вынесен в `/console`: для direct это `убрать из контактов`, для room это `Покинуть комнату` (`room:leave`).
 - admin комнаты может исключать участников через `room:members:remove`, исключённый пользователь получает `room:deleted`.
 - `invites:redeem` теперь работает и для уже авторизованного пользователя: invite добавляет доступы к новым room и затем удаляется.
+
+## Актуализация 2026-04-25
+- `invites:create` теперь различает `roomIds`:
+  - `roomIds` не передан: остаётся legacy fallback-комната;
+  - `roomIds: []`: создаётся invite без `invites_rooms`;
+  - `roomIds` с id: строгая проверка доступности, иначе `invalid_rooms`.
+- `room:group:get-default` больше не делает auto-join в `room_users`; в ответе есть `joined`.
+- `/chat` на фронте выбирает дефолт через joined-комнаты, а не форсит `generalDialog`; при отсутствии joined-комнат автоджойна в `Общий чат` нет.
+- `room:pin:set`/`room:pin:clear` разрешены только администратору комнаты (`userIsRoomAdmin`), direct по-прежнему запрещён.
+- `room:delete` для direct теперь очищает переписку (и сбрасывает `pinnedNodeId`), но не удаляет саму room/node и участников.
+- gateway для direct-clear не шлёт `room:deleted` и не закрывает room subscriptions.
+- из invite-модели убраны `used_by/used_at` и relation `InviteUsedBy`; consume invite теперь single-use через атомарный delete в одной transaction.

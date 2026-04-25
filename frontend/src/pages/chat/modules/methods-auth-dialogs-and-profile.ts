@@ -273,7 +273,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       return {
         id: (result as any).roomId,
         kind: 'group',
-        joined: true,
+        joined: (result as any).joined !== undefined ? !!(result as any).joined : true,
         title: (result as any).title,
         visibility: (result as any).visibility === 'private' ? 'private' : 'public',
         commentsEnabled: (result as any).commentsEnabled !== undefined ? !!(result as any).commentsEnabled : true,
@@ -284,6 +284,41 @@ export const chatMethodsAuthDialogsAndProfile = {
         roomSurface: this.normalizeRoomSurface((result as any).roomSurface, (result as any).pinnedNodeId),
         discussion: null,
       } as Dialog;
+    },
+
+    resolveDefaultGroupDialog(this: any): Dialog | null {
+      if (Array.isArray(this.joinedRooms) && this.joinedRooms.length > 0) {
+        return this.joinedRooms[0] as Dialog;
+      }
+      if (this.generalDialog && this.generalDialog.joined !== false) {
+        return this.generalDialog as Dialog;
+      }
+      return null;
+    },
+
+    async selectDefaultGroupDialog(this: any, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; haptic?: boolean}) {
+      const defaultDialog = this.resolveDefaultGroupDialog();
+      if (!defaultDialog) {
+        this.activeDialog = null;
+        this.setActiveRoomScript(null);
+        this.messages = [];
+        this.activePinnedMessage = null;
+        this.notifyMessagesChanged();
+        if (optionsRaw?.closeMenu !== false) {
+          this.closeLeftMenu();
+        }
+        return false;
+      }
+
+      if (optionsRaw?.haptic) {
+        this.hapticTap();
+      }
+
+      await this.selectDialog(defaultDialog, {routeMode: optionsRaw?.routeMode || 'push'});
+      if (optionsRaw?.closeMenu !== false) {
+        this.closeLeftMenu();
+      }
+      return true;
     },
 
     async fetchPrivateDialog(this: any, user: User) {
@@ -695,20 +730,40 @@ export const chatMethodsAuthDialogsAndProfile = {
 
       this.hapticTap();
       const confirmText = this.activeDialog.kind === 'direct'
-        ? 'Удалить директ полностью? Это удалит всю переписку у обоих участников.'
+        ? 'Очистить переписку? Сообщения будут удалены для обоих участников. Диалог останется доступен.'
         : 'Удалить комнату полностью? Это удалит всю переписку у всех участников.';
       if (!window.confirm(confirmText)) return;
 
       this.roomDeletePending = true;
       try {
         const roomId = this.activeDialog.id;
+        const roomKind = this.activeDialog.kind;
         const result = await ws.request('room:delete', {roomId, confirm: true});
         if (!(result as any)?.ok) {
-          this.error = this.activeDialog.kind === 'direct'
-            ? 'Не удалось удалить директ.'
+          this.error = roomKind === 'direct'
+            ? 'Не удалось очистить переписку.'
             : 'Не удалось удалить комнату.';
           return;
         }
+        if (roomKind === 'direct') {
+          const seq = this.historyLoadSeq + 1;
+          this.historyLoadSeq = seq;
+          this.messages = [];
+          this.activePinnedMessage = null;
+          this.notifyMessagesChanged();
+          this.cancelMessageEdit();
+          this.reactionPickerMessageId = null;
+          this.reactionTooltipVisible = false;
+          this.resetMessagePreviewCache();
+          await this.loadHistory(roomId, seq);
+          if (seq === this.historyLoadSeq && Number(this.activeDialog?.id || 0) === roomId) {
+            await this.joinDialog(roomId);
+          }
+          await this.fetchDirectDialogs();
+          await this.fetchPinnedDirectUserIds();
+          return;
+        }
+
         await this.onDialogDeleted({roomId});
       } finally {
         this.roomDeletePending = false;

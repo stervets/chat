@@ -243,8 +243,8 @@ export default {
     },
 
     canManagePinnedMessages(this: any) {
-      if (!this.activeDialog) return false;
-      return this.activeDialog.kind !== 'direct';
+      if (!this.activeDialog || this.activeDialog.kind === 'direct') return false;
+      return !!this.isActiveDialogAdmin;
     },
 
     isActiveDirectPinned(this: any) {

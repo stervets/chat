@@ -1579,9 +1579,7 @@ export default {
     async fetchInvites(this: any) {
       if (!this.isAuthed) return;
       const result = await ws.request('invites:list');
-      this.invites = Array.isArray(result)
-        ? result.filter((invite: any) => !invite?.isUsed)
-        : [];
+      this.invites = Array.isArray(result) ? result : [];
     },
 
     buildInviteLink(this: any, codeRaw: unknown) {

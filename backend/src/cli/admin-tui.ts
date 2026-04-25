@@ -22,9 +22,6 @@ type InviteRow = {
   createdById: number | null;
   createdByNickname: string | null;
   createdAt: string;
-  usedById: number | null;
-  usedByNickname: string | null;
-  usedAt: string | null;
   expiresAt: string | null;
 };
 
@@ -33,7 +30,6 @@ const rl = createInterface({input, output});
 const clearScreen = () => output.write('\x1Bc');
 const normalize = (value: string) => value.trim();
 const printable = (value: string | number | null) => (value === null ? '-' : String(value));
-const isYes = (value: string) => ['y', 'yes', 'д', 'да'].includes(value.toLowerCase());
 const inviteLink = (code: string) => `${config.inviteBaseUrl}/invite/${encodeURIComponent(code)}`;
 
 async function ask(question: string) {
@@ -84,12 +80,6 @@ async function getInvites() {
           nickname: true,
         },
       },
-      usedBy: {
-        select: {
-          id: true,
-          nickname: true,
-        },
-      },
     },
   });
 
@@ -99,9 +89,6 @@ async function getInvites() {
     createdById: row.createdBy?.id || null,
     createdByNickname: row.createdBy?.nickname || null,
     createdAt: row.createdAt.toISOString(),
-    usedById: row.usedBy?.id || null,
-    usedByNickname: row.usedBy?.nickname || null,
-    usedAt: row.usedAt ? row.usedAt.toISOString() : null,
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
   })) as InviteRow[];
 }
@@ -127,12 +114,9 @@ function renderInvites(rows: InviteRow[]) {
   }
 
   for (const row of rows) {
-    const status = row.usedAt ? 'used' : 'new';
-    output.write(`#${row.id}  ${row.code}  [${status}]\n`);
+    output.write(`#${row.id}  ${row.code}\n`);
     output.write(`    createdBy: ${printable(row.createdById)} (${printable(row.createdByNickname)})\n`);
     output.write(`    createdAt: ${row.createdAt}\n`);
-    output.write(`    usedBy: ${printable(row.usedById)} (${printable(row.usedByNickname)})\n`);
-    output.write(`    usedAt: ${printable(row.usedAt)}\n`);
     output.write(`    expiresAt: ${printable(row.expiresAt)}\n`);
   }
 }
@@ -407,7 +391,6 @@ async function editInviteAction() {
   const nextExpiresRaw = await ask(
     `новый expires_at [${printable(invite.expiresAt)}] (Enter = без изменений, "-" = очистить): `,
   );
-  const resetUsedRaw = await ask('сбросить used_by/used_at? [y/N]: ');
 
   const data: Record<string, unknown> = {};
 
@@ -441,11 +424,6 @@ async function editInviteAction() {
       }
       data.expiresAt = parsed;
     }
-  }
-
-  if (isYes(resetUsedRaw)) {
-    data.usedById = null;
-    data.usedAt = null;
   }
 
   if (Object.keys(data).length === 0) {

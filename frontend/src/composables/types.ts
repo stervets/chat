@@ -15,9 +15,6 @@ export type Invite = {
   id: Id;
   code: string;
   createdAt: string;
-  usedAt?: string | null;
-  usedBy?: User | null;
-  isUsed: boolean;
   rooms?: Array<{
     roomId: number;
     title: string;

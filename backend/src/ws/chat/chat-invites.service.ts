@@ -47,21 +47,45 @@ export class ChatInvitesService {
     return Number(room?.id || 0) || null;
   }
 
-  private async cleanupUsedInvites(ownerId: number) {
-    await db.invite.deleteMany({
-      where: {
-        createdById: ownerId,
-        usedAt: {
-          not: null,
+  private async consumeInviteInTx(tx: any, code: string) {
+    const invite = await tx.invite.findUnique({
+      where: {code},
+      select: {
+        id: true,
+        expiresAt: true,
+        rooms: {
+          select: {
+            roomId: true,
+          },
         },
       },
     });
+
+    if (!invite) {
+      throw new Error('invite_not_found');
+    }
+
+    const isExpired = invite.expiresAt && invite.expiresAt < new Date();
+    if (isExpired) {
+      throw new Error('invite_invalid');
+    }
+
+    const consumed = await tx.invite.deleteMany({
+      where: {
+        id: invite.id,
+      },
+    });
+
+    if (consumed.count === 0) {
+      throw new Error('invite_invalid');
+    }
+
+    return invite.rooms.map((room: {roomId: number}) => room.roomId);
   }
 
   async invitesList(state: SocketState): Promise<ApiError | any[]> {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
-    await this.cleanupUsedInvites(state.user!.id);
 
     const result = await db.invite.findMany({
       where: {
@@ -82,9 +106,6 @@ export class ChatInvitesService {
             },
           },
         },
-        usedBy: {
-          select: this.publicUserSelect(),
-        },
       },
     });
 
@@ -92,11 +113,6 @@ export class ChatInvitesService {
       id: row.id,
       code: row.code,
       createdAt: row.createdAt.toISOString(),
-      usedAt: row.usedAt ? row.usedAt.toISOString() : null,
-      usedBy: row.usedBy
-        ? this.ctx.toPublicUser(row.usedBy)
-        : null,
-      isUsed: Boolean(row.usedAt),
       rooms: row.rooms.map((item) => ({
         roomId: item.room.id,
         title: item.room.title || 'Комната',
@@ -114,34 +130,52 @@ export class ChatInvitesService {
     const authError = this.ctx.requireAuth(state);
     if (authError) return authError;
 
-    const requestedRoomIds = Array.isArray(payloadRaw?.roomIds)
-      ? Array.from(new Set(payloadRaw.roomIds
-        .map((value) => Number.parseInt(String(value ?? ''), 10))
-        .filter((value) => Number.isFinite(value) && value > 0)))
-      : [];
-    const defaultGroupRoomId = await this.resolveDefaultGroupRoomId();
-    const marxNewsRoomId = await this.resolveMarxNewsRoomId();
+    const hasRoomIds = Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'roomIds');
+    if (hasRoomIds && !Array.isArray(payloadRaw?.roomIds)) {
+      return {ok: false, error: 'invalid_rooms'};
+    }
 
-    const selectedRooms = requestedRoomIds.length > 0
-      ? await db.room.findMany({
-        where: {
-          id: {
-            in: requestedRoomIds,
-          },
-          kind: 'group',
-          roomUsers: {
-            some: {
-              userId: state.user!.id,
+    const rawRequestedRoomIds: unknown[] = Array.isArray(payloadRaw?.roomIds) ? payloadRaw.roomIds : [];
+    const parsedRequestedRoomIds = rawRequestedRoomIds.map((value) => Number.parseInt(String(value ?? ''), 10));
+    const hasInvalidRoomIds = parsedRequestedRoomIds.some((value) => !Number.isFinite(value) || value <= 0);
+    if (hasRoomIds && hasInvalidRoomIds) {
+      return {ok: false, error: 'invalid_rooms'};
+    }
+
+    const requestedRoomIds = Array.from(new Set(
+      parsedRequestedRoomIds.filter((value) => Number.isFinite(value) && value > 0),
+    ));
+    let selectedRooms: Array<{id: number; title: string | null; visibility: string}> = [];
+
+    if (hasRoomIds) {
+      if (requestedRoomIds.length > 0) {
+        selectedRooms = await db.room.findMany({
+          where: {
+            id: {
+              in: requestedRoomIds,
+            },
+            kind: 'group',
+            roomUsers: {
+              some: {
+                userId: state.user!.id,
+              },
             },
           },
-        },
-        select: {
-          id: true,
-          title: true,
-          visibility: true,
-        },
-      })
-      : await db.room.findMany({
+          select: {
+            id: true,
+            title: true,
+            visibility: true,
+          },
+        });
+
+        if (selectedRooms.length !== requestedRoomIds.length) {
+          return {ok: false, error: 'invalid_rooms'};
+        }
+      }
+    } else {
+      const defaultGroupRoomId = await this.resolveDefaultGroupRoomId();
+      const marxNewsRoomId = await this.resolveMarxNewsRoomId();
+      selectedRooms = await db.room.findMany({
         where: {
           id: marxNewsRoomId || defaultGroupRoomId,
         },
@@ -152,23 +186,28 @@ export class ChatInvitesService {
         },
       });
 
-    if (!selectedRooms.length) {
-      return {ok: false, error: 'invalid_rooms'};
+      if (!selectedRooms.length) {
+        return {ok: false, error: 'invalid_rooms'};
+      }
     }
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const code = randomBytes(8).toString('hex');
       try {
+        const createData: any = {
+          code,
+          createdById: state.user!.id,
+        };
+        if (selectedRooms.length > 0) {
+          createData.rooms = {
+            create: selectedRooms.map((room) => ({
+              roomId: room.id,
+            })),
+          };
+        }
+
         const created = await db.invite.create({
-          data: {
-            code,
-            createdById: state.user!.id,
-            rooms: {
-              create: selectedRooms.map((room) => ({
-                roomId: room.id,
-              })),
-            },
-          },
+          data: createData,
           select: {
             id: true,
             code: true,
@@ -265,7 +304,6 @@ export class ChatInvitesService {
       where: {code},
       select: {
         id: true,
-        usedAt: true,
         expiresAt: true,
       },
     });
@@ -275,8 +313,7 @@ export class ChatInvitesService {
     }
 
     const isExpired = invite.expiresAt && invite.expiresAt < new Date();
-    const isUsedUp = !!invite.usedAt;
-    if (isExpired || isUsedUp) {
+    if (isExpired) {
       return {ok: false, error: 'invite_invalid'};
     }
 
@@ -399,33 +436,11 @@ export class ChatInvitesService {
     if (Number.isFinite(authorizedUserId) && authorizedUserId > 0) {
       try {
         const redeemed = await db.$transaction(async (tx) => {
-          const invite = await tx.invite.findUnique({
-            where: {code},
-            select: {
-              id: true,
-              usedAt: true,
-              expiresAt: true,
-              rooms: {
-                select: {
-                  roomId: true,
-                },
-              },
-            },
-          });
-
-          if (!invite) {
-            throw new Error('invite_not_found');
-          }
-
-          const isExpired = invite.expiresAt && invite.expiresAt < new Date();
-          const isUsedUp = !!invite.usedAt;
-          if (isExpired || isUsedUp) {
-            throw new Error('invite_invalid');
-          }
+          const inviteRoomIds = await this.consumeInviteInTx(tx, code);
 
           const targetRoomIds = await resolveTargetRoomIds(
             tx,
-            invite.rooms.map((room) => room.roomId),
+            inviteRoomIds,
           );
 
           const existingMemberships = targetRoomIds.length > 0
@@ -453,26 +468,6 @@ export class ChatInvitesService {
               skipDuplicates: true,
             });
           }
-
-          const updatedInvite = await tx.invite.updateMany({
-            where: {
-              id: invite.id,
-              usedAt: null,
-            },
-            data: {
-              usedById: authorizedUserId,
-              usedAt: new Date(),
-            },
-          });
-          if (updatedInvite.count === 0) {
-            throw new Error('invite_invalid');
-          }
-
-          await tx.invite.deleteMany({
-            where: {
-              id: invite.id,
-            },
-          });
 
           return {
             addedRoomIds,
@@ -511,29 +506,7 @@ export class ChatInvitesService {
 
     try {
       const createdUser = await db.$transaction(async (tx) => {
-        const invite = await tx.invite.findUnique({
-          where: {code},
-          select: {
-            id: true,
-            usedAt: true,
-            expiresAt: true,
-            rooms: {
-              select: {
-                roomId: true,
-              },
-            },
-          },
-        });
-
-        if (!invite) {
-          throw new Error('invite_not_found');
-        }
-
-        const isExpired = invite.expiresAt && invite.expiresAt < new Date();
-        const isUsedUp = !!invite.usedAt;
-        if (isExpired || isUsedUp) {
-          throw new Error('invite_invalid');
-        }
+        const inviteRoomIds = await this.consumeInviteInTx(tx, code);
 
         const existingUser = await tx.user.findUnique({
           where: {nickname},
@@ -553,27 +526,6 @@ export class ChatInvitesService {
           select: this.publicUserSelect(),
         });
 
-        const updatedInvite = await tx.invite.updateMany({
-          where: {
-            id: invite.id,
-            usedAt: null,
-          },
-          data: {
-            usedById: user.id,
-            usedAt: new Date(),
-          },
-        });
-
-        if (updatedInvite.count === 0) {
-          throw new Error('invite_invalid');
-        }
-
-        await tx.invite.deleteMany({
-          where: {
-            id: invite.id,
-          },
-        });
-
         const systemUser = await tx.user.findUnique({
           where: {
             nickname: SYSTEM_NICKNAME,
@@ -583,7 +535,7 @@ export class ChatInvitesService {
 
         const targetRoomIds = await resolveTargetRoomIds(
           tx,
-          invite.rooms.map((room) => room.roomId),
+          inviteRoomIds,
         );
         if (targetRoomIds.length > 0) {
           await tx.roomUser.createMany({

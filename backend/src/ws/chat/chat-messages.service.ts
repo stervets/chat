@@ -583,6 +583,9 @@ export class ChatMessagesService {
     if (room.kind === 'direct') {
       return {ok: false, error: 'forbidden'};
     }
+    if (!userIsRoomAdmin(state.user!.id, room)) {
+      return {ok: false, error: 'forbidden'};
+    }
 
     const message = await db.message.findUnique({
       where: {
@@ -651,6 +654,9 @@ export class ChatMessagesService {
       return {ok: false, error: 'forbidden'};
     }
     if (room.kind === 'direct') {
+      return {ok: false, error: 'forbidden'};
+    }
+    if (!userIsRoomAdmin(state.user!.id, room)) {
       return {ok: false, error: 'forbidden'};
     }
 

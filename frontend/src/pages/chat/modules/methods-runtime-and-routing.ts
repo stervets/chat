@@ -848,9 +848,7 @@ export const chatMethodsRuntimeAndRouting = {
           if (replaceInvalid) {
             await this.router.replace('/chat');
           }
-          if (this.generalDialog) {
-            await this.selectDialog(this.generalDialog, {routeMode: 'none'});
-          }
+          await this.selectDefaultGroupDialog({routeMode: 'none', closeMenu: false});
           return;
         }
 
@@ -870,32 +868,37 @@ export const chatMethodsRuntimeAndRouting = {
 
       const roomIdFromRoute = this.getRoomIdFromRoute();
       if (!roomIdFromRoute) {
-        if (this.generalDialog) {
-          const lastPath = loadLastChatPath();
-          if (replaceInvalid && this.isSelfDirectPath(lastPath)) {
-            persistLastChatPath('/chat');
-          } else if (replaceInvalid && lastPath && lastPath !== '/chat' && String(this.route?.fullPath || this.route?.path || '') === '/chat') {
-            await this.router.replace(lastPath);
-            return;
-          }
-          await this.selectDialog(this.generalDialog, {routeMode: 'none'});
+        const lastPath = loadLastChatPath();
+        if (replaceInvalid && this.isSelfDirectPath(lastPath)) {
+          persistLastChatPath('/chat');
+        } else if (replaceInvalid && lastPath && lastPath !== '/chat' && String(this.route?.fullPath || this.route?.path || '') === '/chat') {
+          await this.router.replace(lastPath);
+          return;
+        }
+
+        const selected = await this.selectDefaultGroupDialog({routeMode: 'none', closeMenu: false});
+        if (!selected) {
           if (replaceInvalid && String(this.route?.path || '') !== '/chat') {
             await this.router.replace('/chat');
           }
           persistLastChatPath('/chat');
-          const focusMessageId = Number(this.getRoomRouteContext().focusMessageId || 0);
-          if (Number.isFinite(focusMessageId) && focusMessageId > 0) {
-            void this.scrollToMessageById(focusMessageId);
-          }
+          return;
+        }
+
+        if (replaceInvalid && String(this.route?.path || '') !== '/chat') {
+          await this.router.replace('/chat');
+        }
+        persistLastChatPath('/chat');
+        const focusMessageId = Number(this.getRoomRouteContext().focusMessageId || 0);
+        if (Number.isFinite(focusMessageId) && focusMessageId > 0) {
+          void this.scrollToMessageById(focusMessageId);
         }
         return;
       }
 
       const roomDialog = this.buildDialogFromRoomRoute(roomIdFromRoute);
       if (!roomDialog) {
-        if (this.generalDialog) {
-          await this.selectDialog(this.generalDialog, {routeMode: 'none'});
-        }
+        await this.selectDefaultGroupDialog({routeMode: 'none', closeMenu: false});
         if (replaceInvalid) await this.router.replace('/chat');
         return;
       }
@@ -903,9 +906,7 @@ export const chatMethodsRuntimeAndRouting = {
       await this.selectDialog(roomDialog, {routeMode: 'none'});
 
       if (this.error) {
-        if (this.generalDialog) {
-          await this.selectDialog(this.generalDialog, {routeMode: 'none'});
-        }
+        await this.selectDefaultGroupDialog({routeMode: 'none', closeMenu: false});
         if (replaceInvalid) await this.router.replace('/chat');
         return;
       }
@@ -930,16 +931,21 @@ export const chatMethodsRuntimeAndRouting = {
     },
 
     async onRouteChanged(this: any) {
-      if (!this.routeSyncReady || !this.generalDialog) return;
+      if (!this.routeSyncReady) return;
 
       const path = String(this.route?.path || '');
       if (path === '/chat') {
         const roomIdFromRoute = this.getRoomIdFromRoute();
         if (!roomIdFromRoute) {
-          if (this.activeDialog?.kind === 'group' && Number(this.activeDialog?.id || 0) === Number(this.generalDialog?.id || 0)) {
+          const defaultDialog = this.resolveDefaultGroupDialog();
+          if (!defaultDialog) {
+            await this.selectDefaultGroupDialog({routeMode: 'none', closeMenu: false});
             return;
           }
-          await this.selectGeneral({routeMode: 'none', closeMenu: false});
+          if (this.activeDialog?.kind === 'group' && Number(this.activeDialog?.id || 0) === Number(defaultDialog.id || 0)) {
+            return;
+          }
+          await this.selectDialog(defaultDialog, {routeMode: 'none'});
           return;
         }
 
@@ -949,7 +955,10 @@ export const chatMethodsRuntimeAndRouting = {
 
         const roomDialog = this.buildDialogFromRoomRoute(roomIdFromRoute);
         if (!roomDialog) {
-          await this.selectGeneral({routeMode: 'replace', closeMenu: false});
+          const selected = await this.selectDefaultGroupDialog({routeMode: 'replace', closeMenu: false});
+          if (!selected) {
+            await this.router.replace('/chat');
+          }
           return;
         }
 
@@ -957,7 +966,10 @@ export const chatMethodsRuntimeAndRouting = {
           routeMode: 'none',
         });
         if (this.error) {
-          await this.selectGeneral({routeMode: 'replace', closeMenu: false});
+          const selected = await this.selectDefaultGroupDialog({routeMode: 'replace', closeMenu: false});
+          if (!selected) {
+            await this.router.replace('/chat');
+          }
         }
         return;
       }
@@ -975,7 +987,10 @@ export const chatMethodsRuntimeAndRouting = {
       const targetUser = this.findUserByNickname(directNickname);
       if (!targetUser || targetUser.id === this.me?.id) {
         persistLastChatPath('/chat');
-        await this.selectGeneral({routeMode: 'replace', closeMenu: false});
+        const selected = await this.selectDefaultGroupDialog({routeMode: 'replace', closeMenu: false});
+        if (!selected) {
+          await this.router.replace('/chat');
+        }
         return;
       }
 

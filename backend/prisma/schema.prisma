@@ -39,7 +39,6 @@ model User {
   createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   createdInvites        Invite[]            @relation("InviteCreatedBy")
-  usedInvites           Invite[]            @relation("InviteUsedBy")
   createdNodes          Node[]              @relation("NodeCreatedBy")
   roomMemberships       RoomUser[]
   sentMessages          Message[]           @relation("MessageSender")
@@ -61,9 +60,6 @@ model Invite {
   createdById Int?      @map("created_by")
   createdBy   User?     @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  usedById    Int?      @map("used_by")
-  usedBy      User?     @relation("InviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
-  usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
   expiresAt   DateTime? @map("expires_at") @db.Timestamptz(3)
   rooms       InviteRoom[]
 

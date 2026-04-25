@@ -263,3 +263,254 @@ test('black-box: upload image + delete source + verify cleanup', async () => {
     await waitForHttpStatus(uploadRoomChild.url, 404);
   });
 });
+
+test('black-box: invite with roomIds=[] keeps invite rooms empty and does not join default group', async () => {
+  await withClient(async (adminClient) => {
+    await loginByPassword(adminClient, CONFIG.adminNickname, CONFIG.adminPassword);
+
+    const invite = assertNoApiError(
+      await adminClient.request('invites:create', {roomIds: []}),
+      'invites:create roomIds=[]',
+    );
+    expect(Number(invite?.id || 0)).toBeGreaterThan(0);
+    expect(Array.isArray(invite?.rooms)).toBe(true);
+    expect(invite.rooms.length).toBe(0);
+
+    const newcomer = new WsRpcClient(CONFIG.backendWsUrl);
+    await newcomer.connect();
+    try {
+      const nickname = makeUniqueNickname('invite_empty');
+      const password = '123';
+      const redeemed = assertNoApiError(await newcomer.request('invites:redeem', {
+        code: invite.code,
+        nickname,
+        name: nickname,
+        password,
+      }), 'invites:redeem roomIds=[]');
+      expect(Number(redeemed?.user?.id || 0)).toBeGreaterThan(0);
+
+      const joinedBeforeDefault = assertNoApiError(
+        await newcomer.request('room:list', {kind: 'group', scope: 'joined'}),
+        'room:list joined before default',
+      );
+      const joinedBeforeIds = new Set(
+        (Array.isArray(joinedBeforeDefault) ? joinedBeforeDefault : [])
+          .map((room) => Number(room?.roomId || room?.dialogId || room?.id || 0))
+          .filter((roomId) => Number.isFinite(roomId) && roomId > 0),
+      );
+
+      const defaultGroup = assertNoApiError(
+        await newcomer.request('room:group:get-default', {}),
+        'room:group:get-default newcomer',
+      );
+      const defaultRoomId = Number(defaultGroup?.roomId || 0);
+      expect(defaultRoomId).toBeGreaterThan(0);
+      expect(joinedBeforeIds.has(defaultRoomId)).toBe(false);
+
+      const joinedAfterDefault = assertNoApiError(
+        await newcomer.request('room:list', {kind: 'group', scope: 'joined'}),
+        'room:list joined after default',
+      );
+      const joinedAfterIds = new Set(
+        (Array.isArray(joinedAfterDefault) ? joinedAfterDefault : [])
+          .map((room) => Number(room?.roomId || room?.dialogId || room?.id || 0))
+          .filter((roomId) => Number.isFinite(roomId) && roomId > 0),
+      );
+      expect(joinedAfterIds.has(defaultRoomId)).toBe(false);
+    } finally {
+      await newcomer.close();
+    }
+  });
+});
+
+test('black-box: room pin/unpin allowed only for room admin', async () => {
+  await withClient(async (adminClient) => {
+    await loginByPassword(adminClient, CONFIG.adminNickname, CONFIG.adminPassword);
+
+    const memberNickname = makeUniqueNickname('pin_member');
+    const memberPassword = '123';
+    const memberSeed = await createUserViaInvite(adminClient, memberNickname, memberPassword);
+    expect(Number(memberSeed?.user?.id || 0)).toBeGreaterThan(0);
+
+    const memberClient = new WsRpcClient(CONFIG.backendWsUrl);
+    await memberClient.connect();
+    try {
+      await restoreSession(memberClient, memberSeed.token);
+
+      const room = assertNoApiError(await adminClient.request('room:create', {
+        title: `bb-pin-admin-${Date.now()}`,
+        visibility: 'public',
+      }), 'room:create for pin');
+      const roomId = Number(room?.roomId || 0);
+      expect(roomId).toBeGreaterThan(0);
+
+      const joined = assertNoApiError(await memberClient.request('room:join', {
+        roomId,
+      }), 'member room:join');
+      expect(joined.joined).toBe(true);
+
+      const createdMessage = assertNoApiError(await adminClient.request('message:create', {
+        roomId,
+        text: `bb-pin-source-${Date.now()}`,
+      }), 'message:create for pin');
+      const messageId = Number(createdMessage?.message?.id || 0);
+      expect(messageId).toBeGreaterThan(0);
+
+      const pinByMember = await memberClient.request('room:pin:set', {
+        roomId,
+        nodeId: messageId,
+      });
+      expect(pinByMember).toMatchObject({
+        ok: false,
+        error: 'forbidden',
+      });
+
+      const unpinByMember = await memberClient.request('room:pin:clear', {
+        roomId,
+      });
+      expect(unpinByMember).toMatchObject({
+        ok: false,
+        error: 'forbidden',
+      });
+
+      const pinByAdmin = assertNoApiError(await adminClient.request('room:pin:set', {
+        roomId,
+        nodeId: messageId,
+      }), 'admin room:pin:set');
+      expect(pinByAdmin.changed).toBe(true);
+      expect(Number(pinByAdmin?.pinnedNodeId || 0)).toBe(messageId);
+
+      const clearByAdmin = assertNoApiError(await adminClient.request('room:pin:clear', {
+        roomId,
+      }), 'admin room:pin:clear');
+      expect(clearByAdmin.changed).toBe(true);
+      expect(clearByAdmin.pinnedNodeId).toBeNull();
+    } finally {
+      await memberClient.close();
+    }
+  });
+});
+
+test('black-box: direct room delete clears messages but keeps direct room', async () => {
+  await withClient(async (userAClient) => {
+    await loginByPassword(userAClient, CONFIG.adminNickname, CONFIG.adminPassword);
+    const userAMe = assertNoApiError(await userAClient.request('auth:me', {}), 'A auth:me');
+    const userAId = Number(userAMe?.id || 0);
+    expect(userAId).toBeGreaterThan(0);
+
+    const userBNickname = makeUniqueNickname('direct_peer');
+    const userBPassword = '123';
+    const userBSeed = await createUserViaInvite(userAClient, userBNickname, userBPassword);
+    expect(Number(userBSeed?.user?.id || 0)).toBeGreaterThan(0);
+
+    const userBClient = new WsRpcClient(CONFIG.backendWsUrl);
+    await userBClient.connect();
+    try {
+      await restoreSession(userBClient, userBSeed.token);
+      const userBId = Number(userBSeed?.user?.id || 0);
+
+      const directByA = assertNoApiError(await userAClient.request('room:direct:get-or-create', {
+        userId: userBId,
+      }), 'A room:direct:get-or-create');
+      const directByB = assertNoApiError(await userBClient.request('room:direct:get-or-create', {
+        userId: userAId,
+      }), 'B room:direct:get-or-create');
+      const directRoomId = Number(directByA?.roomId || 0);
+      expect(directRoomId).toBeGreaterThan(0);
+      expect(Number(directByB?.roomId || 0)).toBe(directRoomId);
+
+      assertNoApiError(await userAClient.request('message:create', {
+        roomId: directRoomId,
+        text: `bb-direct-clear-a-${Date.now()}`,
+      }), 'A message:create #1');
+      assertNoApiError(await userAClient.request('message:create', {
+        roomId: directRoomId,
+        text: `bb-direct-clear-b-${Date.now()}`,
+      }), 'A message:create #2');
+
+      const messagesBeforeDelete = assertNoApiError(await userBClient.request('message:list', {
+        roomId: directRoomId,
+        limit: 50,
+      }), 'B message:list before clear');
+      expect(Array.isArray(messagesBeforeDelete)).toBe(true);
+      expect(messagesBeforeDelete.length).toBeGreaterThan(0);
+
+      const clearByA = assertNoApiError(await userAClient.request('room:delete', {
+        roomId: directRoomId,
+        confirm: true,
+      }), 'A room:delete direct clear');
+      expect(clearByA.changed).toBe(true);
+      expect(clearByA.kind).toBe('direct');
+
+      const roomByAAfterClear = assertNoApiError(await userAClient.request('room:get', {
+        roomId: directRoomId,
+      }), 'A room:get after clear');
+      const roomByBAfterClear = assertNoApiError(await userBClient.request('room:get', {
+        roomId: directRoomId,
+      }), 'B room:get after clear');
+      expect(roomByAAfterClear.kind).toBe('direct');
+      expect(roomByBAfterClear.kind).toBe('direct');
+
+      const membersByA = assertNoApiError(await userAClient.request('room:members:list', {
+        roomId: directRoomId,
+      }), 'A room:members:list direct');
+      const membersByB = assertNoApiError(await userBClient.request('room:members:list', {
+        roomId: directRoomId,
+      }), 'B room:members:list direct');
+      expect(Array.isArray(membersByA)).toBe(true);
+      expect(Array.isArray(membersByB)).toBe(true);
+      const memberIdsA = new Set(membersByA.map((user) => Number(user?.id || 0)));
+      const memberIdsB = new Set(membersByB.map((user) => Number(user?.id || 0)));
+      expect(memberIdsA.has(userAId)).toBe(true);
+      expect(memberIdsA.has(userBId)).toBe(true);
+      expect(memberIdsB.has(userAId)).toBe(true);
+      expect(memberIdsB.has(userBId)).toBe(true);
+
+      const messagesAfterClearByA = assertNoApiError(await userAClient.request('message:list', {
+        roomId: directRoomId,
+        limit: 50,
+      }), 'A message:list after clear');
+      const messagesAfterClearByB = assertNoApiError(await userBClient.request('message:list', {
+        roomId: directRoomId,
+        limit: 50,
+      }), 'B message:list after clear');
+      expect(Array.isArray(messagesAfterClearByA)).toBe(true);
+      expect(Array.isArray(messagesAfterClearByB)).toBe(true);
+      expect(messagesAfterClearByA.length).toBe(0);
+      expect(messagesAfterClearByB.length).toBe(0);
+
+      const directAgainByA = assertNoApiError(await userAClient.request('room:direct:get-or-create', {
+        userId: userBId,
+      }), 'A room:direct:get-or-create after clear');
+      const directAgainByB = assertNoApiError(await userBClient.request('room:direct:get-or-create', {
+        userId: userAId,
+      }), 'B room:direct:get-or-create after clear');
+      expect(Number(directAgainByA?.roomId || 0)).toBe(directRoomId);
+      expect(Number(directAgainByB?.roomId || 0)).toBe(directRoomId);
+
+      assertNoApiError(await userAClient.request('message:create', {
+        roomId: directRoomId,
+        text: `bb-direct-clear-again-${Date.now()}`,
+      }), 'A message:create after first clear');
+
+      const clearByB = assertNoApiError(await userBClient.request('room:delete', {
+        roomId: directRoomId,
+        confirm: true,
+      }), 'B room:delete direct clear');
+      expect(clearByB.kind).toBe('direct');
+
+      const messagesAfterSecondClearByA = assertNoApiError(await userAClient.request('message:list', {
+        roomId: directRoomId,
+        limit: 50,
+      }), 'A message:list after B clear');
+      const messagesAfterSecondClearByB = assertNoApiError(await userBClient.request('message:list', {
+        roomId: directRoomId,
+        limit: 50,
+      }), 'B message:list after B clear');
+      expect(messagesAfterSecondClearByA.length).toBe(0);
+      expect(messagesAfterSecondClearByB.length).toBe(0);
+    } finally {
+      await userBClient.close();
+    }
+  });
+});

@@ -558,9 +558,8 @@ export const chatMethodsSendUploadAndRuntime = {
       this.resetMessagePreviewCache();
 
       this.generalDialog = await this.fetchGeneralDialog();
-      if (this.generalDialog) {
-        await this.selectDialog(this.generalDialog, {routeMode: 'replace'});
-      } else {
+      const selected = await this.selectDefaultGroupDialog({routeMode: 'replace', closeMenu: false});
+      if (!selected) {
         this.activeDialog = null;
         this.setActiveRoomScript(null);
       }

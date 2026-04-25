@@ -239,6 +239,7 @@ export class ChatDialogsService {
     roomId: number;
     dialogId: number;
     type: 'group';
+    joined: boolean;
     title: string;
     visibility: 'public' | 'private';
     commentsEnabled: boolean;
@@ -252,12 +253,12 @@ export class ChatDialogsService {
     if (authError) return authError;
 
     const room = await getOrCreateGroupRoom(state.user!.id);
-    await ensureUserInRoom(room.id, state.user!.id);
     const roomRuntime = await this.loadRoomRuntime(room.id);
     return {
       roomId: room.id,
       dialogId: room.id,
       type: 'group',
+      joined: room.member_user_ids.includes(state.user!.id),
       title: room.title || 'Общий чат',
       visibility: room.visibility,
       commentsEnabled: room.comments_enabled,
@@ -1201,14 +1202,52 @@ export class ChatDialogsService {
 
     const uploadNames = await this.ctx.collectUploadNamesFromNodeSubtree(roomId);
 
+    if (room.kind === 'direct') {
+      const clearResult = await db.$transaction(async (tx) => {
+        const pinReset = await tx.room.updateMany({
+          where: {
+            id: roomId,
+            pinnedNodeId: {
+              not: null,
+            },
+          },
+          data: {
+            pinnedNodeId: null,
+          },
+        });
+
+        const deletedMessages = await tx.node.deleteMany({
+          where: {
+            parentId: roomId,
+          },
+        });
+
+        return {
+          changed: pinReset.count > 0 || deletedMessages.count > 0,
+        };
+      });
+
+      if (clearResult.changed) {
+        await this.ctx.cleanupUnusedUploads(uploadNames);
+      }
+
+      return {
+        ok: true,
+        changed: clearResult.changed,
+        roomId,
+        dialogId: roomId,
+        kind: room.kind,
+      };
+    }
+
     const result = await db.node.deleteMany({
       where: {id: roomId},
     });
     if (result.count > 0) {
       await this.ctx.cleanupUnusedUploads(uploadNames);
-    }
-    if (state.roomId === roomId) {
-      state.roomId = null;
+      if (state.roomId === roomId) {
+        state.roomId = null;
+      }
     }
 
     return {

@@ -259,7 +259,7 @@
             v-if="canDeleteActiveRoom"
             class="icon-btn delete-direct-btn"
             :disabled="roomDeletePending"
-            :title="activeDialog?.kind === 'direct' ? 'Удалить директ' : 'Удалить комнату'"
+            :title="activeDialog?.kind === 'direct' ? 'Очистить переписку' : 'Удалить комнату'"
             @click="onDeleteActiveRoom"
           >
             <Trash2 :size="18" />
