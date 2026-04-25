@@ -13,6 +13,7 @@ export const SYSTEM_NICKNAME = 'marx';
 export const ANONYMOUS_AUTHOR_ID = 0;
 export const ANONYMOUS_AUTHOR_NICKNAME = 'anonymous';
 export const ANONYMOUS_AUTHOR_NAME = 'Аноним';
+export const ANONYMOUS_SYSTEM_PASSWORD = '123';
 
 export const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 export const UPLOAD_LINK_RE = /\/uploads\/([a-zA-Z0-9._-]+)/gi;

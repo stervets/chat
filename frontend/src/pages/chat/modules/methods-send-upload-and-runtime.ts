@@ -314,6 +314,19 @@ export const chatMethodsSendUploadAndRuntime = {
       const text = String(textRaw || '').trim();
       if (!text) return false;
       const anonymous = !!this.sendAnonymous;
+      const pendingRoomId = Number(this.activeDialog.id || 0);
+      const pendingCreatedAt = Date.now();
+
+      if (anonymous) {
+        this.pendingAnonymousOwnMessage = {
+          roomId: pendingRoomId,
+          messageId: 0,
+          rawText: text,
+          createdAt: pendingCreatedAt,
+        };
+      } else {
+        this.pendingAnonymousOwnMessage = null;
+      }
 
       const result = await ws.request('message:create', {
         roomId: this.activeDialog.id,
@@ -322,6 +335,16 @@ export const chatMethodsSendUploadAndRuntime = {
         anonymous,
       });
       if (!(result as any)?.ok) {
+        if (anonymous) {
+          const candidate = this.pendingAnonymousOwnMessage;
+          if (
+            candidate
+            && Number(candidate.roomId || 0) === pendingRoomId
+            && Number(candidate.createdAt || 0) === pendingCreatedAt
+          ) {
+            this.pendingAnonymousOwnMessage = null;
+          }
+        }
         const errorCode = String((result as any)?.error || '');
         this.error = errorCode === 'room_posting_restricted'
           ? 'Канал: писать может админ.'
@@ -331,13 +354,17 @@ export const chatMethodsSendUploadAndRuntime = {
       const createdMessageId = Number(wsObject(result).message?.id || 0);
 
       if (anonymous) {
-        this.pendingAnonymousOwnMessage = {
-          roomId: Number(this.activeDialog.id || 0),
-          messageId: Number.isFinite(createdMessageId) ? createdMessageId : 0,
-          createdAt: Date.now(),
-        };
-      } else {
-        this.pendingAnonymousOwnMessage = null;
+        const candidate = this.pendingAnonymousOwnMessage;
+        if (
+          candidate
+          && Number(candidate.roomId || 0) === pendingRoomId
+          && Number(candidate.createdAt || 0) === pendingCreatedAt
+        ) {
+          this.pendingAnonymousOwnMessage = {
+            ...candidate,
+            messageId: Number.isFinite(createdMessageId) ? createdMessageId : 0,
+          };
+        }
       }
 
       this.hapticConfirm();
@@ -614,15 +641,42 @@ export const chatMethodsSendUploadAndRuntime = {
       }
 
       const messageAuthorId = Number(message.authorId || 0);
+      const messageAuthorNickname = String(message.authorNickname || '').trim().toLowerCase();
+      const messageIsAnonymousAuthor = messageAuthorNickname === 'anonymous';
       const roomId = Number(message.roomId || 0);
       const candidateRoomId = Number(candidate.roomId || 0);
-      if (messageAuthorId > 0 || roomId !== candidateRoomId) {
+      if (roomId !== candidateRoomId) {
+        return false;
+      }
+      if (messageAuthorId > 0 && !messageIsAnonymousAuthor) {
         return false;
       }
 
       const candidateMessageId = Number(candidate.messageId || 0);
-      if (!candidateMessageId || Number(message.id || 0) !== candidateMessageId) {
-        return false;
+      if (candidateMessageId > 0) {
+        if (Number(message.id || 0) !== candidateMessageId) {
+          return false;
+        }
+      } else {
+        const candidateText = String(candidate.rawText || '').trim();
+        const messageText = String(message.rawText || '').trim();
+        if (!candidateText || !messageText) {
+          return false;
+        }
+
+        const messageCreatedAtTs = Date.parse(String(message.createdAt || ''));
+        const candidateCreatedAtTs = Number(candidate.createdAt || 0);
+        if (Number.isFinite(messageCreatedAtTs) && Math.abs(messageCreatedAtTs - candidateCreatedAtTs) > 8000) {
+          return false;
+        }
+
+        if (
+          candidateText !== messageText
+          && !candidateText.startsWith(messageText)
+          && !messageText.startsWith(candidateText)
+        ) {
+          return false;
+        }
       }
 
       this.pendingAnonymousOwnMessage = null;

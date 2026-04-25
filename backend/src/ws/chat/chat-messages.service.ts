@@ -2,9 +2,6 @@ import {db} from '../../db.js';
 import {ensureUserInRoom, getRoomById, userCanAccessRoom, userIsRoomAdmin} from '../../common/rooms.js';
 import {createMessageNode, createRoomNode} from '../../common/nodes.js';
 import {
-  ANONYMOUS_AUTHOR_ID,
-  ANONYMOUS_AUTHOR_NAME,
-  ANONYMOUS_AUTHOR_NICKNAME,
   ChatContext,
   MAX_MESSAGE_LENGTH,
   type ApiError,
@@ -152,7 +149,12 @@ export class ChatMessagesService {
       : trimmed;
     const compiled = await this.ctx.messages.compileMessageForRoom(roomId, rawText);
     const anonymous = options.anonymous;
-    const senderId = anonymous ? null : state.user!.id;
+    const senderId = anonymous
+      ? await this.ctx.system.ensureAnonymousSystemUserId()
+      : state.user!.id;
+    if (!senderId) {
+      return {ok: false, error: 'anonymous_user_not_found'};
+    }
 
     const created = await createMessageNode(db, {
       roomId,

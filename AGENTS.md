@@ -20,7 +20,7 @@
 - comment room: child room-node под message-node (`rooms.kind='comment'`);
 - pinned: `rooms.pinned_node_id -> nodes.id` (сейчас это message-node);
 - админ room: `nodes.created_by` room-node (в direct админа нет);
-- `messages.sender_id` может быть `NULL` (анонимная отправка).
+- `messages.sender_id` для анонимной отправки указывает на системного пользователя `anonymous` (не `NULL`).
 
 Scriptable/runtime:
 - runtime поля: `nodes.client_script`, `nodes.server_script`, `nodes.data`;
@@ -129,3 +129,9 @@ yarn run frontend:dev
 - для существенных изменений поведения обновлять `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/SMOKE_TEST.md`;
 - после фронтовых/WS правок прогонять `yarn run test:login` или `yarn run smoke`;
 - после локального запуска сервисов — остановить процессы.
+
+## Актуализация 2026-04-25
+- анонимная отправка в direct считается "своей" на клиенте даже если `message:created` прилетает раньше RPC-ответа `message:create`;
+- для этого pending-маркер анонимного сообщения ставится до отправки RPC и затем уточняется по `messageId` из ответа.
+- backend анонимной отправки пишет `messages.sender_id` как `id` системного `anonymous`; при отсутствии такого пользователя backend создаёт его автоматически.
+- логин `anonymous` доступен с паролем `123` (backend при необходимости принудительно обновляет hash этого пользователя).

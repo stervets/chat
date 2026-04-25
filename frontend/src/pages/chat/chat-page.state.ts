@@ -55,6 +55,7 @@ export function createChatPageState() {
     pendingAnonymousOwnMessage: ref<{
       roomId: number;
       messageId: number;
+      rawText: string;
       createdAt: number;
     } | null>(null),
     freshMessageIds: ref<Record<number, true>>({}),

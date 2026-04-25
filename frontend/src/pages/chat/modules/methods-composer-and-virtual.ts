@@ -285,6 +285,7 @@ export const chatMethodsComposerAndVirtual = {
       const nickname = String(message?.authorNickname || '').trim();
       const authorId = Number(message?.authorId || 0);
       if (!nickname || !Number.isFinite(authorId) || authorId <= 0) return;
+      if (nickname.toLowerCase() === 'anonymous') return;
 
       this.hapticTap();
       await this.router.push({
@@ -559,6 +560,7 @@ export const chatMethodsComposerAndVirtual = {
       if (!this.me) return false;
       if (this.activeDialog?.kind === 'direct') return false;
       if (Number(message.authorId || 0) <= 0) return false;
+      if (String(message.authorNickname || '').trim().toLowerCase() === 'anonymous') return false;
       return this.me.id !== message.authorId;
     },
 

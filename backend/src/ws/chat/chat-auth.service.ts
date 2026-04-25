@@ -1,6 +1,7 @@
 import {createSession, hashPassword, resolveSession, revokeSession, verifyPassword} from '../../common/auth.js';
 import {db} from '../../db.js';
 import {
+  ANONYMOUS_AUTHOR_NICKNAME,
   ChatContext,
   MAX_USER_NAME_LENGTH,
   MAX_PASSWORD_LENGTH,
@@ -27,6 +28,12 @@ export class ChatAuthService {
     const password = (payload?.password || '').toString();
     if (!password) {
       return {ok: false, error: 'invalid_input'};
+    }
+    if (nickname === ANONYMOUS_AUTHOR_NICKNAME) {
+      const anonymousUserId = await this.ctx.system.ensureAnonymousSystemUserId();
+      if (!anonymousUserId) {
+        return {ok: false, error: 'anonymous_user_not_found'};
+      }
     }
 
     const user = await db.user.findUnique({

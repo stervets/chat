@@ -217,8 +217,9 @@ Invite payload теперь может включать:
 - `reactions[]`
 
 Анонимная отправка:
-- в БД `messages.sender_id = NULL`;
-- в payload: `authorId = 0`, `authorNickname = 'anonymous'`, `authorName = 'Аноним'`.
+- в БД `messages.sender_id = id` системного пользователя `anonymous` (не `NULL`);
+- в payload: `authorId = <id anonymous>`, `authorNickname = 'anonymous'`, `authorName = 'Аноним'`.
+- поддерживается в `group`, `direct`, `game`, `comment` комнатах.
 
 Ошибки: `{ok:false, error:'...'}`.
 
