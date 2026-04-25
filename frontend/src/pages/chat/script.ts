@@ -491,6 +491,7 @@ export default {
 
     await this.syncDialogFromRoute({replaceInvalid: true});
     this.routeSyncReady = true;
+    await this.onRouteChanged();
     this.scheduleVirtualSync();
   },
 

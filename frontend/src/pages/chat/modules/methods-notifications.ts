@@ -471,20 +471,23 @@ export const chatMethodsNotifications = {
       if (notification.roomKind === 'group' && this.generalDialog) {
         targetDialog = this.generalDialog;
       } else {
-        const direct = this.directDialogs.find((dialog: DirectDialog) => dialog.roomId === notification.roomId);
-        if (direct) {
-          targetDialog = {
-            id: direct.roomId,
-            kind: 'direct',
-            joined: true,
-            targetUser: direct.targetUser,
-            title: direct.targetUser.name,
-          };
-        } else if (notification.targetUser && notification.roomKind === 'direct') {
-          await this.selectPrivate(notification.targetUser);
-          targetDialog = this.activeDialog;
+        const fromRoom = this.buildDialogFromRoomRoute(notification.roomId);
+        if (fromRoom) {
+          targetDialog = fromRoom;
         } else {
-          targetDialog = this.buildDialogFromRoomRoute(notification.roomId);
+          const direct = this.directDialogs.find((dialog: DirectDialog) => dialog.roomId === notification.roomId);
+          if (direct) {
+            targetDialog = {
+              id: direct.roomId,
+              kind: 'direct',
+              joined: true,
+              targetUser: direct.targetUser,
+              title: direct.targetUser.name,
+            };
+          } else if (notification.targetUser && notification.roomKind === 'direct') {
+            await this.selectPrivate(notification.targetUser);
+            targetDialog = this.activeDialog;
+          }
         }
       }
 
