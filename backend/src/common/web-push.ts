@@ -127,11 +127,20 @@ export class WebPushService {
 
     try {
       const recipientUserIds = await this.resolveRecipientUserIds(params.room, params.senderId, params.message.rawText);
+      const senderId = Number(params.senderId || 0);
+      const authorId = Number(params.message?.authorId || 0);
       const excluded = new Set(
         Array.isArray(params.excludeUserIds)
           ? params.excludeUserIds.filter((value) => Number.isFinite(value) && value > 0)
           : [],
       );
+      if (Number.isFinite(senderId) && senderId > 0) {
+        excluded.add(senderId);
+      }
+      if (Number.isFinite(authorId) && authorId > 0) {
+        excluded.add(authorId);
+      }
+
       const filteredRecipientUserIds = recipientUserIds.filter((userId) => !excluded.has(userId));
       this.logger.log(`Web Push chat recipients=${recipientUserIds.length} roomId=${params.room.id}`);
       this.logger.log(`Web Push chat recipients_after_exclude=${filteredRecipientUserIds.length} roomId=${params.room.id}`);
@@ -401,17 +410,19 @@ export class WebPushService {
 
   private buildUrlForRecipient(room: RoomRow, message: ChatContextMessagePayload, recipientUserId: number) {
     if (room.kind === 'direct') {
-      if (Number(message.authorId || 0) <= 0) {
-        return '/chat';
+      const roomId = Number(room.id || 0);
+      const messageId = Number(message.id || 0);
+      if (Number.isFinite(roomId) && roomId > 0) {
+        const query = new URLSearchParams();
+        query.set('room', String(roomId));
+        if (Number.isFinite(messageId) && messageId > 0) {
+          query.set('focusMessage', String(messageId));
+        }
+        return `/chat?${query.toString()}`;
       }
 
-      if (recipientUserId === message.authorId) {
+      if (recipientUserId === Number(message.authorId || 0)) {
         return '/chat';
-      }
-
-      const nickname = String(message.authorNickname || '').trim().toLowerCase();
-      if (nickname) {
-        return `/direct/${encodeURIComponent(nickname)}`;
       }
     }
 

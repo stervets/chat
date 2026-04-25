@@ -248,3 +248,8 @@ Legacy `scriptable` сообщения backend всё ещё может верн
 - `POST /push/subscribe`
 - `POST /push/unsubscribe`
 - `POST /push/test`
+
+Семантика chat web-push:
+- для direct уведомления `url` нормализуется как `/chat?room=<directRoomId>&focusMessage=<messageId>`;
+- service worker при клике по push дополнительно канонизирует переход по `roomId/messageId` в тот же формат;
+- отправитель не получает push на своё сообщение: backend всегда исключает `senderId` и `message.authorId` из получателей.

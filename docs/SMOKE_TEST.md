@@ -60,6 +60,7 @@ yarn run invite:create
 - у `marx` слева от имени видна красная звезда;
 - общий чат `group` работает;
 - direct-диалог между пользователями создаётся и открывается;
+- push из direct по клику открывает именно целевой direct и прокручивает к нужному сообщению (`/chat?room=<id>&focusMessage=<id>`), без fallback-редиректа в `/chat`;
 - отправка text/image/video, edit, delete, reactions работают;
 - image upload принимает файлы примерно до 20MB и отправляет пережатый `max 1024x1024` вариант;
 - превью `/uploads/*.mp4|webm|mov|m4v|ogv` рендерится как video;

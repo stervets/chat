@@ -100,8 +100,22 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetPath = String(event.notification?.data?.url || '/chat').trim() || '/chat';
-  const targetUrl = new URL(targetPath, self.location.origin).toString();
+  const notificationData = event.notification?.data || {};
+  const targetPath = String(notificationData.url || '/chat').trim() || '/chat';
+  const roomId = Number(notificationData.roomId || 0);
+  const messageId = Number(notificationData.messageId || 0);
+
+  let canonicalPath = targetPath;
+  if (Number.isFinite(roomId) && roomId > 0) {
+    const query = new URLSearchParams();
+    query.set('room', String(roomId));
+    if (Number.isFinite(messageId) && messageId > 0) {
+      query.set('focusMessage', String(messageId));
+    }
+    canonicalPath = `/chat?${query.toString()}`;
+  }
+
+  const targetUrl = new URL(canonicalPath, self.location.origin).toString();
 
   event.waitUntil((async () => {
     const clientsList = await self.clients.matchAll({

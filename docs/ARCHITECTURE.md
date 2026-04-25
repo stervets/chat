@@ -122,6 +122,7 @@ Redeem добавляет пользователя в комнаты из invite
   - direct pin = `contacts:add` (закреплённые директы);
   - room pin = `room:join` (закреплённые комнаты в навигации).
 - unpin вынесен в `/console`: для direct это `contacts:remove`, для room — `room:leave`.
+- direct web-push-клик всегда ведёт в канонический маршрут `/chat?room=<directRoomId>&focusMessage=<messageId>` (без промежуточных redirect через `/direct/*`).
 - admin комнаты может исключить участника через `room:members:remove`; исключённый участник получает event `room:deleted`.
 - vpn tab: только PWA install + VPN provisioning.
 - invites tab: создание invite с выбором доступных room.

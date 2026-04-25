@@ -149,3 +149,7 @@ yarn run frontend:dev
 - лимит upload-изображений поднят до `50MB` (backend `uploads.maxBytes`, frontend chat/console-ограничения);
 - backend upload теперь дополнительно нормализует изображения (кроме `gif/svg`) до `max 1024x1024` с сохранением пропорций через `sharp`; это страхует кейсы, когда клиентское ужатие по какой-то причине не сработало.
 - фикс пустого чата при первом входе через редирект `/chat -> /chat?room=<id>`: после включения `routeSyncReady` теперь принудительно вызывается `onRouteChanged()`, чтобы догнать пропущенное изменение маршрута и выбрать диалог без ручного refresh.
+- web-push для direct теперь всегда приходит по каноническому URL `/chat?room=<directRoomId>&focusMessage=<messageId>`; клик по push открывает нужный диалог и сразу фокусит целевое сообщение без цепочки редиректов через `/direct/*`.
+- service worker на `notificationclick` теперь нормализует переход по `roomId/messageId` из payload в `/chat?room=...&focusMessage=...`, даже если в `url` пришёл legacy-path.
+- backend web-push дополнительно всегда исключает из получателей `senderId` и `message.authorId`, чтобы отправитель не получал push на собственные сообщения.
+- openNotification в чате теперь в приоритете резолвит диалог по `roomId` (`buildDialogFromRoomRoute`), а не по `targetUser`; это убирает ложные переходы в неверный direct и fallback в `/chat`.
