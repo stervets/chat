@@ -8,7 +8,7 @@
   ],
   "uploads": {
     "path": "./data/uploads",
-    "maxBytes": 20971520,
+    "maxBytes": 52428800,
     "videoMaxBytes": 52428800
   },
   "vpn": {

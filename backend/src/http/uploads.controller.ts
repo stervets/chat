@@ -14,6 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import {FileInterceptor} from '@nestjs/platform-express';
+import sharp from 'sharp';
 import {resolveSession} from '../common/auth.js';
 import {config} from '../config.js';
 import {
@@ -28,6 +29,7 @@ const UPLOAD_INTERCEPTOR_CONFIG = {
     fileSize: Math.max(config.uploads.videoMaxBytes, config.uploads.maxBytes, 8 * 1024 * 1024),
   },
 };
+const MAX_UPLOAD_IMAGE_DIMENSION = 1024;
 
 @Controller()
 export class UploadsController {
@@ -43,6 +45,57 @@ export class UploadsController {
     const forwarded = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
     const proto = forwarded || req?.protocol || 'http';
     return `${proto}://${host}`;
+  }
+
+  private async normalizeImageForUpload(bufferRaw: Buffer, mimeRaw: string) {
+    const mime = String(mimeRaw || '').toLowerCase();
+    const buffer = Buffer.isBuffer(bufferRaw) ? bufferRaw : Buffer.from(bufferRaw || []);
+    if (!mime.startsWith('image/')) {
+      return {buffer, mime};
+    }
+    if (mime === 'image/gif' || mime === 'image/svg+xml') {
+      return {buffer, mime};
+    }
+
+    try {
+      const probe = sharp(buffer, {failOn: 'none'});
+      const metadata = await probe.metadata();
+      const width = Number(metadata.width || 0);
+      const height = Number(metadata.height || 0);
+      if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+        return {buffer, mime};
+      }
+      if (width <= MAX_UPLOAD_IMAGE_DIMENSION && height <= MAX_UPLOAD_IMAGE_DIMENSION) {
+        return {buffer, mime};
+      }
+
+      const pipeline = sharp(buffer, {failOn: 'none'})
+        .rotate()
+        .resize({
+          width: MAX_UPLOAD_IMAGE_DIMENSION,
+          height: MAX_UPLOAD_IMAGE_DIMENSION,
+          fit: 'inside',
+          withoutEnlargement: true,
+        });
+
+      if (mime === 'image/png') {
+        const resized = await pipeline.png({compressionLevel: 9, adaptiveFiltering: true}).toBuffer();
+        return {buffer: resized, mime: 'image/png'};
+      }
+      if (mime === 'image/webp') {
+        const resized = await pipeline.webp({quality: 86}).toBuffer();
+        return {buffer: resized, mime: 'image/webp'};
+      }
+      if (mime === 'image/avif') {
+        const resized = await pipeline.avif({quality: 55}).toBuffer();
+        return {buffer: resized, mime: 'image/avif'};
+      }
+
+      const resized = await pipeline.jpeg({quality: 86, mozjpeg: true}).toBuffer();
+      return {buffer: resized, mime: 'image/jpeg'};
+    } catch {
+      return {buffer, mime};
+    }
   }
 
   private async uploadMediaFile(req: any, file: any, mode: 'image' | 'media') {
@@ -63,7 +116,15 @@ export class UploadsController {
       throw new BadRequestException('invalid_file_type');
     }
 
-    const size = Number(file.size || file.buffer.length || 0);
+    let uploadMime = mime;
+    let uploadBuffer = file.buffer as Buffer;
+    if (isImage) {
+      const normalized = await this.normalizeImageForUpload(uploadBuffer, uploadMime);
+      uploadMime = normalized.mime;
+      uploadBuffer = normalized.buffer;
+    }
+
+    const size = Number(uploadBuffer.length || 0);
     if (size <= 0) {
       throw new BadRequestException('empty_file');
     }
@@ -75,15 +136,15 @@ export class UploadsController {
       throw new BadRequestException('file_too_large');
     }
 
-    const fileName = createUploadFileName(mime);
-    const path = saveUploadBuffer(fileName, file.buffer as Buffer);
+    const fileName = createUploadFileName(uploadMime);
+    const path = saveUploadBuffer(fileName, uploadBuffer);
     const origin = this.buildOrigin(req);
 
     return {
       ok: true,
       path,
       url: origin ? `${origin}${path}` : path,
-      mime,
+      mime: uploadMime,
       size,
       uploadedBy: session.user.id,
     };

@@ -85,7 +85,7 @@ export const config = {
   },
   uploads: {
     path: fileConfig.uploads?.path || './data/uploads',
-    maxBytes: Math.max(64 * 1024, Number(fileConfig.uploads?.maxBytes || 20 * 1024 * 1024)),
+    maxBytes: Math.max(64 * 1024, Number(fileConfig.uploads?.maxBytes || 50 * 1024 * 1024)),
     videoMaxBytes: Math.max(1024 * 1024, Number(fileConfig.uploads?.videoMaxBytes || 50 * 1024 * 1024)),
   },
   vpn: {
