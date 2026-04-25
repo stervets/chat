@@ -38,6 +38,7 @@ export default {
     roomCreateTitle: {type: String, default: ''},
     roomCreateVisibility: {type: String, default: 'private'},
     roomCreating: Boolean,
+    roomDeleteBusy: Boolean,
     roomLeaveBusy: Boolean,
     roomMembersLoading: Boolean,
     roomPostOnlyByAdmin: Boolean,
@@ -62,8 +63,10 @@ export default {
     'go-own-rooms-for-create',
     'kick-room-member',
     'leave-selected-room',
+    'delete-room',
     'media-open',
     'open-room-tab',
+    'open-room-member-profile',
     'room-avatar-change',
     'save-room',
     'toggle-create-form',
@@ -93,6 +96,10 @@ export default {
       this.$emit('open-room-tab', roomId);
     },
 
+    openRoomMemberProfile(this: any, member: any) {
+      this.$emit('open-room-member-profile', member);
+    },
+
     toggleRoomCreateForm(this: any) {
       this.$emit('toggle-create-form');
     },
@@ -119,6 +126,10 @@ export default {
 
     onLeaveSelectedRoom(this: any) {
       this.$emit('leave-selected-room');
+    },
+
+    onDeleteRoom(this: any) {
+      this.$emit('delete-room');
     },
 
     onKickRoomMember(this: any, member: any) {

@@ -139,6 +139,7 @@ export default {
       roomCreateCommentsEnabled: ref(true),
       roomCreatePostOnlyByAdmin: ref(false),
       roomCreateAvatarPath: ref<string | null>(null),
+      roomDeleteBusy: ref(false),
       roomLeaveBusy: ref(false),
       roomMemberActionBusyIds: ref<number[]>([]),
 
@@ -1193,6 +1194,12 @@ export default {
       await this.updateRoute({tab: 'rooms', roomId});
     },
 
+    async onOpenRoomMemberProfile(this: any, memberRaw: any) {
+      const nickname = String(memberRaw?.nickname || '').trim().toLowerCase();
+      if (!nickname) return;
+      await this.updateRoute({tab: 'user', nickname});
+    },
+
     async onGoOwnRoomsForCreate(this: any) {
       const ownNickname = String(this.me?.nickname || '').trim().toLowerCase();
       if (!ownNickname) return;
@@ -1252,6 +1259,37 @@ export default {
         await this.updateRoute({tab: 'rooms', roomId: undefined});
       } finally {
         this.roomLeaveBusy = false;
+      }
+    },
+
+    async onDeleteRoom(this: any) {
+      if (!this.selectedRoom?.id || this.roomDeleteBusy || !this.canEditSelectedRoom) return;
+      const confirmed = window.confirm('Удалить комнату полностью? Это удалит всю переписку у всех участников.');
+      if (!confirmed) return;
+
+      this.roomDeleteBusy = true;
+      this.roomSaveError = '';
+      this.roomSaveSuccess = '';
+      try {
+        const roomId = Number(this.selectedRoom.id || 0);
+        const result = await ws.request('room:delete', {roomId, confirm: true});
+        if (!(result as any)?.ok) {
+          this.roomSaveError = 'Не удалось удалить комнату.';
+          return;
+        }
+
+        await this.fetchRooms();
+        const fallbackRoom = this.roomsTabList[0] || null;
+        if (fallbackRoom?.id) {
+          await this.updateRoute({tab: 'rooms', roomId: fallbackRoom.id});
+          return;
+        }
+
+        this.selectedRoom = null;
+        this.roomMembers = [];
+        await this.updateRoute({tab: 'rooms', roomId: undefined});
+      } finally {
+        this.roomDeleteBusy = false;
       }
     },
 

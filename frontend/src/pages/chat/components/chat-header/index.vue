@@ -58,10 +58,10 @@
     </button>
 
     <button
-      v-if="canDeleteActiveRoom"
+      v-if="canDeleteActiveRoom && activeDialog?.kind === 'direct'"
       class="icon-btn delete-direct-btn"
       :disabled="roomDeletePending"
-      :title="activeDialog?.kind === 'direct' ? 'Очистить переписку' : 'Удалить комнату'"
+      title="Очистить переписку"
       @click="$emit('delete-active-room')"
     >
       <Trash2 :size="18" />

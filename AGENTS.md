@@ -157,3 +157,5 @@ yarn run frontend:dev
 - service worker на `notificationclick` теперь нормализует переход по `roomId/messageId` из payload в `/chat?room=...&focusMessage=...`, даже если в `url` пришёл legacy-path.
 - backend web-push дополнительно всегда исключает из получателей `senderId` и `message.authorId`, чтобы отправитель не получал push на собственные сообщения.
 - openNotification в чате теперь в приоритете резолвит диалог по `roomId` (`buildDialogFromRoomRoute`), а не по `targetUser`; это убирает ложные переходы в неверный direct и fallback в `/chat`.
+- в `/console?tab=rooms&roomId=<id>` клик по участнику комнаты теперь открывает профиль этого пользователя (`/console?tab=user&nickname=<nickname>`), кнопка `Выкинуть` больше не триггерит этот переход из-за `@click.stop`.
+- удаление group-комнаты убрано из верхнего `chat`-хедера (корзина больше не показывается для room) и перенесено в `console` на страницу комнаты: у админа есть явная кнопка `Удалить комнату`.
