@@ -45,6 +45,7 @@
                 @toggle-pinned-message="onTogglePinnedMessage"
                 @open-discussion="openMessageDiscussion"
                 @edit-input-keydown="onEditMessageKeydown"
+                @edit-selection-capture="onEditSelectionCapture"
                 @save-edit="saveMessageEdit"
                 @cancel-edit="cancelMessageEdit"
                 @message-body-click="onMessageBodyClick"

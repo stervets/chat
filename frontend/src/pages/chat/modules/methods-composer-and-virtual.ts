@@ -344,7 +344,7 @@ export const chatMethodsComposerAndVirtual = {
       this.hapticTap();
       this.composerToolsOpen = !this.composerToolsOpen;
       if (this.composerToolsOpen) {
-        this.captureInputSelection();
+        this.captureActiveComposerInputSelection();
       }
     },
 
@@ -359,6 +359,53 @@ export const chatMethodsComposerAndVirtual = {
       const end = Number.isFinite(input.selectionEnd) ? Number(input.selectionEnd) : start;
       this.composerSelectionStart = Math.max(0, start);
       this.composerSelectionEnd = Math.max(this.composerSelectionStart, end);
+      this.activeComposerInputTarget = 'main';
+    },
+
+    captureEditInputSelection(this: any, message: Message, event: Event) {
+      if (Number(this.editingMessageId || 0) <= 0) return;
+      if (Number(message?.id || 0) !== Number(this.editingMessageId || 0)) return;
+      const input = event.target as HTMLTextAreaElement | null;
+      if (!input) return;
+      const start = Number.isFinite(input.selectionStart) ? Number(input.selectionStart) : 0;
+      const end = Number.isFinite(input.selectionEnd) ? Number(input.selectionEnd) : start;
+      this.editSelectionStart = Math.max(0, start);
+      this.editSelectionEnd = Math.max(this.editSelectionStart, end);
+      this.activeComposerInputTarget = 'edit';
+    },
+
+    captureActiveComposerInputSelection(this: any) {
+      const active = document.activeElement as HTMLTextAreaElement | null;
+      if (active && active.classList?.contains('message-edit-input') && Number(this.editingMessageId || 0) > 0) {
+        const start = Number.isFinite(active.selectionStart) ? Number(active.selectionStart) : 0;
+        const end = Number.isFinite(active.selectionEnd) ? Number(active.selectionEnd) : start;
+        this.editSelectionStart = Math.max(0, start);
+        this.editSelectionEnd = Math.max(this.editSelectionStart, end);
+        this.activeComposerInputTarget = 'edit';
+        return;
+      }
+      const messageInput = this.messageInputEl as HTMLTextAreaElement | null;
+      if (active && messageInput && active === messageInput) {
+        this.captureInputSelection();
+        return;
+      }
+      if (Number(this.editingMessageId || 0) > 0) {
+        this.activeComposerInputTarget = 'edit';
+        return;
+      }
+      this.captureInputSelection();
+    },
+
+    getEditMessageInput(this: any) {
+      return document.querySelector('.message-edit-input') as HTMLTextAreaElement | null;
+    },
+
+    resolveActiveComposerInputTarget(this: any): 'main' | 'edit' {
+      if (Number(this.editingMessageId || 0) <= 0) return 'main';
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.classList?.contains('message-edit-input')) return 'edit';
+      if (active?.classList?.contains('input')) return 'main';
+      return this.activeComposerInputTarget === 'edit' ? 'edit' : 'main';
     },
 
     getMessageInputRange(this: any) {
@@ -369,6 +416,19 @@ export const chatMethodsComposerAndVirtual = {
       const activeEnd = inputFocused && Number.isFinite(input.selectionEnd) ? Number(input.selectionEnd) : null;
       const startBase = activeStart !== null ? activeStart : Number(this.composerSelectionStart || 0);
       const endBase = activeEnd !== null ? activeEnd : Number(this.composerSelectionEnd || startBase);
+      const start = Math.min(Math.max(0, startBase), textLength);
+      const end = Math.min(Math.max(start, endBase), textLength);
+      return {start, end};
+    },
+
+    getEditInputRange(this: any) {
+      const textLength = String(this.editingMessageText || '').length;
+      const input = this.getEditMessageInput();
+      const inputFocused = !!input && document.activeElement === input;
+      const activeStart = inputFocused && Number.isFinite(input.selectionStart) ? Number(input.selectionStart) : null;
+      const activeEnd = inputFocused && Number.isFinite(input.selectionEnd) ? Number(input.selectionEnd) : null;
+      const startBase = activeStart !== null ? activeStart : Number(this.editSelectionStart || 0);
+      const endBase = activeEnd !== null ? activeEnd : Number(this.editSelectionEnd || startBase);
       const start = Math.min(Math.max(0, startBase), textLength);
       const end = Math.min(Math.max(start, endBase), textLength);
       return {start, end};
@@ -388,20 +448,47 @@ export const chatMethodsComposerAndVirtual = {
       });
     },
 
+    setEditInputSelection(this: any, startRaw: number, endRaw: number) {
+      const start = Math.max(0, Number(startRaw || 0));
+      const end = Math.max(start, Number(endRaw || start));
+      this.editSelectionStart = start;
+      this.editSelectionEnd = end;
+
+      nextTick(() => {
+        const input = this.getEditMessageInput();
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(start, end);
+      });
+    },
+
     applyWrapperToSelection(this: any, prefixRaw: string, suffixRaw = ')') {
       const prefix = String(prefixRaw || '');
       const suffix = String(suffixRaw || '');
       if (!prefix) return;
 
-      const current = String(this.messageText || '');
-      const {start, end} = this.getMessageInputRange();
+      const target = this.resolveActiveComposerInputTarget();
+      const current = target === 'edit'
+        ? String(this.editingMessageText || '')
+        : String(this.messageText || '');
+      const {start, end} = target === 'edit'
+        ? this.getEditInputRange()
+        : this.getMessageInputRange();
       const selected = current.slice(start, end);
       const next = `${current.slice(0, start)}${prefix}${selected}${suffix}${current.slice(end)}`;
-      this.messageText = next;
+      if (target === 'edit') {
+        this.editingMessageText = next;
+      } else {
+        this.messageText = next;
+      }
       const hasSelection = end > start;
       const cursorStart = start + prefix.length;
       const cursorEnd = hasSelection ? cursorStart + selected.length : cursorStart;
-      this.setMessageInputSelection(cursorStart, cursorEnd);
+      if (target === 'edit') {
+        this.setEditInputSelection(cursorStart, cursorEnd);
+      } else {
+        this.setMessageInputSelection(cursorStart, cursorEnd);
+      }
     },
 
     applyNamedColorWrapper(this: any, colorNameRaw: unknown) {
@@ -440,11 +527,25 @@ export const chatMethodsComposerAndVirtual = {
       const insertText = String(textRaw ?? '');
       if (!insertText) return;
 
-      const current = String(this.messageText || '');
-      const {start, end} = this.getMessageInputRange();
-      this.messageText = `${current.slice(0, start)}${insertText}${current.slice(end)}`;
+      const target = this.resolveActiveComposerInputTarget();
+      const current = target === 'edit'
+        ? String(this.editingMessageText || '')
+        : String(this.messageText || '');
+      const {start, end} = target === 'edit'
+        ? this.getEditInputRange()
+        : this.getMessageInputRange();
+      const next = `${current.slice(0, start)}${insertText}${current.slice(end)}`;
+      if (target === 'edit') {
+        this.editingMessageText = next;
+      } else {
+        this.messageText = next;
+      }
       const cursor = start + insertText.length;
-      this.setMessageInputSelection(cursor, cursor);
+      if (target === 'edit') {
+        this.setEditInputSelection(cursor, cursor);
+      } else {
+        this.setMessageInputSelection(cursor, cursor);
+      }
     },
 
     onComposerEmojiClick(this: any, emojiRaw: unknown) {
@@ -703,6 +804,9 @@ export const chatMethodsComposerAndVirtual = {
       this.hapticTap();
       this.editingMessageId = message.id;
       this.editingMessageText = this.getMessageRawText(message);
+      this.activeComposerInputTarget = 'edit';
+      this.editSelectionStart = String(this.editingMessageText || '').length;
+      this.editSelectionEnd = this.editSelectionStart;
       this.reactionPickerMessageId = null;
       this.reactionTooltipVisible = false;
       nextTick(() => {
@@ -717,6 +821,9 @@ export const chatMethodsComposerAndVirtual = {
     cancelMessageEdit(this: any) {
       this.editingMessageId = null;
       this.editingMessageText = '';
+      this.editSelectionStart = 0;
+      this.editSelectionEnd = 0;
+      this.activeComposerInputTarget = 'main';
     },
 
     onEditingMessageTextUpdate(this: any, valueRaw: unknown) {

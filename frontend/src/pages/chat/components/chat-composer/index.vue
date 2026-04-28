@@ -6,6 +6,7 @@
               :class="{open: composerToolsOpen}"
               title="Форматирование и эмодзи"
               aria-label="Форматирование и эмодзи"
+              @mousedown.prevent
               @click="toggleComposerTools"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -19,11 +20,11 @@
               <div class="composer-section">
                 <div class="composer-section-title">Формат</div>
                 <div class="composer-format-buttons">
-                  <button class="composer-format-btn composer-format-btn-bold" @click="applyFormatWrapper('b')">B</button>
-                  <button class="composer-format-btn composer-format-btn-underline" @click="applyFormatWrapper('u')">U</button>
-                  <button class="composer-format-btn composer-format-btn-strike" @click="applyFormatWrapper('s')">S</button>
-                  <button class="composer-format-btn" @click="applyFormatWrapper('h')">Hidden</button>
-                  <button class="composer-format-btn composer-format-btn-mono" @click="applyFormatWrapper('m')">Mono</button>
+                  <button class="composer-format-btn composer-format-btn-bold" @mousedown.prevent @click="applyFormatWrapper('b')">B</button>
+                  <button class="composer-format-btn composer-format-btn-underline" @mousedown.prevent @click="applyFormatWrapper('u')">U</button>
+                  <button class="composer-format-btn composer-format-btn-strike" @mousedown.prevent @click="applyFormatWrapper('s')">S</button>
+                  <button class="composer-format-btn" @mousedown.prevent @click="applyFormatWrapper('h')">Hidden</button>
+                  <button class="composer-format-btn composer-format-btn-mono" @mousedown.prevent @click="applyFormatWrapper('m')">Mono</button>
                 </div>
                 <div class="composer-color-grid">
                   <button
@@ -31,6 +32,7 @@
                     :key="`format-color-${named.name}`"
                     class="composer-color-btn"
                     :title="`c#${named.name}(... )`"
+                    @mousedown.prevent
                     @click="applyNamedColorWrapper(named.name)"
                   >
                     <span class="composer-color-dot" :style="{background: named.swatch}"/>
@@ -38,7 +40,7 @@
                   </button>
                 </div>
                 <div class="composer-upload-row">
-                  <button class="composer-format-btn composer-format-btn-upload" @click="openGalleryPicker">
+                  <button class="composer-format-btn composer-format-btn-upload" @mousedown.prevent @click="openGalleryPicker">
                     Загрузить фото/видео
                   </button>
                 </div>
@@ -51,6 +53,7 @@
                     v-for="emoji in composerEmojis()"
                     :key="`composer-emoji-${emoji}`"
                     class="composer-emoji-btn"
+                    @mousedown.prevent
                     @click="onComposerEmojiClick(emoji)"
                   >
                     {{ emoji }}
@@ -69,10 +72,11 @@
 
           <textarea
             v-model="localMessageText"
-            :ref="el => setPageRef('messageInputEl', el)"
+            :ref="onMessageInputRef"
             class="input"
             rows="2"
             placeholder="Сообщение..."
+            @input="onInput"
             @focus="captureInputSelection"
             @click="captureInputSelection"
             @select="captureInputSelection"

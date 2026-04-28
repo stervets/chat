@@ -100,6 +100,28 @@ export const chatMethodsAuthDialogsAndProfile = {
       };
     },
 
+    async resolveDiscussionSourceMessage(this: any, discussionRaw: DiscussionMeta | null): Promise<Message | null> {
+      const discussion = discussionRaw && typeof discussionRaw === 'object' ? discussionRaw : null;
+      if (!discussion || discussion.sourceMessageDeleted) return null;
+
+      const sourceRoomId = Number(discussion.sourceRoomId || 0);
+      const sourceMessageId = Number(discussion.sourceMessageId || 0);
+      if (!Number.isFinite(sourceRoomId) || sourceRoomId <= 0) return null;
+      if (!Number.isFinite(sourceMessageId) || sourceMessageId <= 0) return null;
+
+      const result = await ws.request('message:list', {
+        roomId: sourceRoomId,
+        beforeMessageId: sourceMessageId + 1,
+        limit: 1,
+      });
+      if (!(result as any)?.ok) return null;
+
+      const rows = wsData<any[]>(result, []);
+      const sourceMessageRaw = rows.find((row: any) => Number(row?.id || 0) === sourceMessageId);
+      if (!sourceMessageRaw || typeof sourceMessageRaw !== 'object') return null;
+      return this.normalizeMessage(sourceMessageRaw);
+    },
+
     onUsersUpdated(this: any, userRaw: any) {
       const user = this.normalizeUser(userRaw);
       if (!user) return;
@@ -460,6 +482,12 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
         ? this.normalizeMessage(pinnedMessageRaw)
         : null;
+      if (!this.activePinnedMessage) {
+        const discussionPinnedMessage = await this.resolveDiscussionSourceMessage(this.activeDialog?.discussion || null);
+        if (discussionPinnedMessage && Number(this.activeDialog?.id || 0) === roomId) {
+          this.activePinnedMessage = discussionPinnedMessage;
+        }
+      }
       this.pinnedCollapsed = this.loadPinnedCollapsedState(roomId);
     },
 

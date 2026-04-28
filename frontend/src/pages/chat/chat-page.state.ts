@@ -3,6 +3,7 @@ import type {Dialog, Message, User} from '@/composables/types';
 import {wsConnectionState} from '@/composables/ws-rpc';
 import type {DirectDialog, NotificationItem, ToastItem} from './chat-page.constants';
 import type {ScriptRuntimeManager} from '@/scriptable/runtime/manager';
+import type {SoundPlayer} from '@/composables/classes/sound-player';
 
 export function createChatPageState() {
   return {
@@ -31,6 +32,9 @@ export function createChatPageState() {
     composerColorPicker: ref('#61afef'),
     composerSelectionStart: ref(0),
     composerSelectionEnd: ref(0),
+    editSelectionStart: ref(0),
+    editSelectionEnd: ref(0),
+    activeComposerInputTarget: ref<'main' | 'edit'>('main'),
     editingMessageId: ref<number | null>(null),
     editingMessageText: ref(''),
     messageActionPendingId: ref<number | null>(null),
@@ -124,7 +128,7 @@ export function createChatPageState() {
     vibrationEnabled: ref(true),
     soundOverlayVisible: ref(false),
     soundReady: ref(false),
-    notificationAudioEl: ref<HTMLAudioElement | null>(null),
+    notificationSoundPlayer: ref<SoundPlayer | null>(null),
     browserNotificationsEnabled: ref(true),
     browserNotificationPermission: ref<'default' | 'denied' | 'granted'>('default'),
     activeBrowserNotifications: ref<Notification[]>([]),
@@ -159,6 +163,7 @@ export function createChatPageState() {
     dialogMessagesClearedHandler: ref<Function | null>(null),
     chatReactionNotifyHandler: ref<Function | null>(null),
     chatCommentNotifyHandler: ref<Function | null>(null),
+    contactsUpdatedHandler: ref<Function | null>(null),
     scriptsStateHandler: ref<Function | null>(null),
     usersUpdatedHandler: ref<Function | null>(null),
     disconnectedHandler: ref<Function | null>(null),

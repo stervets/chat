@@ -763,6 +763,9 @@ export const chatMethodsSendUploadAndRuntime = {
         this.clearInactiveTabUnread();
         this.markVisibleMessageNotificationsRead();
       }
+      if (this.wsConnectionState === 'connected') {
+        void this.fetchPinnedDirectUserIds();
+      }
     },
 
     onWindowBlur(this: any) {
@@ -774,6 +777,9 @@ export const chatMethodsSendUploadAndRuntime = {
       if (this.documentVisible && this.windowFocused) {
         this.clearInactiveTabUnread();
         this.markVisibleMessageNotificationsRead();
+        if (this.wsConnectionState === 'connected') {
+          void this.fetchPinnedDirectUserIds();
+        }
       }
     },
 };

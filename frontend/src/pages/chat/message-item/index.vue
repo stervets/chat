@@ -63,10 +63,15 @@
 
         <div v-if="isEditing" class="message-edit">
           <textarea
+            :ref="setEditInputRef"
             :value="editingMessageText"
             class="message-edit-input"
             rows="3"
             @input="onEditingInput"
+            @focus="onEditSelectionCapture"
+            @click="onEditSelectionCapture"
+            @select="onEditSelectionCapture"
+            @keyup="onEditSelectionCapture"
             @keydown="onEditInputKeydown"
           />
           <div class="message-edit-actions">
@@ -204,6 +209,9 @@
             <button
               v-if="canOpenDiscussion"
               class="message-comment-btn"
+              :class="{
+                'message-comment-btn-active': Math.max(0, Number(message.commentCount || 0)) > 0,
+              }"
               :disabled="discussionOpenPendingId === message.id"
               :title="message.commentRoomId ? 'Открыть комментарии' : 'Создать комментарии'"
               @click="onOpenDiscussion"

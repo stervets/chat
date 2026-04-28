@@ -157,3 +157,15 @@ yarn run frontend:dev
 - service worker на `notificationclick` теперь нормализует переход по `roomId/messageId` из payload в `/chat?room=...&focusMessage=...`, даже если в `url` пришёл legacy-path.
 - backend web-push дополнительно всегда исключает из получателей `senderId` и `message.authorId`, чтобы отправитель не получал push на собственные сообщения.
 - openNotification в чате теперь в приоритете резолвит диалог по `roomId` (`buildDialogFromRoomRoute`), а не по `targetUser`; это убирает ложные переходы в неверный direct и fallback в `/chat`.
+
+## Актуализация 2026-04-28
+- при входе в comment-room (`/chat?room=<commentRoomId>`) исходное сообщение комментариев теперь показывается в pinned-panel как клиентский fallback, если сервер не вернул обычный room pin;
+- для такого discussion fallback-пина скрыт action `откреп.`, чтобы не предлагать unpin для синтетического закрепа;
+- в message actions кнопка комментариев (`облачко + count`) стала заметно светлее, если `commentCount > 0`;
+- после `contacts:add/remove` из `/console` отправляется `contacts:updated` в event-bus, а `/chat` сразу перечитывает `contacts:list`; дополнительно этот рефреш срабатывает при возврате фокуса/видимости вкладки, поэтому удалённые контакты сразу пропадают из левого списка директов (включая synthetic pinned entries).
+- web-push теперь поддерживает `room.kind='comment'`: получатель — автор исходного сообщения (если комментарий оставил другой пользователь), url пуша ведёт в конкретную comment-room (`/chat?room=<commentRoomId>&focusMessage=<commentMessageId>`), заголовок пуша — `MARX · Комментарии`.
+- textarea композера в чате теперь автоподстраивает высоту по контенту и растёт максимум до `40vh` (дальше включается внутренний скролл поля);
+- textarea при редактировании сообщения (`message-edit-input`) теперь тоже автоподстраивает высоту по контенту и растёт максимум до `40vh` (дальше включается внутренний скролл поля);
+- composer tools (эмодзи + форматирование) теперь применяются в активное поле ввода: если открыт `message-edit-input`, вставка/обёртки идут в него, иначе в основной composer textarea;
+- при открытии/использовании composer-tools во время редактирования сообщения target больше не сбрасывается в `main` из-за потери фокуса: `captureActiveComposerInputSelection()` сохраняет `edit` target, а кнопки панели используют `@mousedown.prevent`, чтобы не выбивать фокус из `message-edit-input`;
+- воспроизведение уведомлений переведено на `frontend/src/composables/classes/sound-player.ts`; `soundList` очищен от legacy-набора и оставлен один звук `notification: '/ping.mp3'`.

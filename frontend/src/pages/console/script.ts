@@ -12,6 +12,7 @@ import ProfileTab from './components/profile-tab/index.vue';
 import RoomsTab from './components/rooms-tab/index.vue';
 import VpnTab from './components/vpn-tab/index.vue';
 import {resolveMediaUrl} from '@/composables/media-url';
+import {emit} from '@/composables/event-bus';
 import {loadLastChatPath} from '@/composables/last-chat';
 import {ws} from '@/composables/classes/ws';
 import {getSessionToken, restoreSession, wsChangePassword, wsData, wsObject, wsProvisionVpn, wsSetVpnDonation, wsUpdateProfile} from '@/composables/ws-rpc';
@@ -1413,6 +1414,7 @@ export default {
         const command = this.isContact ? 'contacts:remove' : 'contacts:add';
         await ws.request(command, {userId: this.profile.id});
         await this.fetchContacts();
+        emit('contacts:updated');
       } finally {
         this.contactBusy = false;
       }

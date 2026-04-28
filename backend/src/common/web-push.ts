@@ -346,7 +346,44 @@ export class WebPushService {
       return members.map((item) => item.userId);
     }
 
+    if (room.kind === 'comment') {
+      const sourceMessageAuthorId = await this.resolveCommentSourceAuthorId(room.id);
+      if (!Number.isFinite(sourceMessageAuthorId) || sourceMessageAuthorId <= 0) {
+        this.logger.log(`Web Push chat comment source_author_missing roomId=${room.id}`);
+        return [];
+      }
+      this.logger.log(`Web Push chat comment source_author=${sourceMessageAuthorId} roomId=${room.id}`);
+      return [sourceMessageAuthorId];
+    }
+
     return [];
+  }
+
+  private async resolveCommentSourceAuthorId(commentRoomId: number) {
+    const commentRoom = await db.room.findUnique({
+      where: {
+        id: commentRoomId,
+      },
+      select: {
+        node: {
+          select: {
+            parentId: true,
+          },
+        },
+      },
+    });
+    const sourceMessageId = Number(commentRoom?.node?.parentId || 0);
+    if (!Number.isFinite(sourceMessageId) || sourceMessageId <= 0) return 0;
+
+    const sourceMessage = await db.message.findUnique({
+      where: {
+        id: sourceMessageId,
+      },
+      select: {
+        senderId: true,
+      },
+    });
+    return Number(sourceMessage?.senderId || 0);
   }
 
   private async resolveMentionedUserIds(roomId: number, senderId: number, mentionTokensRaw: string[]) {
@@ -430,6 +467,19 @@ export class WebPushService {
       return '/games';
     }
 
+    if (room.kind === 'comment') {
+      const roomId = Number(room.id || 0);
+      const messageId = Number(message.id || 0);
+      if (Number.isFinite(roomId) && roomId > 0) {
+        const query = new URLSearchParams();
+        query.set('room', String(roomId));
+        if (Number.isFinite(messageId) && messageId > 0) {
+          query.set('focusMessage', String(messageId));
+        }
+        return `/chat?${query.toString()}`;
+      }
+    }
+
     return '/chat';
   }
 
@@ -441,7 +491,9 @@ export class WebPushService {
       ? 'MARX · Общий чат'
       : room.kind === 'direct'
         ? 'MARX · Директ'
-        : 'MARX · Игра';
+        : room.kind === 'comment'
+          ? 'MARX · Комментарии'
+          : 'MARX · Игра';
 
     return {
       title,

@@ -167,6 +167,7 @@
             @message-body-mouseleave="onMessageBodyMouseLeave"
             @message-body-mousemove="onMessageBodyMouseMove"
             @open-discussion="openMessageDiscussion"
+            @edit-selection-capture="captureEditInputSelection"
             @page-ref="setPageRef"
             @reaction-chip-click="onReactionChipClick"
             @reaction-mouseenter="onReactionMouseEnter"

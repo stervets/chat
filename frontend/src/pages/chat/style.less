@@ -760,6 +760,8 @@
   .input {
     flex: 1;
     min-width: 0;
+    min-height: 44px;
+    max-height: 40vh;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--bg-input);
@@ -768,6 +770,7 @@
     line-height: 1.45;
     padding: 10px 12px;
     resize: none;
+    overflow-y: hidden;
     transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
   }
 

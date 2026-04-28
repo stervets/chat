@@ -271,6 +271,13 @@ export default {
 
     canManagePinnedMessages(this: any) {
       if (!this.activeDialog || this.activeDialog.kind === 'direct') return false;
+      const discussionSourceMessageId = Number(this.activeDialog?.discussion?.sourceMessageId || 0);
+      const activePinnedId = Number(this.activePinnedMessage?.id || 0);
+      const roomPinnedNodeId = Number(this.activeDialog?.pinnedNodeId || 0);
+      const isDiscussionSyntheticPinned = discussionSourceMessageId > 0
+        && activePinnedId === discussionSourceMessageId
+        && roomPinnedNodeId <= 0;
+      if (isDiscussionSyntheticPinned) return false;
       return !!this.isActiveDialogAdmin;
     },
 
@@ -436,6 +443,9 @@ export default {
     this.chatCommentNotifyHandler = (payload: any) => {
       this.addCommentNotification(payload);
     };
+    this.contactsUpdatedHandler = () => {
+      void this.fetchPinnedDirectUserIds();
+    };
     this.usersUpdatedHandler = (user: User) => {
       this.onUsersUpdated(user);
     };
@@ -463,6 +473,7 @@ export default {
     on('room:messages:cleared', this.dialogMessagesClearedHandler);
     on('message:reaction:notify', this.chatReactionNotifyHandler);
     on('message:comment:notify', this.chatCommentNotifyHandler);
+    on('contacts:updated', this.contactsUpdatedHandler);
     on('user:updated', this.usersUpdatedHandler);
     on('ws:disconnected', this.disconnectedHandler);
     on('ws:reconnected', this.reconnectedHandler);
@@ -506,6 +517,7 @@ export default {
     this.dialogMessagesClearedHandler && off('room:messages:cleared', this.dialogMessagesClearedHandler);
     this.chatReactionNotifyHandler && off('message:reaction:notify', this.chatReactionNotifyHandler);
     this.chatCommentNotifyHandler && off('message:comment:notify', this.chatCommentNotifyHandler);
+    this.contactsUpdatedHandler && off('contacts:updated', this.contactsUpdatedHandler);
     this.usersUpdatedHandler && off('user:updated', this.usersUpdatedHandler);
     this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
     this.reconnectedHandler && off('ws:reconnected', this.reconnectedHandler);
@@ -529,10 +541,9 @@ export default {
       clearTimeout(this.handledMessageNotificationSaveTimer);
       this.handledMessageNotificationSaveTimer = null;
     }
-    if (this.notificationAudioEl) {
-      this.notificationAudioEl.pause();
-      this.notificationAudioEl.currentTime = 0;
-      this.notificationAudioEl = null;
+    if (this.notificationSoundPlayer) {
+      void this.notificationSoundPlayer.dispose();
+      this.notificationSoundPlayer = null;
     }
     if (this.badgeTickTimer) {
       clearInterval(this.badgeTickTimer);

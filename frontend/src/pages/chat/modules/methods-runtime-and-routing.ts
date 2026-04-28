@@ -37,6 +37,7 @@ import {
   unsubscribeWebPush,
 } from '@/composables/use-web-push';
 import {loadLastChatPath, persistLastChatPath} from '@/composables/last-chat';
+import {SoundPlayer} from '@/composables/classes/sound-player';
 import {vibrateConfirm, vibrateError, vibrateTap} from '@/utils/vibrate';
 
 const WEB_PUSH_ROLLOUT_VERSION = '2026-04-19-1';
@@ -125,15 +126,13 @@ export const chatMethodsRuntimeAndRouting = {
       return next;
     },
 
-    ensureNotificationAudio(this: any) {
+    ensureNotificationSoundPlayer(this: any) {
       if (typeof window === 'undefined') return null;
-      if (this.notificationAudioEl) return this.notificationAudioEl as HTMLAudioElement;
+      if (this.notificationSoundPlayer) return this.notificationSoundPlayer as SoundPlayer;
 
-      const audio = new Audio('/ping.mp3');
-      audio.preload = 'auto';
-      audio.volume = NOTIFICATION_SOUND_VOLUME;
-      this.notificationAudioEl = audio;
-      return audio;
+      const soundPlayer = new SoundPlayer();
+      this.notificationSoundPlayer = soundPlayer;
+      return soundPlayer;
     },
 
     markSoundReady(this: any) {
@@ -142,7 +141,7 @@ export const chatMethodsRuntimeAndRouting = {
       const runtime = this.getSoundRuntimeState();
       runtime.soundReady = true;
       runtime.overlayHandled = true;
-      this.ensureNotificationAudio();
+      this.ensureNotificationSoundPlayer();
     },
 
     resolveSoundStartupState(this: any) {
@@ -172,15 +171,14 @@ export const chatMethodsRuntimeAndRouting = {
       if (!this.soundEnabled || !this.soundReady) return;
       if (this.isWindowInactive()) return;
 
-      const audio = this.ensureNotificationAudio();
-      if (!audio) return;
-
-      audio.volume = NOTIFICATION_SOUND_VOLUME;
+      const soundPlayer = this.ensureNotificationSoundPlayer();
+      if (!soundPlayer) return;
 
       try {
-        audio.pause();
-        audio.currentTime = 0;
-        await audio.play();
+        if (!soundPlayer.isReady) {
+          await soundPlayer.preloadPromise;
+        }
+        await soundPlayer.play('notification', NOTIFICATION_SOUND_VOLUME);
       } catch {
         this.soundReady = false;
       }

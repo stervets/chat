@@ -130,6 +130,7 @@ export default {
     'start-edit',
     'delete-message',
     'edit-input-keydown',
+    'edit-selection-capture',
     'save-edit',
     'cancel-edit',
     'message-body-click',
@@ -154,6 +155,8 @@ export default {
     return {
       showHiddenText: ref(false),
       rootEl: ref<HTMLElement | null>(null),
+      editInputEl: ref<HTMLTextAreaElement | null>(null),
+      editInputResizeHandler: ref<(() => void) | null>(null),
       reactionControlsEl: ref<HTMLElement | null>(null),
       reactionPickerEl: ref<HTMLElement | null>(null),
       reactionPickerDirection: ref<'up' | 'down'>('down'),
@@ -165,6 +168,20 @@ export default {
   },
 
   watch: {
+    isEditing(this: any, nextValue: boolean) {
+      if (!nextValue) return;
+      nextTick(() => {
+        this.resizeEditInputHeight();
+      });
+    },
+
+    editingMessageText(this: any) {
+      if (!this.isEditing) return;
+      nextTick(() => {
+        this.resizeEditInputHeight();
+      });
+    },
+
     reactionPickerOpen(this: any, isOpen: boolean) {
       if (!isOpen) return;
       nextTick(() => {
@@ -201,6 +218,24 @@ export default {
   },
 
   methods: {
+    setEditInputRef(this: any, el: HTMLTextAreaElement | null) {
+      this.editInputEl = el;
+      if (!el) return;
+      this.resizeEditInputHeight();
+    },
+
+    resizeEditInputHeight(this: any) {
+      const input = this.editInputEl as HTMLTextAreaElement | null;
+      if (!input) return;
+      const viewportHeight = Math.max(0, Number(window.innerHeight || 0));
+      const maxHeight = Math.max(62, Math.floor(viewportHeight * 0.4));
+      input.style.height = 'auto';
+      const naturalHeight = Math.max(62, Number(input.scrollHeight || 0));
+      const nextHeight = Math.min(maxHeight, naturalHeight);
+      input.style.height = `${nextHeight}px`;
+      input.style.overflowY = naturalHeight > maxHeight ? 'auto' : 'hidden';
+    },
+
     authorAvatarFallback(this: any) {
       return ((this.message?.authorName || this.message?.authorNickname || '?').trim().charAt(0) || '?').toUpperCase();
     },
@@ -217,6 +252,7 @@ export default {
 
     onEditingInput(this: any, event: Event) {
       const target = event.target as HTMLTextAreaElement | null;
+      this.resizeEditInputHeight();
       this.$emit('update:editing-message-text', target?.value || '');
     },
 
@@ -254,6 +290,10 @@ export default {
 
     onEditInputKeydown(this: any, event: KeyboardEvent) {
       this.$emit('edit-input-keydown', event, this.message);
+    },
+
+    onEditSelectionCapture(this: any, event: Event) {
+      this.$emit('edit-selection-capture', this.message, event);
     },
 
     onSaveEdit(this: any) {
@@ -410,6 +450,18 @@ export default {
   },
 
   mounted(this: any) {
+    this.editInputResizeHandler = () => {
+      this.resizeEditInputHeight();
+    };
+    if (this.editInputResizeHandler) {
+      window.addEventListener('resize', this.editInputResizeHandler);
+    }
+    if (this.isEditing) {
+      nextTick(() => {
+        this.resizeEditInputHeight();
+      });
+    }
+
     this.emitHeight();
     if (typeof ResizeObserver === 'undefined') return;
 
@@ -423,6 +475,10 @@ export default {
   },
 
   beforeUnmount(this: any) {
+    if (this.editInputResizeHandler) {
+      window.removeEventListener('resize', this.editInputResizeHandler);
+      this.editInputResizeHandler = null;
+    }
     if (typeof window !== 'undefined') {
       Object.values(this.reactionPopTimerByKey as Record<string, number>).forEach((timerId) => {
         clearTimeout(Number(timerId));
