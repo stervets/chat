@@ -203,3 +203,4 @@ yarn run frontend:dev
 - в `frontend/src/utils/vibrate.ts` добавлен антидребезг (`MIN_VIBRATION_GAP_MS=45`), чтобы глобальный haptic и локальные вызовы не давали двойную вибрацию подряд.
 - фикс смены пароля в `/console`: `wsChangePassword` теперь вызывается строкой, а не объектом (`{newPassword}`), из-за чего раньше пароль мог сохраниться как строка `"[object Object]"`.
 - backend `auth:changePassword` ужесточён: поле `newPassword` принимается только как строка, нестроковый payload возвращает `invalid_input` и больше не может неявно пройти через `.toString()`.
+- классификация `roomKind` для чат-уведомлений на клиенте (`resolveRoomKind`) больше не считает все non-general комнаты директами: теперь учитываются `activeDialog.kind`, `joinedRooms/publicRooms` и `directDialogs`; это убирает ложный addressed/unread и мигание favicon в обычных group-комнатах.

@@ -138,10 +138,32 @@ export const chatMethodsNotifications = {
       this.removeToast(toast.id);
     },
 
-    resolveRoomKind(this: any, roomId: number): 'group' | 'direct' | 'unknown' {
-      const generalId = this.generalDialog?.id || null;
-      if (generalId && roomId === generalId) return 'group';
-      return roomId > 0 ? 'direct' : 'unknown';
+    resolveRoomKind(this: any, roomId: number): 'group' | 'direct' | 'comment' | 'unknown' {
+      if (!Number.isFinite(roomId) || roomId <= 0) return 'unknown';
+
+      const activeDialogId = Number(this.activeDialog?.id || 0);
+      if (activeDialogId > 0 && activeDialogId === roomId) {
+        if (this.activeDialog?.kind === 'comment') return 'comment';
+        if (this.activeDialog?.kind === 'group') return 'group';
+        if (this.activeDialog?.kind === 'direct') return 'direct';
+      }
+
+      const generalId = Number(this.generalDialog?.id || 0);
+      if (generalId > 0 && roomId === generalId) return 'group';
+
+      const inJoinedGroups = Array.isArray(this.joinedRooms)
+        && this.joinedRooms.some((dialog: any) => Number(dialog?.id || 0) === roomId);
+      if (inJoinedGroups) return 'group';
+
+      const inPublicGroups = Array.isArray(this.publicRooms)
+        && this.publicRooms.some((dialog: any) => Number(dialog?.id || 0) === roomId);
+      if (inPublicGroups) return 'group';
+
+      const inDirects = Array.isArray(this.directDialogs)
+        && this.directDialogs.some((dialog: any) => Number(dialog?.roomId || 0) === roomId);
+      if (inDirects) return 'direct';
+
+      return 'direct';
     },
 
     isMessageAddressedToMe(this: any, message: Message) {
