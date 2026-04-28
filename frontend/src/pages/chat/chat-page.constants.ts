@@ -105,5 +105,6 @@ export const COMPOSER_NAMED_COLORS = [
 export const COMPOSER_EMOJIS = ['🙂', '😀', '😉', '😎', '🤔', '😴', '🥳', '🔥', '💬', '✅', '❤️', '👍', '👎', '😢', '😡', '😂'];
 export const HANDLED_MESSAGE_IDS_SAVE_DELAY_MS = 180;
 export const NOTIFICATION_SOUND_VOLUME = 0.35;
+export const INCOMING_CALL_SOUND_VOLUME = 0.8;
 export const MAX_ACTIVE_BROWSER_NOTIFICATIONS = 6;
 export const DONATION_BADGE_FADE_MS = 5 * 24 * 60 * 60 * 1000;

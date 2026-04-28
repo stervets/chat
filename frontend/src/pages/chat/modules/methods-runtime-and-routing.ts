@@ -11,6 +11,7 @@ import {
   persistBooleanSetting,
   persistHandledMessageIds,
   HANDLED_MESSAGE_IDS_SAVE_DELAY_MS,
+  INCOMING_CALL_SOUND_VOLUME,
   NOTIFICATION_SOUND_VOLUME,
   MAX_ACTIVE_BROWSER_NOTIFICATIONS,
   getApiBase,
@@ -196,10 +197,16 @@ export const chatMethodsRuntimeAndRouting = {
         if (!soundPlayer.isReady) {
           await soundPlayer.preloadPromise;
         }
-        await soundPlayer.play('incomingCall', NOTIFICATION_SOUND_VOLUME);
+        await soundPlayer.playLoop('incomingCall', INCOMING_CALL_SOUND_VOLUME);
       } catch {
         this.notificationSoundPlayer = null;
       }
+    },
+
+    stopIncomingCallSound(this: any) {
+      const soundPlayer = this.notificationSoundPlayer;
+      if (!soundPlayer) return;
+      soundPlayer.stopLoop('incomingCall');
     },
 
     async playCallOnSound(this: any) {
@@ -272,6 +279,7 @@ export const chatMethodsRuntimeAndRouting = {
       this.soundEnabled = !!this.soundEnabled;
       this.persistSoundEnabledSetting();
       if (!this.soundEnabled) {
+        this.stopIncomingCallSound();
         this.stopOutgoingCallMusic();
         this.soundOverlayVisible = false;
         this.soundReady = false;

@@ -5,7 +5,17 @@
       <span>Назад</span>
     </button>
     <div class="console-topbar-text">
-      <div class="console-title">Console</div>
+      <button
+        v-if="!isInstalled"
+        class="ghost-btn install-app-btn"
+        type="button"
+        :disabled="installBusy"
+        @click="onInstallClick"
+      >
+        <Download :size="16" />
+        <span>{{ installBusy ? 'Устанавливаем...' : 'Установить приложение' }}</span>
+      </button>
+      <div v-else class="console-title">Консоль</div>
     </div>
   </div>
 </template>

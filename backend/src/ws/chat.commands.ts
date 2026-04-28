@@ -466,14 +466,12 @@ function sendCallToParticipants(host: ChatCommandHost, call: CallPublicPayload, 
 }
 
 function createCallCommands(host: ChatCommandHost): ChatCommandMap {
-  const sendMissedPushIfOffline = async (call: CallPublicPayload, room: RoomRow | null) => {
+  const sendIncomingCallPush = async (call: CallPublicPayload, room: RoomRow | null) => {
     if (!room || !host.webPushService) return;
-    if (host.getOnlineUserIds().includes(call.calleeUserId)) return;
     await host.webPushService.sendIncomingCallPush({
       room,
       call,
       caller: call.caller,
-      excludeUserIds: host.getOnlineUserIds(),
     });
   };
 
@@ -498,7 +496,7 @@ function createCallCommands(host: ChatCommandHost): ChatCommandMap {
 
       const call = result.data;
       host.sendToUser(call.calleeUserId, 'call:incoming', call);
-      await sendMissedPushIfOffline(call, room);
+      await sendIncomingCallPush(call, room);
       return result;
     }),
 

@@ -288,6 +288,7 @@ export const chatMethodsCalls = {
     async answerIncomingCall(this: any) {
       const call = this.activeCall as DirectCallPayload | null;
       if (!call || this.callPhase !== 'incoming') return;
+      this.stopIncomingCallSound?.();
       this.hapticConfirm?.();
       void this.playCallOnSound?.();
       this.setCallState(call, 'connecting', 'incoming');
@@ -320,6 +321,7 @@ export const chatMethodsCalls = {
     async rejectIncomingCall(this: any) {
       const call = this.activeCall as DirectCallPayload | null;
       if (!call) return;
+      this.stopIncomingCallSound?.();
       this.hapticTap?.();
       void this.playCallOffSound?.();
       await ws.request('call:reject', {callId: call.callId});
@@ -328,6 +330,7 @@ export const chatMethodsCalls = {
 
     async hangupCall(this: any, reasonRaw?: string) {
       const call = this.activeCall as DirectCallPayload | null;
+      this.stopIncomingCallSound?.();
       if (!call) {
         this.cleanupCallPeerResources();
         this.resetCallState();
@@ -443,6 +446,7 @@ export const chatMethodsCalls = {
       if (!call || call.status !== 'accepted') return;
       const current = this.activeCall as DirectCallPayload | null;
       if (current && current.callId !== call.callId) return;
+      this.stopIncomingCallSound?.();
 
       const meId = this.getCurrentUserId();
       const direction = call.callerUserId === meId ? 'outgoing' : 'incoming';
@@ -465,6 +469,7 @@ export const chatMethodsCalls = {
       if (!call) return;
       const current = this.activeCall as DirectCallPayload | null;
       if (current && current.callId !== call.callId) return;
+      this.stopIncomingCallSound?.();
       if (this.callPhase !== 'idle' && this.callPhase !== 'ended') {
         void this.playCallOffSound?.();
       }
@@ -492,7 +497,6 @@ export const chatMethodsCalls = {
       if (typeof window === 'undefined') return;
       if (!this.isBrowserNotificationsSupported?.()) return;
       if (!this.browserNotificationsEnabled || this.browserNotificationPermission !== 'granted') return;
-      if (!this.isWindowInactive?.()) return;
 
       const callerName = formatPeerName(call.caller);
       const notification = new Notification('MARX · Входящий звонок', {
@@ -559,7 +563,11 @@ export const chatMethodsCalls = {
       const meId = this.getCurrentUserId();
       const direction = call.callerUserId === meId ? 'outgoing' : 'incoming';
       if (!this.activeCall || this.activeCall.callId !== call.callId) {
-        this.setCallState(call, call.status === 'accepted' ? 'connecting' : direction === 'incoming' ? 'incoming' : 'outgoing', direction);
+        const phase = call.status === 'accepted' ? 'connecting' : direction === 'incoming' ? 'incoming' : 'outgoing';
+        this.setCallState(call, phase, direction);
+        if (phase === 'incoming') {
+          this.playIncomingCallSound?.();
+        }
       }
       if (action === 'reject' && direction === 'incoming') {
         await this.rejectIncomingCall();
@@ -603,6 +611,7 @@ export const chatMethodsCalls = {
       this.activeCall = call;
       this.callPhase = phase;
       this.callDirection = null;
+      this.stopIncomingCallSound?.();
       this.stopOutgoingCallMusic?.();
       this.cleanupCallPeerResources();
       this.stopCallDurationTicker();
@@ -626,6 +635,7 @@ export const chatMethodsCalls = {
         clearTimeout(this.callResetTimer);
         this.callResetTimer = null;
       }
+      this.stopIncomingCallSound?.();
       this.stopOutgoingCallMusic?.();
       this.activeCall = null;
       this.callPhase = 'idle';
@@ -666,6 +676,7 @@ export const chatMethodsCalls = {
       if (notifyServer && this.activeCall && this.callPhase !== 'idle' && this.callPhase !== 'ended') {
         void ws.request('call:hangup', {callId: this.activeCall.callId, reason: 'hangup'});
       }
+      this.stopIncomingCallSound?.();
       this.stopOutgoingCallMusic?.();
       this.cleanupCallPeerResources();
       this.stopCallDurationTicker();
@@ -684,6 +695,7 @@ export const chatMethodsCalls = {
 
     onCallWsDisconnected(this: any) {
       if (!this.activeCall || this.callPhase === 'idle' || this.callPhase === 'ended') return;
+      this.stopIncomingCallSound?.();
       void this.playCallOffSound?.();
       this.callError = 'Соединение с сервером потеряно. Звонок завершён.';
       this.finishCallLocally({...this.activeCall, status: 'ended', endReason: 'disconnect'}, 'ended');
