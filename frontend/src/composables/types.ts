@@ -8,6 +8,7 @@ export type User = {
   avatarUrl?: string | null;
   nicknameColor: string | null;
   donationBadgeUntil?: string | null;
+  isOnline?: boolean;
   pushDisableAllMentions?: boolean;
 };
 

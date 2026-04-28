@@ -42,6 +42,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         avatarUrl: resolveMediaUrl(raw?.avatarUrl) || null,
         nicknameColor: raw?.nicknameColor ? String(raw.nicknameColor) : null,
         donationBadgeUntil: raw?.donationBadgeUntil ? String(raw.donationBadgeUntil) : null,
+        isOnline: !!raw?.isOnline,
         pushDisableAllMentions: !!raw?.pushDisableAllMentions,
       };
     },

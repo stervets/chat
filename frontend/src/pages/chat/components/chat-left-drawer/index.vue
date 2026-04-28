@@ -69,6 +69,10 @@
                   }"
                   @click="selectDirectDialog(dialog)"
                 >
+                  <span
+                    class="direct-online-dot"
+                    :class="{online: !!dialog.targetUser.isOnline}"
+                  />
                   <img
                     v-if="dialog.targetUser.avatarUrl"
                     class="nav-avatar nav-avatar-sm"

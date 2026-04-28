@@ -180,7 +180,7 @@ export const chatMethodsRuntimeAndRouting = {
         }
         await soundPlayer.play('notification', NOTIFICATION_SOUND_VOLUME);
       } catch {
-        this.soundReady = false;
+        this.notificationSoundPlayer = null;
       }
     },
 
