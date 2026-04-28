@@ -142,6 +142,9 @@ export const chatMethodsRuntimeAndRouting = {
       runtime.soundReady = true;
       runtime.overlayHandled = true;
       this.ensureNotificationSoundPlayer();
+      if (this.callPhase === 'outgoing') {
+        void this.playOutgoingCallMusic();
+      }
     },
 
     resolveSoundStartupState(this: any) {
@@ -199,6 +202,66 @@ export const chatMethodsRuntimeAndRouting = {
       }
     },
 
+    async playCallOnSound(this: any) {
+      if (!this.soundEnabled || !this.soundReady) return;
+
+      const soundPlayer = this.ensureNotificationSoundPlayer();
+      if (!soundPlayer) return;
+
+      try {
+        if (!soundPlayer.isReady) {
+          await soundPlayer.preloadPromise;
+        }
+        await soundPlayer.play('callOn', NOTIFICATION_SOUND_VOLUME);
+      } catch {
+        this.notificationSoundPlayer = null;
+      }
+    },
+
+    async playCallOffSound(this: any) {
+      if (!this.soundEnabled || !this.soundReady) return;
+
+      const soundPlayer = this.ensureNotificationSoundPlayer();
+      if (!soundPlayer) return;
+
+      try {
+        if (!soundPlayer.isReady) {
+          await soundPlayer.preloadPromise;
+        }
+        await soundPlayer.play('callOff', NOTIFICATION_SOUND_VOLUME);
+      } catch {
+        this.notificationSoundPlayer = null;
+      }
+    },
+
+    async playOutgoingCallMusic(this: any) {
+      if (typeof window === 'undefined') return;
+      if (!this.soundEnabled || !this.soundReady) return;
+
+      let audio = this.outgoingCallMusicAudio as HTMLAudioElement | null;
+      if (!audio) {
+        audio = new Audio('/music.mp3');
+        audio.preload = 'auto';
+        audio.loop = true;
+        audio.volume = NOTIFICATION_SOUND_VOLUME;
+        this.outgoingCallMusicAudio = audio;
+      }
+      audio.volume = NOTIFICATION_SOUND_VOLUME;
+      if (!audio.paused) return;
+      try {
+        await audio.play();
+      } catch {}
+    },
+
+    stopOutgoingCallMusic(this: any) {
+      const audio = this.outgoingCallMusicAudio as HTMLAudioElement | null;
+      if (!audio) return;
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch {}
+    },
+
     onSoundOverlayConfirm(this: any) {
       this.soundOverlayVisible = false;
       this.markSoundReady();
@@ -209,6 +272,7 @@ export const chatMethodsRuntimeAndRouting = {
       this.soundEnabled = !!this.soundEnabled;
       this.persistSoundEnabledSetting();
       if (!this.soundEnabled) {
+        this.stopOutgoingCallMusic();
         this.soundOverlayVisible = false;
         this.soundReady = false;
         runtime.overlayHandled = true;

@@ -1,6 +1,8 @@
 export const soundList: Record<string, string> = {
   notification: '/ping.mp3',
   incomingCall: '/ringtone.mp3',
+  callOn: '/callon.mp3',
+  callOff: '/calloff.mp3',
 };
 
 export class SoundPlayer {

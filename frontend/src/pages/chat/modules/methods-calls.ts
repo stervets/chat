@@ -140,6 +140,11 @@ export const chatMethodsCalls = {
       if (phase !== 'ended') {
         this.callError = '';
       }
+      if (phase === 'outgoing') {
+        void this.playOutgoingCallMusic?.();
+      } else {
+        this.stopOutgoingCallMusic?.();
+      }
       if (phase === 'connected') {
         this.startCallDurationTicker();
       }
@@ -284,6 +289,7 @@ export const chatMethodsCalls = {
       const call = this.activeCall as DirectCallPayload | null;
       if (!call || this.callPhase !== 'incoming') return;
       this.hapticConfirm?.();
+      void this.playCallOnSound?.();
       this.setCallState(call, 'connecting', 'incoming');
 
       try {
@@ -315,6 +321,7 @@ export const chatMethodsCalls = {
       const call = this.activeCall as DirectCallPayload | null;
       if (!call) return;
       this.hapticTap?.();
+      void this.playCallOffSound?.();
       await ws.request('call:reject', {callId: call.callId});
       this.finishCallLocally({...call, status: 'ended', endReason: 'reject'}, 'ended');
     },
@@ -327,6 +334,10 @@ export const chatMethodsCalls = {
         return;
       }
       const reason = reasonRaw === 'failed' ? 'failed' : 'hangup';
+      if (reason === 'hangup') {
+        this.hapticTap?.();
+      }
+      void this.playCallOffSound?.();
       await ws.request('call:hangup', {callId: call.callId, reason});
       this.finishCallLocally({...call, status: 'ended', endReason: reason}, 'ended');
     },
@@ -454,6 +465,9 @@ export const chatMethodsCalls = {
       if (!call) return;
       const current = this.activeCall as DirectCallPayload | null;
       if (current && current.callId !== call.callId) return;
+      if (this.callPhase !== 'idle' && this.callPhase !== 'ended') {
+        void this.playCallOffSound?.();
+      }
       this.finishCallLocally(call, 'ended');
     },
 
@@ -560,6 +574,7 @@ export const chatMethodsCalls = {
     markCallConnected(this: any) {
       if (!this.activeCall || this.callPhase === 'connected') return;
       this.callPhase = 'connected';
+      this.stopOutgoingCallMusic?.();
       const acceptedAt = Date.parse(this.activeCall.acceptedAt || '') || Date.now();
       this.callStartedAt = acceptedAt;
       this.startCallDurationTicker();
@@ -588,6 +603,7 @@ export const chatMethodsCalls = {
       this.activeCall = call;
       this.callPhase = phase;
       this.callDirection = null;
+      this.stopOutgoingCallMusic?.();
       this.cleanupCallPeerResources();
       this.stopCallDurationTicker();
       this.callError = this.resolveCallEndText(call?.endReason || null);
@@ -610,6 +626,7 @@ export const chatMethodsCalls = {
         clearTimeout(this.callResetTimer);
         this.callResetTimer = null;
       }
+      this.stopOutgoingCallMusic?.();
       this.activeCall = null;
       this.callPhase = 'idle';
       this.callDirection = null;
@@ -649,12 +666,14 @@ export const chatMethodsCalls = {
       if (notifyServer && this.activeCall && this.callPhase !== 'idle' && this.callPhase !== 'ended') {
         void ws.request('call:hangup', {callId: this.activeCall.callId, reason: 'hangup'});
       }
+      this.stopOutgoingCallMusic?.();
       this.cleanupCallPeerResources();
       this.stopCallDurationTicker();
       this.resetCallState();
     },
 
     toggleCallMute(this: any) {
+      this.hapticTap?.();
       this.callMuted = !this.callMuted;
       const localStream = this.callLocalStream as MediaStream | null;
       if (!localStream) return;
@@ -665,6 +684,7 @@ export const chatMethodsCalls = {
 
     onCallWsDisconnected(this: any) {
       if (!this.activeCall || this.callPhase === 'idle' || this.callPhase === 'ended') return;
+      void this.playCallOffSound?.();
       this.callError = 'Соединение с сервером потеряно. Звонок завершён.';
       this.finishCallLocally({...this.activeCall, status: 'ended', endReason: 'disconnect'}, 'ended');
     },

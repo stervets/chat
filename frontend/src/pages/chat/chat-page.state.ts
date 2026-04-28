@@ -157,6 +157,7 @@ export function createChatPageState() {
     callRemoteStream: ref<MediaStream | null>(null),
     callPendingRemoteCandidates: ref<RTCIceCandidateInit[]>([]),
     callRemoteAudioEl: ref<HTMLAudioElement | null>(null),
+    outgoingCallMusicAudio: ref<HTMLAudioElement | null>(null),
     callResetTimer: ref<number | null>(null),
     callDurationTimer: ref<number | null>(null),
     handledCallRouteIntent: ref(''),
