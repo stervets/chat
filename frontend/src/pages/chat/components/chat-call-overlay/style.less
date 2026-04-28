@@ -1,0 +1,143 @@
+.call-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 32;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  padding: 18px;
+  background: radial-gradient(circle at center, rgba(20, 32, 48, 0.38), rgba(5, 10, 18, 0.54));
+}
+
+.call-card {
+  width: min(360px, 100%);
+  border: 1px solid rgba(125, 153, 187, 0.32);
+  border-radius: 22px;
+  background: rgba(15, 22, 32, 0.94);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+  padding: 26px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+}
+
+.call-card audio {
+  display: none;
+}
+
+.call-peer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.call-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 2px solid rgba(138, 172, 210, 0.42);
+  background: rgba(51, 70, 92, 0.95);
+}
+
+.call-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #f3f8ff;
+  font-size: 34px;
+  font-weight: 800;
+}
+
+.call-title {
+  font-size: 20px;
+  font-weight: 750;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.call-error {
+  max-width: 280px;
+  color: #ffc5c5;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.call-actions {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.call-action {
+  min-width: 112px;
+  min-height: 44px;
+  border: 1px solid rgba(150, 177, 207, 0.34);
+  border-radius: 999px;
+  padding: 10px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #edf5ff;
+  background: rgba(42, 56, 76, 0.82);
+  cursor: pointer;
+  font-weight: 700;
+  transition: transform .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.call-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(190, 215, 240, 0.62);
+  background: rgba(55, 72, 98, 0.92);
+}
+
+.call-action-answer {
+  background: rgba(43, 122, 78, 0.95);
+  border-color: rgba(111, 224, 154, 0.48);
+}
+
+.call-action-answer:hover {
+  background: rgba(51, 145, 91, 0.98);
+}
+
+.call-action-hangup {
+  background: rgba(146, 54, 54, 0.95);
+  border-color: rgba(234, 130, 130, 0.46);
+}
+
+.call-action-hangup:hover {
+  background: rgba(169, 62, 62, 0.98);
+}
+
+@media (max-width: 720px) {
+  .call-overlay {
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .call-card {
+    width: 100%;
+    border-radius: 22px 22px 18px 18px;
+  }
+
+  .call-action {
+    flex: 1 1 140px;
+  }
+}
