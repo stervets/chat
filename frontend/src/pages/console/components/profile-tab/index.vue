@@ -26,6 +26,11 @@
 
             <div class="profile-head">
               <div class="profile-name-row">
+                <span
+                  class="profile-presence-dot"
+                  :class="{online: !!profile.isOnline || isOwnProfile}"
+                  :title="(!!profile.isOnline || isOwnProfile) ? 'online' : 'offline'"
+                />
                 <span v-if="isSystemNickname(profile.nickname)" class="system-star">★</span>
                 <div class="profile-name" :style="{color: profileDisplayNicknameColor || undefined}">
                   {{ profileDisplayName }}

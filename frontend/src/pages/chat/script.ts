@@ -218,21 +218,23 @@ export default {
       });
 
       return [...visibleDirectDialogs, ...syntheticPinnedDialogs].sort((left: DirectDialog, right: DirectDialog) => {
-        const leftPinned = pinnedIds.has(Number(left?.targetUser?.id || 0));
-        const rightPinned = pinnedIds.has(Number(right?.targetUser?.id || 0));
-        if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
-
         const leftUnread = !!unreadIds[left.roomId];
         const rightUnread = !!unreadIds[right.roomId];
         if (leftUnread !== rightUnread) return leftUnread ? -1 : 1;
 
-        const leftTs = Date.parse(String(left.lastMessageAt || ''));
-        const rightTs = Date.parse(String(right.lastMessageAt || ''));
-        const leftTime = Number.isFinite(leftTs) ? leftTs : 0;
-        const rightTime = Number.isFinite(rightTs) ? rightTs : 0;
-        if (leftTime !== rightTime) return rightTime - leftTime;
+        const leftOnline = !!left?.targetUser?.isOnline;
+        const rightOnline = !!right?.targetUser?.isOnline;
+        if (leftOnline !== rightOnline) return leftOnline ? -1 : 1;
 
-        return Number(right.roomId || 0) - Number(left.roomId || 0);
+        const leftName = String(left?.targetUser?.name || left?.targetUser?.nickname || '').trim().toLowerCase();
+        const rightName = String(right?.targetUser?.name || right?.targetUser?.nickname || '').trim().toLowerCase();
+        if (leftName !== rightName) return leftName.localeCompare(rightName);
+
+        const leftNickname = String(left?.targetUser?.nickname || '').trim().toLowerCase();
+        const rightNickname = String(right?.targetUser?.nickname || '').trim().toLowerCase();
+        if (leftNickname !== rightNickname) return leftNickname.localeCompare(rightNickname);
+
+        return Number(left?.targetUser?.id || 0) - Number(right?.targetUser?.id || 0);
       });
     },
 

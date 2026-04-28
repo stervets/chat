@@ -23,6 +23,12 @@
     <div class="header-text">
       <button class="title title-button" @click="$emit('open-active-dialog-info-page')">
         <span
+          v-if="activeDialog?.kind === 'direct'"
+          class="direct-presence-dot"
+          :class="{online: !!activeDialog?.targetUser?.isOnline}"
+          :title="activeDialog?.targetUser?.isOnline ? 'online' : 'offline'"
+        />
+        <span
           v-if="activeDialog?.kind === 'direct' && isSystemNickname(activeDialog?.targetUser?.nickname)"
           class="system-star"
         >★</span>

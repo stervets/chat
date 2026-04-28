@@ -299,10 +299,47 @@ function createAuthCommands(host: ChatCommandHost): ChatCommandMap {
 }
 
 function createUserCommands(host: ChatCommandHost): ChatCommandMap {
+  const withOnlineUser = (userRaw: unknown, onlineUserIds: Set<number>) => {
+    if (!userRaw || typeof userRaw !== 'object') return userRaw;
+    const user = userRaw as Record<string, unknown>;
+    const userId = positiveNumber(user.id);
+    return {
+      ...user,
+      isOnline: onlineUserIds.has(userId),
+    };
+  };
+  const isFailure = (resultRaw: unknown) => {
+    return !!resultRaw && typeof resultRaw === 'object' && (resultRaw as any).ok === false;
+  };
+
   return {
-    'user:list': command(({client}) => host.chat.users.usersList(client.state)),
-    'user:get': command(({client, args}) => host.chat.users.userGet(client.state, normalizeUserGetArgs(args))),
-    'contacts:list': command(({client}) => host.chat.users.contactsList(client.state)),
+    'user:list': command(async ({client}) => {
+      const result = await host.chat.users.usersList(client.state);
+      if (!Array.isArray(result)) return result;
+      const onlineUserIds = new Set(host.getOnlineUserIds());
+      return result.map((user) => withOnlineUser(user, onlineUserIds));
+    }),
+    'user:get': command(async ({client, args}) => {
+      const result = await host.chat.users.userGet(client.state, normalizeUserGetArgs(args));
+      if (isFailure(result)) return result;
+      const payload = result && typeof result === 'object'
+        ? {...(result as Record<string, unknown>)}
+        : {};
+      if ((payload as any).ok === true) {
+        delete (payload as any).ok;
+      }
+      const onlineUserIds = new Set(host.getOnlineUserIds());
+      return {
+        ...payload,
+        user: withOnlineUser((payload as any).user, onlineUserIds),
+      };
+    }),
+    'contacts:list': command(async ({client}) => {
+      const result = await host.chat.users.contactsList(client.state);
+      if (!Array.isArray(result)) return result;
+      const onlineUserIds = new Set(host.getOnlineUserIds());
+      return result.map((user) => withOnlineUser(user, onlineUserIds));
+    }),
     'contacts:add': command(({client, args}) => host.chat.users.contactsAdd(client.state, normalizeContactArgs(args))),
     'contacts:remove': command(({client, args}) => host.chat.users.contactsRemove(client.state, normalizeContactArgs(args))),
   };
@@ -409,9 +446,35 @@ function createGameCommands(host: ChatCommandHost): ChatCommandMap {
 }
 
 function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
+  const withOnlineUser = (userRaw: unknown, onlineUserIds: Set<number>) => {
+    if (!userRaw || typeof userRaw !== 'object') return userRaw;
+    const user = userRaw as Record<string, unknown>;
+    const userId = positiveNumber(user.id);
+    return {
+      ...user,
+      isOnline: onlineUserIds.has(userId),
+    };
+  };
+  const isFailure = (resultRaw: unknown) => {
+    return !!resultRaw && typeof resultRaw === 'object' && (resultRaw as any).ok === false;
+  };
+
   return {
-    'room:get': command(({client, args}) => {
-      return host.chat.rooms.roomGet(client.state, positiveInt((args as RoomGetPayload).roomId));
+    'room:get': command(async ({client, args}) => {
+      const result = await host.chat.rooms.roomGet(client.state, positiveInt((args as RoomGetPayload).roomId));
+      if (isFailure(result)) return result;
+      const payload = result && typeof result === 'object'
+        ? {...(result as Record<string, unknown>)}
+        : {};
+      if ((payload as any).ok === true) {
+        delete (payload as any).ok;
+      }
+      if (String((payload as any)?.kind || '') !== 'direct') return payload;
+      const onlineUserIds = new Set(host.getOnlineUserIds());
+      return {
+        ...payload,
+        targetUser: withOnlineUser((payload as any).targetUser, onlineUserIds),
+      };
     }, ({client, args}, result) => {
       if (!okResult<RoomGetData>(result)) return;
       const roomId = positiveNumber(result.data.roomId);
@@ -420,9 +483,20 @@ function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
       }
     }),
 
-    'room:list': command((ctx) => {
+    'room:list': command(async (ctx) => {
       const handler = getRoomListHandler(host, (ctx.args as RoomListPayload).kind);
-      return handler ? handler(ctx) : host.fail('invalid_room_kind');
+      const result = handler ? await handler(ctx) : host.fail('invalid_room_kind');
+      const kind = String((ctx.args as RoomListPayload).kind || '').trim().toLowerCase();
+      if (kind !== 'direct' || !Array.isArray(result)) return result;
+      const onlineUserIds = new Set(host.getOnlineUserIds());
+      return result.map((row) => {
+        if (!row || typeof row !== 'object') return row;
+        const current = row as Record<string, unknown>;
+        return {
+          ...current,
+          targetUser: withOnlineUser(current.targetUser, onlineUserIds),
+        };
+      });
     }),
 
     'room:create': command(({client, args}) => {
@@ -463,7 +537,21 @@ function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
     }),
 
     'room:group:get-default': command(({client}) => host.chat.rooms.roomGetDefaultGroup(client.state)),
-    'room:direct:get-or-create': command(({client, args}) => host.chat.rooms.roomDirectGetOrCreate(client.state, positiveInt(args.userId))),
+    'room:direct:get-or-create': command(async ({client, args}) => {
+      const result = await host.chat.rooms.roomDirectGetOrCreate(client.state, positiveInt(args.userId));
+      if (isFailure(result)) return result;
+      const payload = result && typeof result === 'object'
+        ? {...(result as Record<string, unknown>)}
+        : {};
+      if ((payload as any).ok === true) {
+        delete (payload as any).ok;
+      }
+      const onlineUserIds = new Set(host.getOnlineUserIds());
+      return {
+        ...payload,
+        targetUser: withOnlineUser((payload as any).targetUser, onlineUserIds),
+      };
+    }),
     'room:join': command(({client, args}) => host.chat.rooms.roomJoin(client.state, positiveInt((args as RoomJoinPayload).roomId))),
 
     'room:leave': command(({client, args}) => {

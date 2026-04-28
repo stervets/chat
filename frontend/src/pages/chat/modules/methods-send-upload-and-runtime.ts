@@ -764,6 +764,7 @@ export const chatMethodsSendUploadAndRuntime = {
         this.markVisibleMessageNotificationsRead();
       }
       if (this.wsConnectionState === 'connected') {
+        void this.fetchDirectDialogs();
         void this.fetchPinnedDirectUserIds();
       }
     },
@@ -778,6 +779,7 @@ export const chatMethodsSendUploadAndRuntime = {
         this.clearInactiveTabUnread();
         this.markVisibleMessageNotificationsRead();
         if (this.wsConnectionState === 'connected') {
+          void this.fetchDirectDialogs();
           void this.fetchPinnedDirectUserIds();
         }
       }

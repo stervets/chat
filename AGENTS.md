@@ -172,5 +172,10 @@ yarn run frontend:dev
 - при открытии/использовании composer-tools во время редактирования сообщения target больше не сбрасывается в `main` из-за потери фокуса: `captureActiveComposerInputSelection()` сохраняет `edit` target, а кнопки панели используют `@mousedown.prevent`, чтобы не выбивать фокус из `message-edit-input`;
 - левый список директов теперь скрывает «пустые» direct-room (без сообщений), если пользователь не в контактах: показываются только direct с `lastMessageAt > epoch` или контакты (`contacts:list`, включая synthetic pinned entries);
 - в левом списке директов у каждого пользователя добавлен статус-индикатор как в room members: зелёная точка при `targetUser.isOnline=true`, серая при offline;
+- backend теперь возвращает `isOnline` в user/direct payloads (`user:list`, `user:get`, `contacts:list`, `room:list(kind='direct')`, `room:get(kind='direct')`, `room:direct:get-or-create`), поэтому online в директ-UI вычисляется тем же источником, что и в room members;
+- в хедере активного direct добавлен online/offline индикатор собеседника (точка рядом с именем);
+- на странице профиля пользователя (`/console?tab=user`) добавлен online/offline индикатор в блоке имени;
+- при возврате фокуса/видимости вкладки `/chat` теперь перечитывает не только `contacts:list`, но и `room:list(kind='direct')`, чтобы online-статусы в списке директов актуализировались сразу;
+- сортировка директов в левом drawer обновлена под приоритет: `1) unread`, `2) online`, `3) алфавит (name/nickname)`; сортировка по `lastMessageAt` и приоритет закрепа в ordering убраны;
 - звук уведомлений усилен по отказоустойчивости: `SoundPlayer` больше не «падает насовсем» при единичной ошибке загрузки/декода, использует `Promise.allSettled` для preload и fallback через `HTMLAudioElement`, а `playNotificationSound` при ошибке сбрасывает только инстанс плеера для автоповтора, не выключая глобальный `soundReady`;
 - воспроизведение уведомлений переведено на `frontend/src/composables/classes/sound-player.ts`; `soundList` очищен от legacy-набора и оставлен один звук `notification: '/ping.mp3'`.

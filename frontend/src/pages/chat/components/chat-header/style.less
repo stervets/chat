@@ -128,6 +128,19 @@
   transition: color .24s ease, opacity .24s ease;
 }
 
+.direct-presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(120, 140, 160, 0.44);
+  flex: 0 0 auto;
+}
+
+.direct-presence-dot.online {
+  background: #52d178;
+  box-shadow: 0 0 10px rgba(82, 209, 120, 0.48);
+}
+
 .title-button:active {
   transform: none;
   filter: none;
