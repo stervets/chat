@@ -1373,9 +1373,7 @@ export default {
         }
 
         if (String(this.newPassword || '').trim()) {
-          const passwordResult = await wsChangePassword({
-            newPassword: String(this.newPassword || ''),
-          });
+          const passwordResult = await wsChangePassword(String(this.newPassword || ''));
           if (!(passwordResult as any)?.ok) {
             this.saveError = 'Профиль сохранился, но пароль не обновился.';
             return;

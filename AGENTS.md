@@ -201,3 +201,5 @@ yarn run frontend:dev
 - клиентский browser Notification для входящего звонка больше не ограничен состоянием неактивного окна: `showIncomingCallBrowserNotification` показывает уведомление при наличии разрешения даже в активной вкладке.
 - добавлен глобальный plugin `frontend/src/plugins/haptics-buttons.client.ts`: при клике на любой `<button>` срабатывает `vibrateTap`, если `chat:vibration-enabled:v1` не выключен в localStorage (покрывает `/console` и остальные страницы).
 - в `frontend/src/utils/vibrate.ts` добавлен антидребезг (`MIN_VIBRATION_GAP_MS=45`), чтобы глобальный haptic и локальные вызовы не давали двойную вибрацию подряд.
+- фикс смены пароля в `/console`: `wsChangePassword` теперь вызывается строкой, а не объектом (`{newPassword}`), из-за чего раньше пароль мог сохраниться как строка `"[object Object]"`.
+- backend `auth:changePassword` ужесточён: поле `newPassword` принимается только как строка, нестроковый payload возвращает `invalid_input` и больше не может неявно пройти через `.toString()`.

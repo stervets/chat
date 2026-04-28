@@ -203,7 +203,10 @@ export class ChatAuthService {
     const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
 
-    const newPassword = (payload?.newPassword || '').toString();
+    if (typeof payload?.newPassword !== 'string') {
+      return {ok: false, error: 'invalid_input'};
+    }
+    const newPassword = payload.newPassword;
     if (!newPassword) {
       return {ok: false, error: 'invalid_input'};
     }
