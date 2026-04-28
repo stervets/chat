@@ -86,3 +86,24 @@
 - Prisma schema (`backend/prisma/schema.prisma`) использует `env("DATABASE_URL")`.
 
 Перед `prisma generate/db push/migrate` выравнивай `DATABASE_URL` с нужной БД.
+
+## WebRTC
+
+Backend config поддерживает секцию `webrtc`:
+
+```json
+{
+  "webrtc": {
+    "iceServers": [
+      {"urls": "stun:stun.l.google.com:19302"},
+      {"urls": "turn:turn.example.com:3478", "username": "CHANGE_ME", "credential": "CHANGE_ME"}
+    ],
+    "callRingTimeoutMs": 45000
+  }
+}
+```
+
+- `iceServers` отдаётся клиенту через WS-команду `call:ice-config` и используется в `RTCPeerConnection`.
+- Если секция не задана, backend использует fallback STUN `stun:stun.l.google.com:19302`.
+- Для production нужен TURN: иначе часть пользователей за NAT/firewall не сможет дозвониться.
+- `callRingTimeoutMs` ограничен диапазоном `10000..300000`, default `45000`.

@@ -46,6 +46,8 @@
           :can-back-to-discussion-source="canBackToDiscussionSource"
           :can-delete-active-room="canDeleteActiveRoom"
           :can-pin-active-dialog="canPinActiveDialog"
+          :can-start-call="canStartCall"
+          :call-button-disabled="callButtonDisabled"
           :format-message-time="formatMessageTime"
           :get-dialog-avatar-fallback="getDialogAvatarFallback"
           :get-notification-author-donation-badge-style="getNotificationAuthorDonationBadgeStyle"
@@ -76,6 +78,7 @@
           @open-own-profile-page="onOpenOwnProfilePage"
           @open-vpn-page="onOpenVpnPage"
           @pin-active-dialog="onPinActiveDialog"
+          @start-call="startDirectCall"
           @toggle-notifications-menu="toggleNotificationsMenu"
           @toggle-room-invite-panel="toggleRoomInvitePanel"
         />
@@ -191,6 +194,24 @@
         <div v-if="reactionTooltipVisible" class="reaction-tooltip" :style="getReactionTooltipStyle()">
           {{ reactionTooltipText }}
         </div>
+
+
+
+        <ChatCallOverlay
+          :call-direction="callDirection"
+          :call-duration-text="callDurationText"
+          :call-error="callError"
+          :call-muted="callMuted"
+          :call-peer-avatar-url="callPeerAvatarUrl"
+          :call-peer-name="callPeerName"
+          :call-phase="callPhase"
+          :call-remote-stream="callRemoteStream"
+          @answer="answerIncomingCall"
+          @hangup="hangupCall"
+          @reject="rejectIncomingCall"
+          @remote-audio-ready="setCallRemoteAudioEl"
+          @toggle-mute="toggleCallMute"
+        />
 
         <ChatComposer
           :can-compose-in-active-dialog="canComposeInActiveDialog"

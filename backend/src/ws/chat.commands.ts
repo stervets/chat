@@ -1,10 +1,12 @@
 import type {WebSocket} from 'ws';
+import {config} from '../config.js';
 import type {RoomRow} from '../common/rooms.js';
 import {getRoomById} from '../common/rooms.js';
 import type {WebPushService} from '../common/web-push.js';
 import type {SocketState} from './protocol.js';
 import {boolValue, positiveInt, positiveIntList, stringChoice, textValue} from './chat.input.js';
 import type {ChatDomain} from './chat.domain.js';
+import type {ChatCallsService, CallPublicPayload} from './chat-calls.service.js';
 import {
   SYSTEM_NICKNAME,
   type ChatContextMessagePayload,
@@ -37,6 +39,9 @@ export type ChatCommandMap = Record<string, ChatCommand>;
 export type ChatCommandHost = {
   chat: ChatDomain;
   webPushService: WebPushService | null;
+  calls: ChatCallsService;
+  notifyCallEnded(call: CallPublicPayload): void;
+  flushExpiredCalls(): void;
   fail(errorRaw: unknown): WsFailure;
   subscribe(client: ClientSocket, roomId: number): void;
   unsubscribe(client: ClientSocket): void;
@@ -85,6 +90,11 @@ type RoomSettingsUpdatePayload = {
   avatarPath?: string | null;
   postOnlyByAdmin?: boolean;
 };
+
+type CallStartPayload = {roomId?: number};
+type CallIdPayload = {callId?: string};
+type CallHangupPayload = {callId?: string; reason?: string};
+type CallSignalWsPayload = {callId?: string; type?: string; payload?: unknown; toUserId?: number};
 
 type MessageListPayload = {roomId?: number; limit?: number; beforeMessageId?: number};
 type MessageCreatePayload = {
@@ -441,6 +451,100 @@ function createGameCommands(host: ChatCommandHost): ChatCommandMap {
         actions: (data as any)?.session?.actions || [],
         status: (data as any)?.session?.status || null,
       });
+    }),
+  };
+}
+
+
+function callIdValue(value: unknown) {
+  return String(value || '').trim();
+}
+
+function sendCallToParticipants(host: ChatCommandHost, call: CallPublicPayload, com: string) {
+  host.sendToUser(call.callerUserId, com, call);
+  host.sendToUser(call.calleeUserId, com, call);
+}
+
+function createCallCommands(host: ChatCommandHost): ChatCommandMap {
+  const sendMissedPushIfOffline = async (call: CallPublicPayload, room: RoomRow | null) => {
+    if (!room || !host.webPushService) return;
+    if (host.getOnlineUserIds().includes(call.calleeUserId)) return;
+    await host.webPushService.sendIncomingCallPush({
+      room,
+      call,
+      caller: call.caller,
+      excludeUserIds: host.getOnlineUserIds(),
+    });
+  };
+
+  return {
+    'call:ice-config': command(({client}) => {
+      if (!client.state.user) return host.fail('not_authenticated');
+      return {
+        ok: true,
+        data: {
+          iceServers: config.webrtc.iceServers,
+          callRingTimeoutMs: config.webrtc.callRingTimeoutMs,
+        },
+      };
+    }),
+
+    'call:start': command(async ({client, args}) => {
+      host.flushExpiredCalls();
+      const roomId = positiveInt((args as CallStartPayload).roomId);
+      const room = roomId ? await getRoomById(roomId) : null;
+      const result = host.calls.startDirectCall(room, client.state.user || null);
+      if (!okResult<CallPublicPayload>(result)) return result;
+
+      const call = result.data;
+      host.sendToUser(call.calleeUserId, 'call:incoming', call);
+      await sendMissedPushIfOffline(call, room);
+      return result;
+    }),
+
+    'call:get': command(({client, args}) => {
+      host.flushExpiredCalls();
+      return host.calls.getCallForUser(callIdValue((args as CallIdPayload).callId), client.state.user?.id);
+    }),
+
+    'call:accept': command(({client, args}) => {
+      host.flushExpiredCalls();
+      const result = host.calls.acceptCall(callIdValue((args as CallIdPayload).callId), client.state.user?.id);
+      if (okResult<CallPublicPayload>(result)) {
+        sendCallToParticipants(host, result.data, 'call:accepted');
+      }
+      return result;
+    }),
+
+    'call:reject': command(({client, args}) => {
+      const result = host.calls.rejectCall(callIdValue((args as CallIdPayload).callId), client.state.user?.id);
+      if (okResult<CallPublicPayload>(result)) {
+        host.notifyCallEnded(result.data);
+      }
+      return result;
+    }),
+
+    'call:hangup': command(({client, args}) => {
+      const payload = args as CallHangupPayload;
+      const result = host.calls.hangupCall(callIdValue(payload.callId), client.state.user?.id, payload.reason);
+      if (okResult<CallPublicPayload>(result)) {
+        host.notifyCallEnded(result.data);
+      }
+      return result;
+    }),
+
+    'call:signal': command(({client, args}) => {
+      const payload = args as CallSignalWsPayload;
+      const result = host.calls.buildSignal(
+        callIdValue(payload.callId),
+        client.state.user?.id,
+        payload.type,
+        payload.payload,
+        payload.toUserId,
+      );
+      if (!okResult<{toUserId: number}>(result)) return result;
+      host.sendToUser(result.data.toUserId, 'call:signal', result.data);
+      return {ok: true, data: {sent: true}};
     }),
   };
 }
@@ -809,6 +913,7 @@ export function createChatCommands(host: ChatCommandHost): ChatCommandMap {
     ...createInviteCommands(host),
     ...createPublicCommands(host),
     ...createGameCommands(host),
+    ...createCallCommands(host),
     ...createRoomCommands(host),
     ...createMessageCommands(host),
   };

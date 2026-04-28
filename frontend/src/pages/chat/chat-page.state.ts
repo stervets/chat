@@ -1,7 +1,7 @@
 import {ref} from 'vue';
 import type {Dialog, Message, User} from '@/composables/types';
 import {wsConnectionState} from '@/composables/ws-rpc';
-import type {DirectDialog, NotificationItem, ToastItem} from './chat-page.constants';
+import type {DirectDialog, DirectCallDirection, DirectCallPayload, DirectCallPhase, NotificationItem, ToastItem} from './chat-page.constants';
 import type {ScriptRuntimeManager} from '@/scriptable/runtime/manager';
 import type {SoundPlayer} from '@/composables/classes/sound-player';
 
@@ -144,6 +144,23 @@ export function createChatPageState() {
     webPushTestStatus: ref(''),
     webPushDiagnosticLines: ref<string[]>([]),
     webPushVapidPublicKey: ref(''),
+
+    activeCall: ref<DirectCallPayload | null>(null),
+    callPhase: ref<DirectCallPhase>('idle'),
+    callDirection: ref<DirectCallDirection>(null),
+    callError: ref(''),
+    callMuted: ref(false),
+    callStartedAt: ref<number | null>(null),
+    callDurationNow: ref(Date.now()),
+    callIceServers: ref<RTCIceServer[] | null>(null),
+    callPeerConnection: ref<RTCPeerConnection | null>(null),
+    callLocalStream: ref<MediaStream | null>(null),
+    callRemoteStream: ref<MediaStream | null>(null),
+    callPendingRemoteCandidates: ref<RTCIceCandidateInit[]>([]),
+    callRemoteAudioEl: ref<HTMLAudioElement | null>(null),
+    callResetTimer: ref<number | null>(null),
+    callDurationTimer: ref<number | null>(null),
+    handledCallRouteIntent: ref(''),
     webPushRequiresIosInstall: ref(false),
     pushDisableAllMentions: ref(false),
     routeSyncReady: ref(false),
@@ -166,6 +183,11 @@ export function createChatPageState() {
     contactsUpdatedHandler: ref<Function | null>(null),
     scriptsStateHandler: ref<Function | null>(null),
     usersUpdatedHandler: ref<Function | null>(null),
+
+    callIncomingHandler: ref<Function | null>(null),
+    callAcceptedHandler: ref<Function | null>(null),
+    callEndedHandler: ref<Function | null>(null),
+    callSignalHandler: ref<Function | null>(null),
     disconnectedHandler: ref<Function | null>(null),
     reconnectedHandler: ref<Function | null>(null),
     sessionExpiredHandler: ref<Function | null>(null),

@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'marx-static-v9';
+const STATIC_CACHE = 'marx-static-v10';
 const STATIC_ASSETS = [
   '/manifest.webmanifest',
   '/favicon.png',
@@ -73,25 +73,61 @@ async function parsePushPayload(event) {
   }
 }
 
+function buildChatUrlFromPush(payload, action) {
+  const payloadUrl = String(payload.url || '/chat').trim() || '/chat';
+  const roomId = Number(payload.roomId || payload.dialogId || 0);
+  const messageId = Number(payload.messageId || 0);
+  const callId = String(payload.callId || '').trim();
+  const url = new URL(payloadUrl, self.location.origin);
+
+  if (Number.isFinite(roomId) && roomId > 0) {
+    url.pathname = '/chat';
+    url.searchParams.set('room', String(roomId));
+  }
+  if (Number.isFinite(messageId) && messageId > 0) {
+    url.searchParams.set('focusMessage', String(messageId));
+  }
+  if (callId) {
+    url.pathname = '/chat';
+    url.searchParams.set('callId', callId);
+    if (action === 'answer' || action === 'reject') {
+      url.searchParams.set('callAction', action);
+    }
+  }
+  return url.toString();
+}
+
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     const payload = await parsePushPayload(event) || {};
-    const title = String(payload.title || 'MARX');
-    const body = String(payload.body || '').trim() || 'Новое сообщение';
-    const url = String(payload.url || '/chat').trim() || '/chat';
+    const type = String(payload.type || '').trim();
+    const isIncomingCall = type === 'incoming_call';
+    const title = String(payload.title || (isIncomingCall ? 'MARX · Входящий звонок' : 'MARX'));
+    const body = String(payload.body || '').trim() || (isIncomingCall ? 'Входящий звонок' : 'Новое сообщение');
     const roomId = Number(payload.roomId || payload.dialogId || 0) || null;
     const messageId = Number(payload.messageId || 0) || null;
+    const callId = String(payload.callId || '').trim() || null;
+    const url = buildChatUrlFromPush(payload, 'open');
 
     await self.registration.showNotification(title, {
       body,
       icon: String(payload.icon || '/favicon-alert.png'),
       badge: String(payload.badge || '/pwa-192.png'),
-      tag: String(payload.tag || `marx-push-${roomId || 'chat'}`),
-      renotify: false,
+      tag: String(payload.tag || (isIncomingCall && callId ? `marx-call-${callId}` : `marx-push-${roomId || 'chat'}`)),
+      renotify: isIncomingCall,
+      requireInteraction: !!payload.requireInteraction || isIncomingCall,
+      actions: isIncomingCall
+        ? [
+          {action: 'answer', title: 'Ответить'},
+          {action: 'reject', title: 'Отклонить'},
+        ]
+        : [],
       data: {
+        type,
         url,
         roomId,
         messageId,
+        callId,
       },
     });
   })());
@@ -101,21 +137,7 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const notificationData = event.notification?.data || {};
-  const targetPath = String(notificationData.url || '/chat').trim() || '/chat';
-  const roomId = Number(notificationData.roomId || 0);
-  const messageId = Number(notificationData.messageId || 0);
-
-  let canonicalPath = targetPath;
-  if (Number.isFinite(roomId) && roomId > 0) {
-    const query = new URLSearchParams();
-    query.set('room', String(roomId));
-    if (Number.isFinite(messageId) && messageId > 0) {
-      query.set('focusMessage', String(messageId));
-    }
-    canonicalPath = `/chat?${query.toString()}`;
-  }
-
-  const targetUrl = new URL(canonicalPath, self.location.origin).toString();
+  const targetUrl = buildChatUrlFromPush(notificationData, event.action || 'open');
 
   event.waitUntil((async () => {
     const clientsList = await self.clients.matchAll({

@@ -20,6 +20,19 @@
     "vapidPrivateKey": "",
     "vapidSubject": ""
   },
+  "webrtc": {
+    "iceServers": [
+      {
+        "urls": "stun:stun.l.google.com:19302"
+      },
+      {
+        "urls": "turn:turn.example.com:3478",
+        "username": "CHANGE_ME",
+        "credential": "CHANGE_ME"
+      }
+    ],
+    "callRingTimeoutMs": 45000
+  },
   "db": {
     "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"
   },

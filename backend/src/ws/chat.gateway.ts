@@ -4,7 +4,7 @@ import {
   type OnGatewayConnection,
   type OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import {Inject, Logger, Optional} from '@nestjs/common';
+import {Inject, Logger, Optional, type OnModuleDestroy} from '@nestjs/common';
 import {randomBytes} from 'node:crypto';
 import type {IncomingMessage} from 'node:http';
 import {WebSocket, WebSocketServer as WsServer} from 'ws';
@@ -23,6 +23,7 @@ import {
   type WsSuccess,
 } from './chat.commands.js';
 import {createChatDomain} from './chat.domain.js';
+import {ChatCallsService, type CallPublicPayload} from './chat-calls.service.js';
 import {
   BACKEND_PEER_ID,
   FRONTEND_PEER_ID,
@@ -33,12 +34,16 @@ import {
 @WebSocketGateway({
   path: config.wsPath,
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy {
   @WsServerDecorator() server!: WsServer;
 
   private readonly logger = new Logger(ChatGateway.name);
   private readonly subscriptions = new Map<number, Set<ClientSocket>>();
   private readonly chatDomain = createChatDomain();
+  private readonly calls = new ChatCallsService({
+    ringTimeoutMs: config.webrtc.callRingTimeoutMs,
+  });
+  private readonly callCleanupTimer: NodeJS.Timeout;
   private readonly commands: ChatCommandMap;
   private readonly webPushService: WebPushService | null;
 
@@ -47,11 +52,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     this.webPushService = webPushService || null;
     this.commands = createChatCommands(this.createCommandHost());
+    this.callCleanupTimer = setInterval(() => this.flushExpiredCalls(), 5000);
+    this.callCleanupTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    clearInterval(this.callCleanupTimer);
   }
 
   private createCommandHost(): ChatCommandHost {
     return {
       chat: this.chatDomain,
+      calls: this.calls,
       webPushService: this.webPushService,
       fail: (errorRaw) => this.fail(errorRaw),
       subscribe: (client, roomId) => this.subscribe(client, roomId),
@@ -63,6 +75,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       getOnlineUserIds: () => this.getOnlineUserIds(),
       closeRoomSubscriptions: (roomId) => this.closeRoomSubscriptions(roomId),
       removeUserFromRoomSubscriptions: (roomId, userIdRaw) => this.removeUserFromRoomSubscriptions(roomId, userIdRaw),
+      notifyCallEnded: (call) => this.notifyCallEnded(call),
+      flushExpiredCalls: () => this.flushExpiredCalls(),
     };
   }
 
@@ -88,8 +102,44 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleDisconnect(client: ClientSocket) {
+    const userId = Number(client.state?.user?.id || 0);
     this.unsubscribe(client);
+    if (Number.isFinite(userId) && userId > 0 && !this.hasOtherOpenSocketForUser(userId, client)) {
+      this.notifyCallsEnded(this.calls.endCallsForUser(userId, 'disconnect'));
+    }
     this.logger.log(`WS disconnected: ${client.state?.id || 'unknown'}`);
+  }
+
+  private hasOtherOpenSocketForUser(userId: number, currentClient: ClientSocket) {
+    for (const rawClient of this.server.clients) {
+      const client = rawClient as ClientSocket;
+      if (client === currentClient) continue;
+      if (client.readyState !== WebSocket.OPEN) continue;
+      if (Number(client.state?.user?.id || 0) !== userId) continue;
+      return true;
+    }
+    return false;
+  }
+
+  private notifyCallEnded(call: CallPublicPayload) {
+    this.sendCallEvent(call, 'call:ended', call);
+  }
+
+  private notifyCallsEnded(calls: CallPublicPayload[]) {
+    for (const call of calls) {
+      this.notifyCallEnded(call);
+    }
+  }
+
+  private sendCallEvent(call: CallPublicPayload, com: string, payload: Record<string, unknown> | unknown = {}) {
+    const userIds = this.calls.getParticipantUserIds(call);
+    for (const userId of userIds) {
+      this.sendToUser(userId, com, payload);
+    }
+  }
+
+  private flushExpiredCalls() {
+    this.notifyCallsEnded(this.calls.expireTimedOutCalls());
   }
 
   private parsePacket(raw: string): [string, WsArgs, string, string, string?] | null {

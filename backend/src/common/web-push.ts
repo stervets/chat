@@ -21,6 +21,24 @@ type SendChatPushParams = {
   excludeUserIds?: number[];
 };
 
+type SendIncomingCallPushParams = {
+  room: RoomRow;
+  call: {
+    callId: string;
+    roomId: number;
+    callerUserId: number;
+    calleeUserId: number;
+    expiresAt: string | null;
+  };
+  caller: {
+    id: number;
+    nickname: string;
+    name: string;
+    avatarUrl: string | null;
+  };
+  excludeUserIds?: number[];
+};
+
 type StoredPushSubscription = {
   id: number;
   userId: number;
@@ -187,6 +205,92 @@ export class WebPushService {
 
         this.logger.warn(
           `Web Push chat failed userId=${subscription.userId} subscriptionId=${subscription.id} statusCode=${sendResult.statusCode || 'unknown_status'} message="${sendResult.message}" removed=${removed}`
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(error?.message || String(error));
+    }
+  }
+
+  async sendIncomingCallPush(params: SendIncomingCallPushParams) {
+    if (!this.enabled) return;
+
+    try {
+      const calleeUserId = Number(params.call?.calleeUserId || 0);
+      const callerUserId = Number(params.call?.callerUserId || 0);
+      if (!Number.isFinite(calleeUserId) || calleeUserId <= 0) return;
+      if (!Number.isFinite(callerUserId) || callerUserId <= 0) return;
+      if (params.room.kind !== 'direct') return;
+      if (!params.room.member_user_ids.includes(calleeUserId)) return;
+
+      const excluded = new Set(
+        Array.isArray(params.excludeUserIds)
+          ? params.excludeUserIds.filter((value) => Number.isFinite(value) && value > 0)
+          : [],
+      );
+      excluded.add(callerUserId);
+      if (excluded.has(calleeUserId)) return;
+
+      const subscriptions = await this.findSubscriptionsByUserIds([calleeUserId]);
+      this.logger.log(`Web Push call subscriptions=${subscriptions.length} roomId=${params.room.id} callId=${params.call.callId}`);
+      if (!subscriptions.length) return;
+
+      const callerName = String(params.caller?.name || params.caller?.nickname || 'Кто-то').trim() || 'Кто-то';
+      const url = this.buildCallUrl(params.call.roomId, params.call.callId);
+      const payload = {
+        type: 'incoming_call',
+        title: 'MARX · Входящий звонок',
+        body: `${callerName} звонит вам`,
+        url,
+        roomId: params.call.roomId,
+        dialogId: params.call.roomId,
+        callId: params.call.callId,
+        callerUserId,
+        callerName,
+        callerNickname: params.caller?.nickname || '',
+        icon: params.caller?.avatarUrl || '/favicon-alert.png',
+        badge: '/pwa-192.png',
+        tag: `marx-call-${params.call.callId}`,
+        requireInteraction: true,
+        expiresAt: params.call.expiresAt,
+      };
+
+      for (const subscription of subscriptions) {
+        const sendResult = await this.sendToSubscription({
+          endpoint: subscription.endpoint,
+          keys: {
+            p256dh: subscription.p256dh,
+            auth: subscription.auth,
+          },
+        }, payload, {
+          ttl: 45,
+          urgency: 'high',
+        });
+
+        if (sendResult.ok) {
+          this.logger.log(`Web Push call success userId=${subscription.userId} subscriptionId=${subscription.id}`);
+          await db.pushSubscription.update({
+            where: {
+              id: subscription.id,
+            },
+            data: {
+              lastUsedAt: new Date(),
+            },
+          });
+          continue;
+        }
+
+        const removed = sendResult.statusCode === 404 || sendResult.statusCode === 410;
+        if (removed) {
+          await db.pushSubscription.deleteMany({
+            where: {
+              id: subscription.id,
+            },
+          });
+        }
+
+        this.logger.warn(
+          `Web Push call failed userId=${subscription.userId} subscriptionId=${subscription.id} statusCode=${sendResult.statusCode || 'unknown_status'} message="${sendResult.message}" removed=${removed}`
         );
       }
     } catch (error: any) {
@@ -483,6 +587,20 @@ export class WebPushService {
     return '/chat';
   }
 
+  private buildCallUrl(roomIdRaw: unknown, callIdRaw: unknown) {
+    const roomId = Number(roomIdRaw || 0);
+    const callId = String(callIdRaw || '').trim();
+    const query = new URLSearchParams();
+    if (Number.isFinite(roomId) && roomId > 0) {
+      query.set('room', String(roomId));
+    }
+    if (callId) {
+      query.set('callId', callId);
+    }
+    const suffix = query.toString();
+    return suffix ? `/chat?${suffix}` : '/chat';
+  }
+
   private buildNotificationPayload(message: ChatContextMessagePayload, room: RoomRow, url: string) {
     const preview = this.buildBodyPreview(message.rawText);
     const authorName = String(message.authorName || message.authorNickname || 'Кто-то').trim() || 'Кто-то';
@@ -549,11 +667,17 @@ export class WebPushService {
     });
   }
 
-  private async sendToSubscription(subscription: PushSubscriptionPayload, payload: Record<string, unknown>) {
+  private async sendToSubscription(
+    subscription: PushSubscriptionPayload,
+    payload: Record<string, unknown>,
+    optionsRaw?: {ttl?: number; urgency?: 'very-low' | 'low' | 'normal' | 'high'},
+  ) {
     try {
+      const ttl = Math.max(0, Math.min(24 * 60 * 60, Number(optionsRaw?.ttl || 120)));
+      const urgency = optionsRaw?.urgency || 'normal';
       await webPush.sendNotification(subscription as any, JSON.stringify(payload), {
-        TTL: 120,
-        urgency: 'normal',
+        TTL: ttl,
+        urgency,
       });
       return {ok: true, statusCode: 0, message: ''} as const;
     } catch (error: any) {

@@ -253,3 +253,49 @@ Legacy `scriptable` сообщения backend всё ещё может верн
 - для direct уведомления `url` нормализуется как `/chat?room=<directRoomId>&focusMessage=<messageId>`;
 - service worker при клике по push дополнительно канонизирует переход по `roomId/messageId` в тот же формат;
 - отправитель не получает push на своё сообщение: backend всегда исключает `senderId` и `message.authorId` из получателей.
+
+## Direct voice calls (1-1 WebRTC)
+
+Звонки поддерживаются только для `direct` комнат. Backend не передаёт аудио: он хранит короткоживущий in-memory `callId` и пересылает WebRTC signaling между двумя участниками direct-комнаты.
+
+WS commands:
+
+- `call:ice-config({})` -> `{iceServers, callRingTimeoutMs}`.
+- `call:start({roomId})` -> создаёт звонок в direct-комнате и отправляет собеседнику `call:incoming`.
+- `call:get({callId})` -> возвращает текущее состояние звонка, используется PWA deep-link после push.
+- `call:accept({callId})` -> принимает входящий звонок и отправляет обоим участникам `call:accepted`.
+- `call:reject({callId})` -> отклоняет входящий звонок и отправляет `call:ended`.
+- `call:hangup({callId, reason?})` -> завершает активный звонок и отправляет `call:ended`.
+- `call:signal({callId, type, payload, toUserId?})` -> пересылает `offer`, `answer` или `ice-candidate` второму участнику.
+
+WS events:
+
+- `call:incoming` — входящий звонок, payload = `DirectCallPayload`.
+- `call:accepted` — звонок принят, payload = `DirectCallPayload`.
+- `call:ended` — звонок завершён/отклонён/просрочен, payload = `DirectCallPayload`.
+- `call:signal` — WebRTC signaling payload: `{callId, roomId, fromUserId, toUserId, type, payload}`.
+
+`DirectCallPayload`:
+
+```ts
+{
+  callId: string;
+  roomId: number;
+  status: 'ringing' | 'accepted' | 'ended';
+  callerUserId: number;
+  calleeUserId: number;
+  caller: {id: number; nickname: string; name: string; avatarUrl: string | null};
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string | null;
+  acceptedAt: string | null;
+  endedAt: string | null;
+  endReason: 'hangup' | 'reject' | 'timeout' | 'busy' | 'failed' | 'disconnect' | null;
+}
+```
+
+PWA/Web Push:
+
+- если callee не имеет активного WS-подключения, `call:start` отправляет high-priority Web Push `type: 'incoming_call'`;
+- service worker показывает уведомление с deep-link `/chat?room=<roomId>&callId=<callId>` и actions `answer/reject` там, где браузер их поддерживает;
+- фактический `getUserMedia` и WebRTC стартуют только после открытия PWA/вкладки.

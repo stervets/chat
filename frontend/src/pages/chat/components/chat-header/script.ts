@@ -1,9 +1,10 @@
-import {Bell, Menu, Pin, Settings, ShieldCheck, Trash2, UserPlus} from 'lucide-vue-next';
+import {Bell, Menu, Phone, Pin, Settings, ShieldCheck, Trash2, UserPlus} from 'lucide-vue-next';
 
 export default {
   components: {
     Bell,
     Menu,
+    Phone,
     Pin,
     Settings,
     ShieldCheck,
@@ -17,6 +18,8 @@ export default {
     canBackToDiscussionSource: Boolean,
     canDeleteActiveRoom: Boolean,
     canPinActiveDialog: Boolean,
+    canStartCall: Boolean,
+    callButtonDisabled: Boolean,
     getDialogAvatarFallback: {
       type: Function,
       required: true,
@@ -77,6 +80,7 @@ export default {
     'open-own-profile-page',
     'open-vpn-page',
     'pin-active-dialog',
+    'start-call',
     'toggle-notifications-menu',
     'toggle-room-invite-panel',
   ],

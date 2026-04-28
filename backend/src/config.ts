@@ -3,6 +3,12 @@ import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {WS_PATH} from './common/const.js';
 
+type IceServerConfig = {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+};
+
 type ConfigFile = {
   host?: string;
   port?: number;
@@ -24,6 +30,14 @@ type ConfigFile = {
     vapidPrivateKey?: string;
     vapidSubject?: string;
   };
+  webrtc?: {
+    iceServers?: Array<{
+      urls?: string | string[];
+      username?: string;
+      credential?: string;
+    }>;
+    callRingTimeoutMs?: number;
+  };
   db?: {
     url?: string;
   };
@@ -37,6 +51,35 @@ type ConfigFile = {
 };
 
 const trimTrailingSlashes = (value: string) => value.replace(/\/+$/, '');
+
+function normalizePositiveNumber(valueRaw: unknown, fallback: number, min: number, max: number) {
+  const value = Number(valueRaw || 0);
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function normalizeIceServers(raw: unknown): IceServerConfig[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      const source = item as Record<string, unknown>;
+      const urlsRaw = source.urls;
+      const urls = Array.isArray(urlsRaw)
+        ? urlsRaw.map((url) => String(url || '').trim()).filter(Boolean)
+        : String(urlsRaw || '').trim();
+      if (Array.isArray(urls) ? urls.length === 0 : !urls) return null;
+
+      const normalized: IceServerConfig = {urls};
+      const username = String(source.username || '').trim();
+      const credential = String(source.credential || '').trim();
+      if (username) normalized.username = username;
+      if (credential) normalized.credential = credential;
+      return normalized;
+    })
+    .filter((item): item is IceServerConfig => !!item);
+}
 
 const loadConfig = (): ConfigFile => {
   try {
@@ -64,6 +107,10 @@ const resolvedCorsOrigins = fileConfig.corsOrigins || defaultCorsOrigins;
 const fallbackInviteBaseUrl = resolvedCorsOrigins.find((origin) => origin && origin !== '*')
   || 'http://localhost:8815';
 const inviteBaseUrl = trimTrailingSlashes(fileConfig.inviteBaseUrl || fallbackInviteBaseUrl);
+const configuredIceServers = normalizeIceServers(fileConfig.webrtc?.iceServers);
+const fallbackIceServers: IceServerConfig[] = [
+  {urls: 'stun:stun.l.google.com:19302'},
+];
 
 export const config = {
   env: 'development',
@@ -96,5 +143,9 @@ export const config = {
     vapidPublicKey: String(fileConfig.push?.vapidPublicKey || '').trim(),
     vapidPrivateKey: String(fileConfig.push?.vapidPrivateKey || '').trim(),
     vapidSubject: String(fileConfig.push?.vapidSubject || '').trim(),
+  },
+  webrtc: {
+    iceServers: configuredIceServers.length > 0 ? configuredIceServers : fallbackIceServers,
+    callRingTimeoutMs: normalizePositiveNumber(fileConfig.webrtc?.callRingTimeoutMs, 45_000, 10_000, 5 * 60_000),
   },
 };

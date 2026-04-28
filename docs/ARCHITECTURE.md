@@ -241,3 +241,22 @@ Runtime определяется только полями node:
 - перенос memberships/reactions/game sessions;
 - финальная валидация counts + semantic invariants;
 - удаление legacy graph/columns/types после успешного переноса.
+
+## Direct WebRTC voice calls
+
+1-1 звонки реализованы поверх direct-комнат:
+
+- WebSocket остаётся signaling-каналом (`call:*` commands/events).
+- Media-трафик не проходит через backend: браузеры соединяются через `RTCPeerConnection`.
+- Backend держит состояние звонков в памяти (`ChatCallsService`): `ringing`, `accepted`, `ended`.
+- На одном backend instance нельзя начать второй активный звонок для тех же участников.
+- При disconnect последнего WS-сокета пользователя его активные звонки завершаются с reason `disconnect`.
+- Ringing-звонки автоматически истекают по `config.webrtc.callRingTimeoutMs`.
+
+PWA поведение:
+
+- открытая вкладка получает `call:incoming` по WS и показывает in-app overlay;
+- закрытая/спящая PWA получает Web Push `incoming_call`, service worker открывает `/chat?room=<roomId>&callId=<callId>`;
+- ответ/отклонение из notification action обрабатываются через route query `callAction=answer|reject` после открытия приложения.
+
+При горизонтальном масштабировании backend call-state нужно вынести из in-memory `Map` в Redis/Postgres + pub/sub, иначе два участника одного звонка могут попасть на разные instances.

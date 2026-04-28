@@ -10,6 +10,39 @@ export type DirectDialog = {
   roomSurface?: RoomSurface | null;
 };
 
+
+
+export type DirectCallPhase = 'idle' | 'incoming' | 'outgoing' | 'connecting' | 'connected' | 'ended';
+export type DirectCallDirection = 'incoming' | 'outgoing' | null;
+export type DirectCallStatus = 'ringing' | 'accepted' | 'ended';
+export type DirectCallEndReason = 'hangup' | 'reject' | 'timeout' | 'busy' | 'failed' | 'disconnect' | null;
+
+export type DirectCallUser = Pick<User, 'id' | 'nickname' | 'name' | 'avatarUrl' | 'nicknameColor' | 'donationBadgeUntil'>;
+
+export type DirectCallPayload = {
+  callId: string;
+  roomId: number;
+  status: DirectCallStatus;
+  callerUserId: number;
+  calleeUserId: number;
+  caller: DirectCallUser;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string | null;
+  acceptedAt: string | null;
+  endedAt: string | null;
+  endReason: DirectCallEndReason;
+};
+
+export type DirectCallSignalPayload = {
+  callId: string;
+  roomId: number;
+  fromUserId: number;
+  toUserId: number;
+  type: 'offer' | 'answer' | 'ice-candidate';
+  payload: unknown;
+};
+
 export type LinkPreview = {
   key: string;
   type: 'image' | 'video' | 'embed' | 'youtube';

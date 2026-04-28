@@ -184,6 +184,23 @@ export const chatMethodsRuntimeAndRouting = {
       }
     },
 
+    async playIncomingCallSound(this: any) {
+      if (!this.soundEnabled || !this.soundReady) return;
+      if (this.isWindowInactive()) return;
+
+      const soundPlayer = this.ensureNotificationSoundPlayer();
+      if (!soundPlayer) return;
+
+      try {
+        if (!soundPlayer.isReady) {
+          await soundPlayer.preloadPromise;
+        }
+        await soundPlayer.play('incomingCall', NOTIFICATION_SOUND_VOLUME);
+      } catch {
+        this.notificationSoundPlayer = null;
+      }
+    },
+
     onSoundOverlayConfirm(this: any) {
       this.soundOverlayVisible = false;
       this.markSoundReady();

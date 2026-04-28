@@ -179,3 +179,6 @@ yarn run frontend:dev
 - сортировка директов в левом drawer обновлена под приоритет: `1) unread`, `2) online`, `3) алфавит (name/nickname)`; сортировка по `lastMessageAt` и приоритет закрепа в ordering убраны;
 - звук уведомлений усилен по отказоустойчивости: `SoundPlayer` больше не «падает насовсем» при единичной ошибке загрузки/декода, использует `Promise.allSettled` для preload и fallback через `HTMLAudioElement`, а `playNotificationSound` при ошибке сбрасывает только инстанс плеера для автоповтора, не выключая глобальный `soundReady`;
 - воспроизведение уведомлений переведено на `frontend/src/composables/classes/sound-player.ts`; `soundList` очищен от legacy-набора и оставлен один звук `notification: '/ping.mp3'`.
+- backend `config.json` теперь явно содержит секцию `webrtc` (`iceServers` + `callRingTimeoutMs`), чтобы голосовые direct-звонки использовали конфиг без fallback-режима по умолчанию.
+- локальный e2e-конфиг `scripts/config.json` возвращён на пароль `123` для пользователя `lisov`; TURN-заглушки `CHANGE_ME` в `backend/config.json` заменены на конкретные значения (`username`/`credential`) для webrtc-секции.
+- для входящего звонка в чате добавлен отдельный звук `incomingCall: '/ringtone.mp3'`; обычные уведомления сообщений остаются на `notification: '/ping.mp3'`.

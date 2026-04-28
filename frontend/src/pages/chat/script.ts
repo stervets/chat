@@ -10,6 +10,7 @@ import PinnedPanel from './components/pinned-panel/index.vue';
 import ChatMessageFeed from './components/chat-message-feed/index.vue';
 import ChatComposer from './components/chat-composer/index.vue';
 import ChatImageViewer from './components/chat-image-viewer/index.vue';
+import ChatCallOverlay from './components/chat-call-overlay/index.vue';
 import {
   VIRTUAL_MAX_ITEMS,
   type DirectDialog,
@@ -23,6 +24,7 @@ import {chatMethodsMessageBodyAndReactions} from './modules/methods-message-body
 import {chatMethodsAuthDialogsAndProfile} from './modules/methods-auth-dialogs-and-profile';
 import {chatMethodsSendUploadAndRuntime} from './modules/methods-send-upload-and-runtime';
 import {chatMethodsScriptableRuntime} from './modules/methods-scriptable-runtime';
+import {chatMethodsCalls} from './modules/methods-calls';
 
 export default {
   components: {
@@ -33,6 +35,7 @@ export default {
     ChatMessageFeed,
     ChatComposer,
     ChatImageViewer,
+    ChatCallOverlay,
     ChatHeader,
   },
 
@@ -328,6 +331,34 @@ export default {
       return !!this.isActiveDialogAdmin;
     },
 
+    canStartCall(this: any) {
+      if (!this.activeDialog || this.activeDialog.kind !== 'direct') return false;
+      if (this.isSystemNickname(this.activeDialog?.targetUser?.nickname)) return false;
+      return true;
+    },
+
+    callButtonDisabled(this: any) {
+      return this.wsOffline || (this.callPhase !== 'idle' && this.callPhase !== 'ended');
+    },
+
+    callPeerName(this: any) {
+      const user = this.getCallPeerUser?.(this.activeCall) || this.activeDialog?.targetUser || null;
+      return String(user?.name || user?.nickname || 'Собеседник').trim() || 'Собеседник';
+    },
+
+    callPeerAvatarUrl(this: any) {
+      const user = this.getCallPeerUser?.(this.activeCall) || this.activeDialog?.targetUser || null;
+      return String(user?.avatarUrl || '');
+    },
+
+    callDurationText(this: any) {
+      const startedAt = Number(this.callStartedAt || 0);
+      if (!startedAt) return '00:00';
+      const elapsed = Math.max(0, Math.floor((Number(this.callDurationNow || Date.now()) - startedAt) / 1000));
+      const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+      const seconds = Math.floor(elapsed % 60).toString().padStart(2, '0');
+      return minutes + ':' + seconds;
+    },
     activeRoomSurface(this: any) {
       const fallbackSurfaceId = Number(this.activePinnedMessage?.id || this.activeDialog?.pinnedNodeId || 0) || null;
       return this.normalizeRoomSurface(this.activeDialog?.roomSurface, fallbackSurfaceId);
@@ -396,7 +427,10 @@ export default {
   watch: {
     'route.fullPath'(this: any) {
       if (!this.routeSyncReady) return;
-      void this.onRouteChanged();
+      void (async () => {
+        await this.onRouteChanged();
+        await this.handleCallRouteIntent();
+      })();
     },
   },
 
@@ -412,6 +446,7 @@ export default {
     ...chatMethodsAuthDialogsAndProfile,
     ...chatMethodsSendUploadAndRuntime,
     ...chatMethodsScriptableRuntime,
+    ...chatMethodsCalls,
   },
 
   async mounted(this: any) {
@@ -461,7 +496,22 @@ export default {
     this.usersUpdatedHandler = (user: User) => {
       this.onUsersUpdated(user);
     };
-    this.disconnectedHandler = () => this.onDisconnected();
+    this.callIncomingHandler = (payload: any) => {
+      void this.onCallIncoming(payload);
+    };
+    this.callAcceptedHandler = (payload: any) => {
+      void this.onCallAccepted(payload);
+    };
+    this.callEndedHandler = (payload: any) => {
+      this.onCallEnded(payload);
+    };
+    this.callSignalHandler = (payload: any) => {
+      void this.onCallSignal(payload);
+    };
+    this.disconnectedHandler = () => {
+      this.onDisconnected();
+      this.onCallWsDisconnected();
+    };
     this.reconnectedHandler = () => {
       void this.onWsReconnected();
     };
@@ -487,6 +537,10 @@ export default {
     on('message:comment:notify', this.chatCommentNotifyHandler);
     on('contacts:updated', this.contactsUpdatedHandler);
     on('user:updated', this.usersUpdatedHandler);
+    on('call:incoming', this.callIncomingHandler);
+    on('call:accepted', this.callAcceptedHandler);
+    on('call:ended', this.callEndedHandler);
+    on('call:signal', this.callSignalHandler);
     on('ws:disconnected', this.disconnectedHandler);
     on('ws:reconnected', this.reconnectedHandler);
     on('ws:session-expired', this.sessionExpiredHandler);
@@ -515,6 +569,7 @@ export default {
     await this.syncDialogFromRoute({replaceInvalid: true});
     this.routeSyncReady = true;
     await this.onRouteChanged();
+    await this.handleCallRouteIntent();
     this.scheduleVirtualSync();
   },
 
@@ -531,6 +586,10 @@ export default {
     this.chatCommentNotifyHandler && off('message:comment:notify', this.chatCommentNotifyHandler);
     this.contactsUpdatedHandler && off('contacts:updated', this.contactsUpdatedHandler);
     this.usersUpdatedHandler && off('user:updated', this.usersUpdatedHandler);
+    this.callIncomingHandler && off('call:incoming', this.callIncomingHandler);
+    this.callAcceptedHandler && off('call:accepted', this.callAcceptedHandler);
+    this.callEndedHandler && off('call:ended', this.callEndedHandler);
+    this.callSignalHandler && off('call:signal', this.callSignalHandler);
     this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
     this.reconnectedHandler && off('ws:reconnected', this.reconnectedHandler);
     this.sessionExpiredHandler && off('ws:session-expired', this.sessionExpiredHandler);
@@ -571,5 +630,6 @@ export default {
     this.persistHandledMessageNotificationIds();
     this.stopPinnedSplitterDrag();
     this.disposeScriptRuntimeManager();
+    this.disposeCallRuntime(false);
   },
 };
