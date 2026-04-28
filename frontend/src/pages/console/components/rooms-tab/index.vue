@@ -129,6 +129,11 @@
                       <span>{{ roomSaving ? 'Сохраняю...' : 'Сохранить комнату' }}</span>
                     </button>
                   </div>
+                  <div class="action-row room-delete-row">
+                    <button class="ghost-btn danger-btn room-delete-btn" :disabled="roomDeleteBusy" @click="onDeleteRoom">
+                      <span>{{ roomDeleteBusy ? 'Удаляю...' : 'Удалить комнату' }}</span>
+                    </button>
+                  </div>
                   <div v-if="roomSaveSuccess" class="success">{{ roomSaveSuccess }}</div>
                   <div v-if="roomSaveError" class="error">{{ roomSaveError }}</div>
                 </template>
@@ -145,28 +150,30 @@
                 <div v-if="roomMembersLoading" class="hint">Загружаю участников...</div>
                 <div v-else-if="sortedRoomMembers.length" class="member-list">
                   <div v-for="member in sortedRoomMembers" :key="`member-${member.id}`" class="member-item">
-                    <span class="member-status" :class="{online: member.isOnline}" />
-                    <img
-                      v-if="resolveUserAvatarUrl(member)"
-                      class="room-avatar room-avatar-sm"
-                      :src="resolveUserAvatarUrl(member)"
-                      :alt="member.name"
-                    />
-                    <div v-else class="room-avatar room-avatar-fallback room-avatar-sm">
-                      {{ userAvatarFallback(member) }}
-                    </div>
-                    <div class="member-text">
-                      <div class="member-name-row">
-                        <span v-if="isSystemNickname(member.nickname)" class="system-star">★</span>
-                        <span class="member-name" :style="{color: member.nicknameColor || undefined}">{{ member.name }}</span>
+                    <button class="member-open-btn" type="button" @click="openRoomMemberProfile(member)">
+                      <span class="member-status" :class="{online: member.isOnline}" />
+                      <img
+                        v-if="resolveUserAvatarUrl(member)"
+                        class="room-avatar room-avatar-sm"
+                        :src="resolveUserAvatarUrl(member)"
+                        :alt="member.name"
+                      />
+                      <div v-else class="room-avatar room-avatar-fallback room-avatar-sm">
+                        {{ userAvatarFallback(member) }}
                       </div>
-                      <div class="member-nickname">@{{ member.nickname }}</div>
-                    </div>
+                      <div class="member-text">
+                        <div class="member-name-row">
+                          <span v-if="isSystemNickname(member.nickname)" class="system-star">★</span>
+                          <span class="member-name" :style="{color: member.nicknameColor || undefined}">{{ member.name }}</span>
+                        </div>
+                        <div class="member-nickname">@{{ member.nickname }}</div>
+                      </div>
+                    </button>
                     <button
                       v-if="canKickRoomMember(member)"
                       class="ghost-btn danger-btn member-kick-btn"
                       :disabled="isRoomMemberActionBusy(member.id)"
-                      @click="onKickRoomMember(member)"
+                      @click.stop="onKickRoomMember(member)"
                     >
                       <UserRoundMinus :size="14" />
                       <span>{{ isRoomMemberActionBusy(member.id) ? '...' : 'Выкинуть' }}</span>
