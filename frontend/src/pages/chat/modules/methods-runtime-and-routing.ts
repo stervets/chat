@@ -247,7 +247,7 @@ export const chatMethodsRuntimeAndRouting = {
 
       let audio = this.outgoingCallMusicAudio as HTMLAudioElement | null;
       if (!audio) {
-        audio = new Audio('/music.mp3');
+        audio = new Audio('/callout.mp3');
         audio.preload = 'auto';
         audio.loop = true;
         audio.volume = NOTIFICATION_SOUND_VOLUME;

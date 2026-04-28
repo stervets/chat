@@ -186,7 +186,7 @@ yarn run frontend:dev
 - в call overlay добавлена вибрация на пользовательские call-actions: `Завершить` (hangup) и `Вкл./Выкл. микрофон` (mute toggle); системный `hangup('failed')` по ошибкам по-прежнему без хаптика.
 - добавлены отдельные call-звуки: `callOn: '/callon.mp3'` и `callOff: '/calloff.mp3'` в `SoundPlayer`.
 - `callOn` проигрывается на действии `Ответить`, `callOff` — на `Отклонить`, `Завершить` и при прерывании звонка (`call:ended`, потеря WS-соединения в активном звонке).
-- при исходящем звонке в фазе ожидания ответа (`callPhase='outgoing'`) теперь лупится `music.mp3`; музыка останавливается при любом выходе из фазы ожидания (accepted/ended/hangup/disconnect/reset/dispose) и при выключении звука.
+- при исходящем звонке в фазе ожидания ответа (`callPhase='outgoing'`) теперь лупится `callout.mp3`; музыка останавливается при любом выходе из фазы ожидания (accepted/ended/hangup/disconnect/reset/dispose) и при выключении звука.
 - подписки/отписки событий в `frontend/src/pages/chat/script.ts` упрощены до прямых вызовов `on/off` и `add/removeEventListener` без промежуточных handler-прокладок и без массивов `busBindings/windowBindings`; сохранён только отдельный метод `onWsDisconnectedWithCall` для объединённого side-effect (`onDisconnected` + `onCallWsDisconnected`);
 - в `frontend/src/pages/games/session/[id]/script.ts` подписки `game:session:updated`, `game:state:updated`, `message:created` переведены на прямые `on/off` без временных коллекций биндингов;
 - в `frontend/src/pages/chat/message-item/script.ts` и `frontend/src/pages/chat/components/chat-composer/script.ts` удалены промежуточные resize-handler поля: resize теперь вешается/снимается напрямую на методы;
