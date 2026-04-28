@@ -11,6 +11,22 @@
       <div class="content">
         <h1>Invite</h1>
         <p>Код: <span class="code">{{ code }}</span></p>
+        <div v-if="isTelegramMode" class="telegram-warning">
+          <p class="telegram-warning-text">
+            Если Вы открыли эту ссылку через Telegram, откройте её в обычном браузере!
+          </p>
+          <a
+            class="telegram-warning-link"
+            :href="openInBrowserUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ openInBrowserUrl }}
+          </a>
+          <button class="telegram-warning-btn" type="button" @click="onOpenInBrowserClick">
+            Попробовать открыть в браузере
+          </button>
+        </div>
         <div class="form">
           <template v-if="existingUserApplied">
             <div class="hint">{{ existingUserMessage }}</div>

@@ -3,6 +3,7 @@ import {db} from '../../db.js';
 import {
   createGroupRoom,
   ensureUserInRoom,
+  ensureUserInMarxNewsRoom,
   getRoomById,
   getOrCreateDirectRoom,
   getOrCreateGroupRoom,
@@ -251,26 +252,55 @@ export class ChatDialogsService {
   }> {
     const authError = this.ctx.result.requireAuth(state);
     if (authError) return authError;
+    const toDefaultPayload = async (room: RoomRow) => {
+      const roomRuntime = await this.loadRoomRuntime(room.id);
+      return {
+        roomId: room.id,
+        dialogId: room.id,
+        type: 'group' as const,
+        joined: room.member_user_ids.includes(state.user!.id),
+        title: room.title || 'Общий чат',
+        visibility: room.visibility,
+        commentsEnabled: room.comments_enabled,
+        avatarUrl: this.ctx.users.toRoomAvatarUrl(room.avatar_path),
+        postOnlyByAdmin: !!room.post_only_by_admin,
+        createdById: room.created_by || null,
+        pinnedNodeId: room.pinned_node_id || null,
+        roomSurface: this.toRoomSurfacePayload(room, roomRuntime, null, roomRuntime?.pinnedNodeId),
+      };
+    };
+
+    const joinedGroups = await this.roomListJoined(state, 'joined');
+    if (Array.isArray(joinedGroups) && joinedGroups.length > 0) {
+      const joinedRoom = await getRoomById(Number(joinedGroups[0].roomId || 0));
+      if (joinedRoom) {
+        return toDefaultPayload(joinedRoom);
+      }
+    }
+
+    const marxNewsRoom = await ensureUserInMarxNewsRoom(state.user!.id);
+    if (marxNewsRoom) {
+      return toDefaultPayload(marxNewsRoom);
+    }
+
+    const publicGroups = await this.roomListJoined(state, 'public');
+    if (Array.isArray(publicGroups) && publicGroups.length > 0) {
+      const publicRoom = await getRoomById(Number(publicGroups[0].roomId || 0));
+      if (publicRoom) {
+        return toDefaultPayload(publicRoom);
+      }
+    }
 
     const room = await getOrCreateGroupRoom(state.user!.id, {
       backfillUsers: false,
-      addCreator: false,
+      addCreator: true,
     });
-    const roomRuntime = await this.loadRoomRuntime(room.id);
-    return {
-      roomId: room.id,
-      dialogId: room.id,
-      type: 'group',
-      joined: room.member_user_ids.includes(state.user!.id),
-      title: room.title || 'Общий чат',
-      visibility: room.visibility,
-      commentsEnabled: room.comments_enabled,
-      avatarUrl: this.ctx.users.toRoomAvatarUrl(room.avatar_path),
-      postOnlyByAdmin: !!room.post_only_by_admin,
-      createdById: room.created_by || null,
-      pinnedNodeId: room.pinned_node_id || null,
-      roomSurface: this.toRoomSurfacePayload(room, roomRuntime, null, roomRuntime?.pinnedNodeId),
-    };
+    await ensureUserInRoom(room.id, state.user!.id);
+    const refreshed = await getRoomById(room.id);
+    if (!refreshed) {
+      return {ok: false, error: 'room_not_found'};
+    }
+    return toDefaultPayload(refreshed);
   }
 
   async roomDirectGetOrCreate(state: SocketState, userIdRaw: unknown): Promise<ApiError | {

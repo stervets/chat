@@ -9,10 +9,11 @@ export default {
   },
 
   setup() {
-    const {isInstalled, installApp} = usePwaInstall();
+    const {isInstalled, installApp, isTelegramInApp} = usePwaInstall();
     return {
       isInstalled,
       installApp,
+      isTelegramInApp,
       installBusy: ref(false),
     };
   },

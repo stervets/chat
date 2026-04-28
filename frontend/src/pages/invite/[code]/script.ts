@@ -1,11 +1,21 @@
 import {ref} from 'vue';
 import {restoreSession, wsCheckInvite, wsObject, wsRedeemInvite} from '@/composables/ws-rpc';
 import {vibrateConfirm, vibrateError} from '@/utils/vibrate';
+import {usePwaInstall} from '@/composables/use-pwa-install';
 
 export default {
   async setup() {
     const route = useRoute();
     const codeParam = Array.isArray(route.params.code) ? route.params.code[0] : route.params.code;
+    const querySource = String(
+      (Array.isArray(route.query?.src) ? route.query.src[0] : route.query?.src)
+      || (Array.isArray(route.query?.from) ? route.query.from[0] : route.query?.from)
+      || ''
+    ).trim().toLowerCase();
+    const forcedTelegramMode = querySource === 'tg'
+      || querySource === 'telegram'
+      || querySource === '1';
+    const {isTelegramInApp} = usePwaInstall();
     return {
       router: useRouter(),
       code: ref(codeParam || ''),
@@ -17,7 +27,21 @@ export default {
       inviteValid: ref(false),
       existingUserApplied: ref(false),
       existingUserMessage: ref(''),
+      isTelegramInApp,
+      forceTelegramMode: ref(forcedTelegramMode),
+      telegramExternalOpenAttempted: ref(false),
     };
+  },
+
+  computed: {
+    openInBrowserUrl(this: any) {
+      const code = encodeURIComponent(String(this.code || '').trim());
+      return `https://marx.core5.ru/invite/${code}`;
+    },
+
+    isTelegramMode(this: any) {
+      return !!this.isTelegramInApp || !!this.forceTelegramMode;
+    },
   },
 
   methods: {
@@ -137,9 +161,68 @@ export default {
     async onGoChat(this: any) {
       await this.router.push('/chat');
     },
+
+    markTelegramOpenAttempt(this: any) {
+      if (typeof window === 'undefined') return;
+      const code = String(this.code || '').trim();
+      if (!code) return;
+      window.sessionStorage.setItem(`invite:telegram-open-attempt:${code}`, '1');
+    },
+
+    hasTelegramOpenAttempt(this: any) {
+      if (typeof window === 'undefined') return false;
+      const code = String(this.code || '').trim();
+      if (!code) return false;
+      return window.sessionStorage.getItem(`invite:telegram-open-attempt:${code}`) === '1';
+    },
+
+    tryOpenInBrowserFromTelegram(this: any) {
+      if (typeof window === 'undefined') return;
+      if (!this.isTelegramMode) return;
+      if (this.telegramExternalOpenAttempted) return;
+
+      const targetUrl = String(this.openInBrowserUrl || '').trim();
+      if (!targetUrl) return;
+
+      this.telegramExternalOpenAttempted = true;
+      if (this.hasTelegramOpenAttempt()) return;
+      this.markTelegramOpenAttempt();
+
+      const tgWebApp = (window as any)?.Telegram?.WebApp;
+      try {
+        tgWebApp?.openLink?.(targetUrl, {try_browser: 'chrome'});
+      } catch {
+        // no-op
+      }
+
+      const userAgent = String(window.navigator?.userAgent || '').toLowerCase();
+      const isAndroid = userAgent.includes('android');
+      if (isAndroid) {
+        const code = encodeURIComponent(String(this.code || '').trim());
+        const intentUrl = `intent://marx.core5.ru/invite/${code}#Intent;scheme=https;package=com.android.chrome;end`;
+        window.setTimeout(() => {
+          window.location.href = intentUrl;
+        }, 120);
+      }
+
+      window.setTimeout(() => {
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      }, 220);
+    },
+
+    onOpenInBrowserClick(this: any) {
+      this.tryOpenInBrowserFromTelegram();
+    },
   },
 
   async mounted(this: any) {
+    if (typeof window !== 'undefined') {
+      const referrer = String(document.referrer || '').toLowerCase();
+      if (referrer.includes('t.me') || referrer.includes('telegram')) {
+        this.forceTelegramMode = true;
+      }
+    }
+    this.tryOpenInBrowserFromTelegram();
     await this.validateInvite();
     await this.tryRedeemForAuthorizedUser();
   },

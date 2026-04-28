@@ -1,8 +1,14 @@
 <template>
   <section v-if="shouldRender" class="pwa-install-card">
     <div class="pwa-head">Установить MARX на рабочий стол</div>
+    <p v-if="showTelegramWarning" class="pwa-warning">
+      Для установки приложения открой сайт
+      <a href="https://marx.core5.ru" target="_blank" rel="noopener noreferrer">https://marx.core5.ru</a>
+      во внешнем браузере.
+    </p>
+
     <button
-      v-if="showInstallButton"
+      v-else-if="showInstallButton"
       class="pwa-action"
       type="button"
       @click="onInstall"
@@ -16,15 +22,6 @@
       </button>
       <p v-if="showIosInstructions" class="pwa-note">
         Открой в Safari меню «Поделиться» и выбери «На экран Домой».
-      </p>
-    </div>
-
-    <div v-else-if="showTelegramHelperButton" class="pwa-ios-wrap">
-      <button class="pwa-action pwa-action-secondary" type="button" @click="toggleInstallFallback">
-        {{ showInstallFallback ? 'Скрыть инструкцию' : 'Как установить из Telegram' }}
-      </button>
-      <p v-if="showInstallFallback" class="pwa-note">
-        Встроенный браузер Telegram не устанавливает PWA. Открой страницу во внешнем браузере и выбери «Добавить на экран Домой».
       </p>
     </div>
 

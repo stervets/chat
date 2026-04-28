@@ -79,7 +79,15 @@ export const chatMethodsNotifications = {
     },
 
     updateFaviconBlinkByUnread(this: any) {
-      if (this.unreadNotificationsCount > 0 || this.inactiveTabUnread) {
+      const unreadCount = Number(this.unreadNotificationsCount || 0);
+      const isDocumentVisible = this.documentVisible !== false;
+
+      // Защита от "залипания" блинка без реальных unread в видимой вкладке.
+      if (unreadCount <= 0 && isDocumentVisible && this.inactiveTabUnread) {
+        this.inactiveTabUnread = false;
+      }
+
+      if (unreadCount > 0 || this.inactiveTabUnread) {
         this.startFaviconBlink();
         return;
       }

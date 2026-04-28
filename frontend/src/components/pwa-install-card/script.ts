@@ -13,6 +13,10 @@ export default {
       return this.isInstallAvailable || this.isIos || this.isTelegramInApp;
     },
 
+    showTelegramWarning(this: any) {
+      return !this.isInstalled && this.isTelegramInApp;
+    },
+
     showInstallButton(this: any) {
       return !this.isInstalled && this.isInstallAvailable;
     },
@@ -24,10 +28,6 @@ export default {
     showIosNonSafariHint(this: any) {
       return !this.isInstalled && !this.isInstallAvailable && this.isIos && !this.isSafari;
     },
-
-    showTelegramHelperButton(this: any) {
-      return !this.isInstalled && !this.isInstallAvailable && this.isTelegramInApp;
-    },
   },
 
   methods: {
@@ -37,10 +37,6 @@ export default {
 
     toggleIosInstructions(this: any) {
       this.showIosInstructions = !this.showIosInstructions;
-    },
-
-    toggleInstallFallback(this: any) {
-      this.showInstallFallback = !this.showInstallFallback;
     },
   },
 };
