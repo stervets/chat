@@ -35,9 +35,6 @@ export default {
       chatMessages: ref<RoomMessage[]>([]),
       chatInput: ref(''),
       chatSendPending: ref(false),
-      gamesSessionHandler: ref<Function | null>(null),
-      gamesStateHandler: ref<Function | null>(null),
-      chatMessageHandler: ref<Function | null>(null),
     };
   },
 
@@ -365,26 +362,16 @@ export default {
 
     this.sessionId = parsedSessionId;
 
-    this.gamesSessionHandler = (payload: any) => {
-      this.onGamesSession(payload);
-    };
-    this.gamesStateHandler = (payload: any) => {
-      this.onGamesState(payload);
-    };
-    this.chatMessageHandler = (payload: any) => {
-      this.onChatMessage(payload);
-    };
-
-    on('game:session:updated', this.gamesSessionHandler);
-    on('game:state:updated', this.gamesStateHandler);
-    on('message:created', this.chatMessageHandler);
+    on('game:session:updated', this.onGamesSession);
+    on('game:state:updated', this.onGamesState);
+    on('message:created', this.onChatMessage);
 
     await this.fetchSession();
   },
 
   beforeUnmount(this: any) {
-    this.gamesSessionHandler && off('game:session:updated', this.gamesSessionHandler);
-    this.gamesStateHandler && off('game:state:updated', this.gamesStateHandler);
-    this.chatMessageHandler && off('message:created', this.chatMessageHandler);
+    off('game:session:updated', this.onGamesSession);
+    off('game:state:updated', this.onGamesState);
+    off('message:created', this.onChatMessage);
   },
 };

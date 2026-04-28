@@ -30,7 +30,6 @@ export default {
   setup() {
     return {
       localMessageInputEl: ref<HTMLTextAreaElement | null>(null),
-      inputResizeHandler: ref<(() => void) | null>(null),
     };
   },
 
@@ -70,22 +69,14 @@ export default {
   },
 
   mounted(this: any) {
-    this.inputResizeHandler = () => {
-      this.resizeMessageInputHeight();
-    };
-    if (this.inputResizeHandler) {
-      window.addEventListener('resize', this.inputResizeHandler);
-    }
+    window.addEventListener('resize', this.resizeMessageInputHeight);
     void nextTick(() => {
       this.resizeMessageInputHeight();
     });
   },
 
   beforeUnmount(this: any) {
-    if (this.inputResizeHandler) {
-      window.removeEventListener('resize', this.inputResizeHandler);
-      this.inputResizeHandler = null;
-    }
+    window.removeEventListener('resize', this.resizeMessageInputHeight);
   },
 
   methods: {

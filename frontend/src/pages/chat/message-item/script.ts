@@ -156,7 +156,6 @@ export default {
       showHiddenText: ref(false),
       rootEl: ref<HTMLElement | null>(null),
       editInputEl: ref<HTMLTextAreaElement | null>(null),
-      editInputResizeHandler: ref<(() => void) | null>(null),
       reactionControlsEl: ref<HTMLElement | null>(null),
       reactionPickerEl: ref<HTMLElement | null>(null),
       reactionPickerDirection: ref<'up' | 'down'>('down'),
@@ -450,12 +449,7 @@ export default {
   },
 
   mounted(this: any) {
-    this.editInputResizeHandler = () => {
-      this.resizeEditInputHeight();
-    };
-    if (this.editInputResizeHandler) {
-      window.addEventListener('resize', this.editInputResizeHandler);
-    }
+    window.addEventListener('resize', this.resizeEditInputHeight);
     if (this.isEditing) {
       nextTick(() => {
         this.resizeEditInputHeight();
@@ -475,10 +469,7 @@ export default {
   },
 
   beforeUnmount(this: any) {
-    if (this.editInputResizeHandler) {
-      window.removeEventListener('resize', this.editInputResizeHandler);
-      this.editInputResizeHandler = null;
-    }
+    window.removeEventListener('resize', this.resizeEditInputHeight);
     if (typeof window !== 'undefined') {
       Object.values(this.reactionPopTimerByKey as Record<string, number>).forEach((timerId) => {
         clearTimeout(Number(timerId));

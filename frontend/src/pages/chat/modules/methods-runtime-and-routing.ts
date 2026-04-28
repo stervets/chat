@@ -169,7 +169,6 @@ export const chatMethodsRuntimeAndRouting = {
 
     async playNotificationSound(this: any) {
       if (!this.soundEnabled || !this.soundReady) return;
-      if (this.isWindowInactive()) return;
 
       const soundPlayer = this.ensureNotificationSoundPlayer();
       if (!soundPlayer) return;
@@ -186,7 +185,6 @@ export const chatMethodsRuntimeAndRouting = {
 
     async playIncomingCallSound(this: any) {
       if (!this.soundEnabled || !this.soundReady) return;
-      if (this.isWindowInactive()) return;
 
       const soundPlayer = this.ensureNotificationSoundPlayer();
       if (!soundPlayer) return;

@@ -439,6 +439,11 @@ export default {
       this[name] = el || null;
     },
 
+    onWsDisconnectedWithCall(this: any) {
+      this.onDisconnected();
+      this.onCallWsDisconnected();
+    },
+
     ...chatMethodsRuntimeAndRouting,
     ...chatMethodsComposerAndVirtual,
     ...chatMethodsNotifications,
@@ -460,96 +465,32 @@ export default {
     this.initBrowserNotifications();
     await this.initWebPush();
 
-    this.chatMessageHandler = (message: Message) => {
-      void this.onChatMessage(message);
-    };
-    this.chatMessageUpdatedHandler = (message: Message) => {
-      this.onChatMessageUpdated(message);
-    };
-    this.chatMessageDeletedHandler = (payload: any) => {
-      void this.onChatMessageDeleted(payload);
-    };
-    this.chatPinnedHandler = (payload: any) => {
-      this.onChatPinned(payload);
-    };
-    this.chatRoomUpdatedHandler = (payload: any) => {
-      this.onChatRoomUpdated(payload);
-    };
-    this.chatReactionsHandler = (payload: any) => {
-      this.onChatReactions(payload);
-    };
-    this.dialogsDeletedHandler = (payload: any) => {
-      void this.onDialogDeleted(payload);
-    };
-    this.dialogMessagesClearedHandler = (payload: any) => {
-      void this.onRoomMessagesCleared(payload);
-    };
-    this.chatReactionNotifyHandler = (payload: any) => {
-      this.onChatReactionNotify(payload);
-    };
-    this.chatCommentNotifyHandler = (payload: any) => {
-      this.addCommentNotification(payload);
-    };
-    this.contactsUpdatedHandler = () => {
-      void this.fetchPinnedDirectUserIds();
-    };
-    this.usersUpdatedHandler = (user: User) => {
-      this.onUsersUpdated(user);
-    };
-    this.callIncomingHandler = (payload: any) => {
-      void this.onCallIncoming(payload);
-    };
-    this.callAcceptedHandler = (payload: any) => {
-      void this.onCallAccepted(payload);
-    };
-    this.callEndedHandler = (payload: any) => {
-      this.onCallEnded(payload);
-    };
-    this.callSignalHandler = (payload: any) => {
-      void this.onCallSignal(payload);
-    };
-    this.disconnectedHandler = () => {
-      this.onDisconnected();
-      this.onCallWsDisconnected();
-    };
-    this.reconnectedHandler = () => {
-      void this.onWsReconnected();
-    };
-    this.sessionExpiredHandler = () => {
-      void this.onWsSessionExpired();
-    };
-    this.windowKeydownHandler = (event: KeyboardEvent) => this.onWindowKeydown(event);
-    this.windowResizeHandler = () => this.onWindowResize();
-    this.windowClickHandler = (event: MouseEvent) => this.onWindowClick(event);
-    this.windowFocusHandler = () => this.onWindowFocus();
-    this.windowBlurHandler = () => this.onWindowBlur();
-    this.visibilityChangeHandler = () => this.onVisibilityChange();
+    on('message:created', this.onChatMessage);
+    on('message:updated', this.onChatMessageUpdated);
+    on('message:deleted', this.onChatMessageDeleted);
+    on('room:pin:updated', this.onChatPinned);
+    on('room:updated', this.onChatRoomUpdated);
+    on('message:reactions:updated', this.onChatReactions);
+    on('room:deleted', this.onDialogDeleted);
+    on('room:messages:cleared', this.onRoomMessagesCleared);
+    on('message:reaction:notify', this.onChatReactionNotify);
+    on('message:comment:notify', this.addCommentNotification);
+    on('contacts:updated', this.fetchPinnedDirectUserIds);
+    on('user:updated', this.onUsersUpdated);
+    on('call:incoming', this.onCallIncoming);
+    on('call:accepted', this.onCallAccepted);
+    on('call:ended', this.onCallEnded);
+    on('call:signal', this.onCallSignal);
+    on('ws:disconnected', this.onWsDisconnectedWithCall);
+    on('ws:reconnected', this.onWsReconnected);
+    on('ws:session-expired', this.onWsSessionExpired);
 
-    on('message:created', this.chatMessageHandler);
-    on('message:updated', this.chatMessageUpdatedHandler);
-    on('message:deleted', this.chatMessageDeletedHandler);
-    on('room:pin:updated', this.chatPinnedHandler);
-    on('room:updated', this.chatRoomUpdatedHandler);
-    on('message:reactions:updated', this.chatReactionsHandler);
-    on('room:deleted', this.dialogsDeletedHandler);
-    on('room:messages:cleared', this.dialogMessagesClearedHandler);
-    on('message:reaction:notify', this.chatReactionNotifyHandler);
-    on('message:comment:notify', this.chatCommentNotifyHandler);
-    on('contacts:updated', this.contactsUpdatedHandler);
-    on('user:updated', this.usersUpdatedHandler);
-    on('call:incoming', this.callIncomingHandler);
-    on('call:accepted', this.callAcceptedHandler);
-    on('call:ended', this.callEndedHandler);
-    on('call:signal', this.callSignalHandler);
-    on('ws:disconnected', this.disconnectedHandler);
-    on('ws:reconnected', this.reconnectedHandler);
-    on('ws:session-expired', this.sessionExpiredHandler);
-    window.addEventListener('keydown', this.windowKeydownHandler);
-    window.addEventListener('resize', this.windowResizeHandler);
-    window.addEventListener('click', this.windowClickHandler);
-    window.addEventListener('focus', this.windowFocusHandler);
-    window.addEventListener('blur', this.windowBlurHandler);
-    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
+    window.addEventListener('keydown', this.onWindowKeydown);
+    window.addEventListener('resize', this.onWindowResize);
+    window.addEventListener('click', this.onWindowClick);
+    window.addEventListener('focus', this.onWindowFocus);
+    window.addEventListener('blur', this.onWindowBlur);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
 
     this.initLayout();
     this.loadPinnedPanelLayoutState();
@@ -574,31 +515,32 @@ export default {
   },
 
   beforeUnmount(this: any) {
-    this.chatMessageHandler && off('message:created', this.chatMessageHandler);
-    this.chatMessageUpdatedHandler && off('message:updated', this.chatMessageUpdatedHandler);
-    this.chatMessageDeletedHandler && off('message:deleted', this.chatMessageDeletedHandler);
-    this.chatPinnedHandler && off('room:pin:updated', this.chatPinnedHandler);
-    this.chatRoomUpdatedHandler && off('room:updated', this.chatRoomUpdatedHandler);
-    this.chatReactionsHandler && off('message:reactions:updated', this.chatReactionsHandler);
-    this.dialogsDeletedHandler && off('room:deleted', this.dialogsDeletedHandler);
-    this.dialogMessagesClearedHandler && off('room:messages:cleared', this.dialogMessagesClearedHandler);
-    this.chatReactionNotifyHandler && off('message:reaction:notify', this.chatReactionNotifyHandler);
-    this.chatCommentNotifyHandler && off('message:comment:notify', this.chatCommentNotifyHandler);
-    this.contactsUpdatedHandler && off('contacts:updated', this.contactsUpdatedHandler);
-    this.usersUpdatedHandler && off('user:updated', this.usersUpdatedHandler);
-    this.callIncomingHandler && off('call:incoming', this.callIncomingHandler);
-    this.callAcceptedHandler && off('call:accepted', this.callAcceptedHandler);
-    this.callEndedHandler && off('call:ended', this.callEndedHandler);
-    this.callSignalHandler && off('call:signal', this.callSignalHandler);
-    this.disconnectedHandler && off('ws:disconnected', this.disconnectedHandler);
-    this.reconnectedHandler && off('ws:reconnected', this.reconnectedHandler);
-    this.sessionExpiredHandler && off('ws:session-expired', this.sessionExpiredHandler);
-    this.windowKeydownHandler && window.removeEventListener('keydown', this.windowKeydownHandler);
-    this.windowResizeHandler && window.removeEventListener('resize', this.windowResizeHandler);
-    this.windowClickHandler && window.removeEventListener('click', this.windowClickHandler);
-    this.windowFocusHandler && window.removeEventListener('focus', this.windowFocusHandler);
-    this.windowBlurHandler && window.removeEventListener('blur', this.windowBlurHandler);
-    this.visibilityChangeHandler && document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+    off('message:created', this.onChatMessage);
+    off('message:updated', this.onChatMessageUpdated);
+    off('message:deleted', this.onChatMessageDeleted);
+    off('room:pin:updated', this.onChatPinned);
+    off('room:updated', this.onChatRoomUpdated);
+    off('message:reactions:updated', this.onChatReactions);
+    off('room:deleted', this.onDialogDeleted);
+    off('room:messages:cleared', this.onRoomMessagesCleared);
+    off('message:reaction:notify', this.onChatReactionNotify);
+    off('message:comment:notify', this.addCommentNotification);
+    off('contacts:updated', this.fetchPinnedDirectUserIds);
+    off('user:updated', this.onUsersUpdated);
+    off('call:incoming', this.onCallIncoming);
+    off('call:accepted', this.onCallAccepted);
+    off('call:ended', this.onCallEnded);
+    off('call:signal', this.onCallSignal);
+    off('ws:disconnected', this.onWsDisconnectedWithCall);
+    off('ws:reconnected', this.onWsReconnected);
+    off('ws:session-expired', this.onWsSessionExpired);
+
+    window.removeEventListener('keydown', this.onWindowKeydown);
+    window.removeEventListener('resize', this.onWindowResize);
+    window.removeEventListener('click', this.onWindowClick);
+    window.removeEventListener('focus', this.onWindowFocus);
+    window.removeEventListener('blur', this.onWindowBlur);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.stopFaviconBlink();
     if (this.blinkTimer) {
       clearTimeout(this.blinkTimer);

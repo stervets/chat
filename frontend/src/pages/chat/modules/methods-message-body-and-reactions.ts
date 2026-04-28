@@ -55,16 +55,9 @@ export const chatMethodsMessageBodyAndReactions = {
 
     bindPinnedSplitterDragHandlers(this: any) {
       if (typeof window === 'undefined') return;
-      if (!this.pinnedSplitterPointerMoveHandler) {
-        this.pinnedSplitterPointerMoveHandler = (event: PointerEvent) => this.onPinnedSplitterPointerMove(event);
-      }
-      if (!this.pinnedSplitterPointerUpHandler) {
-        this.pinnedSplitterPointerUpHandler = () => this.onPinnedSplitterPointerUp();
-      }
-
-      window.addEventListener('pointermove', this.pinnedSplitterPointerMoveHandler);
-      window.addEventListener('pointerup', this.pinnedSplitterPointerUpHandler);
-      window.addEventListener('pointercancel', this.pinnedSplitterPointerUpHandler);
+      window.addEventListener('pointermove', this.onPinnedSplitterPointerMove);
+      window.addEventListener('pointerup', this.onPinnedSplitterPointerUp);
+      window.addEventListener('pointercancel', this.onPinnedSplitterPointerUp);
 
       document.body.style.cursor = 'row-resize';
       document.body.style.userSelect = 'none';
@@ -72,13 +65,9 @@ export const chatMethodsMessageBodyAndReactions = {
 
     unbindPinnedSplitterDragHandlers(this: any) {
       if (typeof window === 'undefined') return;
-      if (this.pinnedSplitterPointerMoveHandler) {
-        window.removeEventListener('pointermove', this.pinnedSplitterPointerMoveHandler);
-      }
-      if (this.pinnedSplitterPointerUpHandler) {
-        window.removeEventListener('pointerup', this.pinnedSplitterPointerUpHandler);
-        window.removeEventListener('pointercancel', this.pinnedSplitterPointerUpHandler);
-      }
+      window.removeEventListener('pointermove', this.onPinnedSplitterPointerMove);
+      window.removeEventListener('pointerup', this.onPinnedSplitterPointerUp);
+      window.removeEventListener('pointercancel', this.onPinnedSplitterPointerUp);
 
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
