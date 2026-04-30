@@ -211,3 +211,10 @@ yarn run frontend:dev
 - на странице `/invite/[code]` добавлен видимый debug-блок `User-Agent`, который показывает текущее значение `navigator.userAgent` прямо в интерфейсе.
 - для invite-flow добавлен резервный телеграм-детект без доверия к UA: режим Telegram включается не только по `isTelegramInApp`, но и по query-параметрам (`?src=tg|telegram|1`, `?from=...`) и по `document.referrer` (`t.me`/`telegram`); ссылки инвайтов из `/console` теперь генерируются как `/invite/<code>?src=tg`.
 - по UI invite-страницы убран debug-блок `User-Agent`; в предупреждении оставлен текст `Если Вы открыли эту ссылку через Telegram, откройте её в обычном браузере!` с сохранением ссылки и кнопки `Попробовать открыть в браузере`; генерация invite-ссылок из `/console` возвращена к виду `/invite/<code>` без `?src=tg`.
+
+## Актуализация 2026-04-30
+- `frontend/src/pages/chat/message-scriptable/index.vue` больше не содержит цепочку `v-else-if` по `viewModel.kind`: рендер scriptable-message переведён на динамический компонент через реестр;
+- добавлен конфигурационный реестр `frontend/src/pages/chat/message-scriptable/registry.ts` (`kind -> component`), новые типы scriptable-message подключаются через него;
+- каждый UI-тип scriptable-message вынесен в отдельный компонент (директория `frontend/src/components/chat/message-scriptable/components/*`), fallback-представления тоже выделены отдельно;
+- стили `message-scriptable` сделаны общими (без `scoped` в родителе), чтобы они применялись к дочерним модульным компонентам;
+- после правок прогнан `yarn run smoke` (headless Chromium e2e, автостарт/остановка backend+frontend) — сценарий завершился успешно.

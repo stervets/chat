@@ -1,7 +1,16 @@
 import {ref, type PropType} from 'vue';
 import type {Message} from '@/composables/types';
 
+import ScriptableFallbackEmpty from '@/components/chat/message-scriptable/components/fallback-empty/index.vue';
+import ScriptableFallbackUnknown from '@/components/chat/message-scriptable/components/fallback-unknown/index.vue';
+import {getScriptableMessageView} from './registry';
+
 export default {
+  components: {
+    ScriptableFallbackEmpty,
+    ScriptableFallbackUnknown,
+  },
+
   props: {
     message: {
       type: Object as PropType<Message>,
@@ -37,6 +46,12 @@ export default {
     };
   },
 
+  computed: {
+    resolvedScriptableView(this: any) {
+      return getScriptableMessageView(this.viewModel?.kind);
+    },
+  },
+
   watch: {
     'viewModel.soundTick'(this: any) {
       this.tryPlaySoundByTick();
@@ -65,21 +80,12 @@ export default {
   },
 
   methods: {
-    asJson(this: any, value: unknown) {
-      try {
-        return JSON.stringify(value || {}, null, 2);
-      } catch {
-        return '{}';
-      }
-    },
-
     onAction(this: any, actionType: string, payload?: any) {
       this.$emit('action', this.message, actionType, payload);
     },
 
-    onGuessInput(this: any, event: Event) {
-      const target = event.target as HTMLInputElement | null;
-      this.guessInput = String(target?.value || '');
+    onGuessInputValue(this: any, guessRaw: unknown) {
+      this.guessInput = String(guessRaw || '');
     },
 
     onGuessSubmit(this: any) {
@@ -99,9 +105,8 @@ export default {
       this.onAction('toggle_enabled', {enabled: !!enabledRaw});
     },
 
-    onBotLevelInput(this: any, event: Event) {
-      const target = event.target as HTMLInputElement | null;
-      const level = Number(target?.value || this.botLevelDraft || 0);
+    onBotLevelInputValue(this: any, levelRaw: unknown) {
+      const level = Number(levelRaw || this.botLevelDraft || 0);
       this.botLevelDraft = Math.max(0, Math.min(100, Math.round(level)));
     },
 
