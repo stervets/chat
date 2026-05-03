@@ -213,8 +213,8 @@ yarn run frontend:dev
 - по UI invite-страницы убран debug-блок `User-Agent`; в предупреждении оставлен текст `Если Вы открыли эту ссылку через Telegram, откройте её в обычном браузере!` с сохранением ссылки и кнопки `Попробовать открыть в браузере`; генерация invite-ссылок из `/console` возвращена к виду `/invite/<code>` без `?src=tg`.
 
 ## Актуализация 2026-04-30
-- `frontend/src/pages/chat/message-scriptable/index.vue` больше не содержит цепочку `v-else-if` по `viewModel.kind`: рендер scriptable-message переведён на динамический компонент через реестр;
-- добавлен конфигурационный реестр `frontend/src/pages/chat/message-scriptable/registry.ts` (`kind -> component`), новые типы scriptable-message подключаются через него;
-- каждый UI-тип scriptable-message вынесен в отдельный компонент (директория `frontend/src/components/chat/message-scriptable/components/*`), fallback-представления тоже выделены отдельно;
-- стили `message-scriptable` сделаны общими (без `scoped` в родителе), чтобы они применялись к дочерним модульным компонентам;
-- после правок прогнан `yarn run smoke` (headless Chromium e2e, автостарт/остановка backend+frontend) — сценарий завершился успешно.
+- `frontend/src/pages/chat/message-scriptable/index.vue` остаётся тонким host-компонентом: dynamic `<component :is="...">`, fallback-empty/fallback-unknown и единый forwarding события `action`; конкретные scriptable-типы в шаблоне host больше не перечисляются.
+- type-specific состояние, watchers, effects и action payloads вынесены из host в компоненты конкретных view: `view-guess-word` сам хранит input и отправляет `submit_guess`, `view-bot-control-surface` сам хранит level draft и отправляет `toggle_enabled`/`set_level`, `view-poll-surface` сам отправляет `vote_option`, `view-button-sound` сам управляет audio/soundTick.
+- `frontend/src/pages/chat/message-scriptable/registry.ts` теперь хранит определения scriptable-view (`kind -> component`) и optional `buildProps`; host не знает, какому типу нужны дополнительные props, например `passiveEffects` для `button_sound`.
+- стили scriptable-view разнесены по компонентам и подключаются через `frontend/src/components/chat/message-scriptable/components/shared-style.less`; родительский `message-scriptable/style.less` снова scoped и содержит только host layout.
+- при аудите по frontend/backend не найдено второго UI-renderer с ветвлением по `viewModel.kind`; room/runtime UI сейчас остаётся временно отключённым по общей политике проекта.

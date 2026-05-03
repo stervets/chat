@@ -8,13 +8,13 @@ export default {
     },
   },
 
-  emits: ['vote'],
+  emits: ['action'],
 
   methods: {
-    onVote(this: any, optionIndexRaw: unknown) {
+    vote(this: any, optionIndexRaw: unknown) {
       const optionIndex = Number(optionIndexRaw);
       if (!Number.isFinite(optionIndex) || optionIndex < 0) return;
-      this.$emit('vote', optionIndex);
+      this.$emit('action', 'vote_option', {optionIndex});
     },
   },
 };

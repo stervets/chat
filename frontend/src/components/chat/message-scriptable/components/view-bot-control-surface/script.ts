@@ -1,4 +1,10 @@
-import type {PropType} from 'vue';
+import {ref, type PropType} from 'vue';
+
+function clampLevel(levelRaw: unknown) {
+  const level = Number(levelRaw);
+  if (!Number.isFinite(level)) return 50;
+  return Math.max(0, Math.min(100, Math.round(level)));
+}
 
 export default {
   props: {
@@ -6,19 +12,38 @@ export default {
       type: Object as PropType<Record<string, any>>,
       required: true,
     },
-    botLevelDraft: {
-      type: Number,
-      default: 50,
+  },
+
+  emits: ['action'],
+
+  setup() {
+    return {
+      levelDraft: ref(50),
+    };
+  },
+
+  watch: {
+    'viewModel.level'(this: any, levelRaw: unknown) {
+      this.levelDraft = clampLevel(levelRaw);
     },
   },
 
-  emits: ['toggle', 'level-input', 'level-submit'],
-
   methods: {
+    toggleEnabled(this: any, enabled: boolean) {
+      this.$emit('action', 'toggle_enabled', {enabled: !!enabled});
+    },
+
     onLevelInput(this: any, event: Event) {
       const target = event.target as HTMLInputElement | null;
-      const level = Number(target?.value || this.botLevelDraft || 0);
-      this.$emit('level-input', level);
+      this.levelDraft = clampLevel(target?.value ?? this.levelDraft);
     },
+
+    submitLevel(this: any) {
+      this.$emit('action', 'set_level', {level: clampLevel(this.levelDraft)});
+    },
+  },
+
+  mounted(this: any) {
+    this.levelDraft = clampLevel(this.viewModel?.level);
   },
 };

@@ -11,21 +11,21 @@
       <button
         class="scriptable-btn scriptable-btn-compact"
         :disabled="!!viewModel.pending"
-        @click="$emit('toggle', true)"
+        @click="toggleEnabled(true)"
       >
         ON
       </button>
       <button
         class="scriptable-btn scriptable-btn-compact"
         :disabled="!!viewModel.pending"
-        @click="$emit('toggle', false)"
+        @click="toggleEnabled(false)"
       >
         OFF
       </button>
     </div>
     <div class="scriptable-bot-level-row">
       <input
-        :value="botLevelDraft"
+        :value="levelDraft"
         class="scriptable-bot-level-input"
         type="range"
         min="0"
@@ -37,9 +37,9 @@
       <button
         class="scriptable-btn scriptable-btn-compact"
         :disabled="!!viewModel.pending"
-        @click="$emit('level-submit')"
+        @click="submitLevel"
       >
-        {{ Number(botLevelDraft || viewModel.level || 0) }}%
+        {{ Number(levelDraft || viewModel.level || 0) }}%
       </button>
     </div>
     <div class="scriptable-meta">Room events: {{ Number(viewModel.chatEvents || 0) }}</div>

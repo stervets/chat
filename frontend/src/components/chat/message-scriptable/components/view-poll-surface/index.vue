@@ -8,7 +8,7 @@
         :key="`poll-option-${option.index}`"
         class="scriptable-btn scriptable-poll-option-btn"
         :disabled="!!viewModel.pending"
-        @click="onVote(option.index)"
+        @click="vote(option.index)"
       >
         <span class="scriptable-poll-option-label">{{ option.label }}</span>
         <span class="scriptable-poll-option-votes">{{ Number(option.votes || 0) }}</span>

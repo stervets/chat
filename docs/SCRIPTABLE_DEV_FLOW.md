@@ -6,9 +6,11 @@
 - message runtime создаётся в `backend/src/scriptable/service.ts`;
 - backend registry: `backend/src/scriptable/registry.ts`;
 - runner registry: `backend/src/script-runner/registry.ts`;
-- frontend registry: `frontend/src/scriptable/registry.ts`;
+- frontend runtime registry: `frontend/src/scriptable/registry.ts`;
+- frontend message-view registry: `frontend/src/pages/chat/message-scriptable/registry.ts`;
 - frontend worker runtime: `frontend/src/scriptable/runtime/*`;
-- client scripts: `frontend/src/scriptable/client-scripts/*`.
+- client scripts: `frontend/src/scriptable/client-scripts/*`;
+- UI-компоненты message scriptable: `frontend/src/components/chat/message-scriptable/components/*`.
 
 ## Как добавить новый script
 
@@ -16,8 +18,9 @@
 2. Укажи `scriptId`, `nodeType`, `clientScript`, `serverScript`.
 3. Если script обрабатывает action прямо в backend, добавь `reduceAction`.
 4. Если script обрабатывает action в runner, добавь handler в `backend/src/script-runner/registry.ts`.
-5. Если нужен UI, добавь client worker script в `frontend/src/scriptable/client-scripts/*`.
-6. Зарегистрируй client script в `frontend/src/scriptable/registry.ts`.
+5. Если нужен frontend runtime, добавь client worker script в `frontend/src/scriptable/client-scripts/*` и зарегистрируй его в `frontend/src/scriptable/registry.ts`.
+6. Если нужен message UI, создай отдельный компонент в `frontend/src/components/chat/message-scriptable/components/<view-kind>/`.
+7. Зарегистрируй message UI в `frontend/src/pages/chat/message-scriptable/registry.ts` (`kind -> component`, optional `buildProps`). Родительский `message-scriptable/index.vue` при этом не трогается.
 
 ## Как устроен runtime snapshot
 

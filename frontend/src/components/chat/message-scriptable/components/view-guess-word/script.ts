@@ -1,4 +1,4 @@
-import type {PropType} from 'vue';
+import {ref, type PropType} from 'vue';
 
 export default {
   props: {
@@ -6,18 +6,27 @@ export default {
       type: Object as PropType<Record<string, any>>,
       required: true,
     },
-    guessInput: {
-      type: String,
-      default: '',
-    },
   },
 
-  emits: ['guess-input', 'submit'],
+  emits: ['action'],
+
+  setup() {
+    return {
+      guessInput: ref(''),
+    };
+  },
 
   methods: {
     onGuessInput(this: any, event: Event) {
       const target = event.target as HTMLInputElement | null;
-      this.$emit('guess-input', String(target?.value || ''));
+      this.guessInput = String(target?.value || '');
+    },
+
+    submitGuess(this: any) {
+      const guess = String(this.guessInput || '').trim();
+      if (!guess) return;
+      this.$emit('action', 'submit_guess', {guess});
+      this.guessInput = '';
     },
   },
 };

@@ -11,12 +11,12 @@
         type="text"
         placeholder="введи слово"
         @input="onGuessInput"
-        @keydown.enter.prevent="$emit('submit')"
+        @keydown.enter.prevent="submitGuess"
       />
       <button
         class="scriptable-btn scriptable-btn-compact"
         :disabled="!!viewModel.pending"
-        @click="$emit('submit')"
+        @click="submitGuess"
       >
         {{ viewModel.pending ? '...' : 'OK' }}
       </button>
