@@ -28,6 +28,7 @@ export default defineNuxtConfig({
 
   experimental: {
     appManifest: false,
+    payloadExtraction: false,
   },
 
   compatibilityDate: '2026-03-27',

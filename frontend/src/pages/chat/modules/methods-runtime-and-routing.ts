@@ -304,6 +304,11 @@ export const chatMethodsRuntimeAndRouting = {
       persistBooleanSetting(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY, !!this.browserNotificationsEnabled);
     },
 
+    initBrowserNotifications(this: any) {
+      this.loadBrowserNotificationsEnabledSetting();
+      this.syncBrowserNotificationPermission();
+    },
+
     normalizeRouteNickname(this: any, nicknameRaw: unknown) {
       return String(nicknameRaw || '').trim().toLowerCase();
     },
@@ -360,10 +365,6 @@ export const chatMethodsRuntimeAndRouting = {
     }) {
       const roomId = Number(roomIdRaw || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return '/chat';
-      const generalRoomId = Number(this.generalDialog?.id || 0);
-      if (Number.isFinite(generalRoomId) && generalRoomId > 0 && roomId === generalRoomId) {
-        return '/chat';
-      }
 
       const sourceRoomId = Number(contextRaw?.sourceRoomId || 0);
       const sourceMessageId = Number(contextRaw?.sourceMessageId || 0);
@@ -569,10 +570,17 @@ export const chatMethodsRuntimeAndRouting = {
           return;
         }
 
-        if (replaceInvalid && !this.isChatRoutePath(this.route?.path)) {
-          await this.router.replace('/chat');
+        const selectedRoomId = Number(this.activeDialog?.id || 0);
+        if (!Number.isFinite(selectedRoomId) || selectedRoomId <= 0) {
+          persistLastChatPath('/chat');
+          return;
         }
-        persistLastChatPath('/chat');
+
+        const canonicalPath = this.buildRoomRoutePath(selectedRoomId);
+        if (replaceInvalid && String(this.route?.fullPath || this.route?.path || '') !== canonicalPath) {
+          await this.router.replace(canonicalPath);
+        }
+        persistLastChatPath(canonicalPath);
         const focusMessageId = Number(this.getRoomRouteContext().focusMessageId || 0);
         if (Number.isFinite(focusMessageId) && focusMessageId > 0) {
           void this.scrollToMessageById(focusMessageId);
@@ -624,6 +632,12 @@ export const chatMethodsRuntimeAndRouting = {
           const defaultDialog = this.resolveDefaultGroupDialog();
           if (!defaultDialog) {
             await this.selectDefaultGroupDialog({routeMode: 'none', closeMenu: false});
+            return;
+          }
+          const canonicalPath = this.buildRoomRoutePath(defaultDialog.id);
+          if (String(this.route?.fullPath || this.route?.path || '') !== canonicalPath) {
+            await this.router.replace(canonicalPath);
+            persistLastChatPath(canonicalPath);
             return;
           }
           if (this.activeDialog?.kind === 'group' && Number(this.activeDialog?.id || 0) === Number(defaultDialog.id || 0)) {
