@@ -37,6 +37,7 @@ import {
   type WebPushPermission,
   unsubscribeWebPush,
 } from '@/composables/use-web-push';
+import {isNativeAndroidApp} from '@/composables/native-runtime';
 import {loadLastChatPath, persistLastChatPath} from '@/composables/last-chat';
 import {SoundPlayer} from '@/composables/classes/sound-player';
 import {vibrateConfirm, vibrateError, vibrateTap} from '@/utils/vibrate';
@@ -298,6 +299,7 @@ export const chatMethodsRuntimeAndRouting = {
     },
 
     isBrowserNotificationsSupported(this: any) {
+      if (isNativeAndroidApp()) return false;
       return typeof window !== 'undefined' && 'Notification' in window;
     },
 
@@ -403,6 +405,11 @@ export const chatMethodsRuntimeAndRouting = {
     },
 
     initBrowserNotifications(this: any) {
+      if (isNativeAndroidApp()) {
+        this.browserNotificationsEnabled = false;
+        this.browserNotificationPermission = 'denied';
+        return;
+      }
       if (this.isStandaloneApp) {
         this.browserNotificationsEnabled = false;
         return;

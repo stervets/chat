@@ -1,5 +1,6 @@
 import type {WebSocket} from 'ws';
 import {config} from '../config.js';
+import type {NativePushService} from '../common/native-push.js';
 import type {RoomRow} from '../common/rooms.js';
 import {getRoomById} from '../common/rooms.js';
 import type {WebPushService} from '../common/web-push.js';
@@ -39,6 +40,7 @@ export type ChatCommandMap = Record<string, ChatCommand>;
 export type ChatCommandHost = {
   chat: ChatDomain;
   webPushService: WebPushService | null;
+  nativePushService: NativePushService | null;
   calls: ChatCallsService;
   notifyCallEnded(call: CallPublicPayload): void;
   flushExpiredCalls(): void;
@@ -95,6 +97,7 @@ type CallStartPayload = {roomId?: number};
 type CallIdPayload = {callId?: string};
 type CallHangupPayload = {callId?: string; reason?: string};
 type CallSignalWsPayload = {callId?: string; type?: string; payload?: unknown; toUserId?: number};
+type NativePushTokenPayload = {token?: string; provider?: string; platform?: string};
 
 type MessageListPayload = {roomId?: number; limit?: number; beforeMessageId?: number};
 type MessageCreatePayload = {
@@ -467,12 +470,21 @@ function sendCallToParticipants(host: ChatCommandHost, call: CallPublicPayload, 
 
 function createCallCommands(host: ChatCommandHost): ChatCommandMap {
   const sendIncomingCallPush = async (call: CallPublicPayload, room: RoomRow | null) => {
-    if (!room || !host.webPushService) return;
-    await host.webPushService.sendIncomingCallPush({
-      room,
-      call,
-      caller: call.caller,
-    });
+    if (!room) return;
+    if (host.webPushService) {
+      await host.webPushService.sendIncomingCallPush({
+        room,
+        call,
+        caller: call.caller,
+      });
+    }
+    if (host.nativePushService) {
+      await host.nativePushService.sendIncomingCallPush({
+        room,
+        call,
+        caller: call.caller,
+      });
+    }
   };
 
   return {
@@ -764,6 +776,28 @@ function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
 
 function createMessageCommands(host: ChatCommandHost): ChatCommandMap {
   return {
+    'push:native:register': command(({client, args}) => {
+      if (!client.state.user) return host.fail('not_authenticated');
+      if (!host.nativePushService) return host.fail('push_disabled');
+      return host.nativePushService.registerToken(
+        positiveNumber(client.state.user.id),
+        (args as NativePushTokenPayload).token,
+        (args as NativePushTokenPayload).provider,
+        (args as NativePushTokenPayload).platform,
+      );
+    }),
+
+    'push:native:unregister': command(({client, args}) => {
+      if (!client.state.user) return host.fail('not_authenticated');
+      if (!host.nativePushService) return host.fail('push_disabled');
+      return host.nativePushService.unregisterToken(
+        positiveNumber(client.state.user.id),
+        (args as NativePushTokenPayload).token,
+        (args as NativePushTokenPayload).provider,
+        (args as NativePushTokenPayload).platform,
+      );
+    }),
+
     'message:create': command(({client, args}) => {
       const payload = normalizeMessageCreateArgs(args);
       const kind = String(payload.kind || 'text').trim().toLowerCase();
@@ -792,6 +826,14 @@ function createMessageCommands(host: ChatCommandHost): ChatCommandMap {
             message: result.data.message,
             senderId: positiveNumber(client.state?.user?.id),
             excludeUserIds: host.getOnlineUserIds(),
+          });
+        }
+
+        if (!skipPush && host.nativePushService && typeof host.nativePushService.sendChatMessagePush === 'function') {
+          void host.nativePushService.sendChatMessagePush({
+            room,
+            message: result.data.message,
+            senderId: positiveNumber(client.state?.user?.id),
           });
         }
       } else {

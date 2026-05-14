@@ -203,7 +203,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         return false;
       }
 
-      for (let attempt = 0; attempt < 6; attempt += 1) {
+      try {
         const session = await restoreSession();
         const data = wsObject(session);
         if ((session as any)?.ok && data.user?.id) {
@@ -216,10 +216,8 @@ export const chatMethodsAuthDialogsAndProfile = {
           await this.router.push('/login');
           return false;
         }
-
-        if (attempt < 5) {
-          await new Promise((resolve) => setTimeout(resolve, 450));
-        }
+      } catch {
+        // fallback below
       }
 
       this.error = 'Связь с сервером недоступна. Проверь интернет, авторизация не сброшена.';

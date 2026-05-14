@@ -1,3 +1,5 @@
+import {isNativeAndroidApp} from '@/composables/native-runtime';
+
 export type WebPushPermission = 'default' | 'denied' | 'granted';
 
 export type WebPushServerConfig = {
@@ -154,6 +156,7 @@ function serializePushSubscription(subscription: PushSubscription) {
 }
 
 export function isWebPushSupported() {
+  if (isNativeAndroidApp()) return false;
   if (typeof window === 'undefined') return false;
   if (!('serviceWorker' in navigator)) return false;
   if (!('PushManager' in window)) return false;

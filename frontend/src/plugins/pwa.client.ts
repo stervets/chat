@@ -1,7 +1,9 @@
 import {usePwaInstall} from '@/composables/use-pwa-install';
+import {isNativeAndroidApp} from '@/composables/native-runtime';
 
 export default defineNuxtPlugin(() => {
   if (typeof window === 'undefined') return;
+  if (isNativeAndroidApp()) return;
   usePwaInstall();
   if (!('serviceWorker' in navigator)) return;
 

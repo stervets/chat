@@ -20,6 +20,13 @@
     "vapidPrivateKey": "",
     "vapidSubject": ""
   },
+  "nativePush": {
+    "enabled": false,
+    "provider": "rustore",
+    "rustoreProjectId": "",
+    "rustoreServiceToken": "",
+    "androidPackageName": "ru.core5.marx"
+  },
   "webrtc": {
     "iceServers": [
       {

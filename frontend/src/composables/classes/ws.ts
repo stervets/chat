@@ -9,6 +9,7 @@ export class WsClient {
   private connectPromise: Promise<void> | null = null;
   private readonly requests: Record<string, {resolve: (result: WsResult) => void}> = {};
   private lastUrl = '';
+  private connectionSeq = 0;
 
   private parsePacket(raw: string): [string, Record<string, any> | any[], string, string, string?] | null {
     try {
@@ -58,16 +59,47 @@ export class WsClient {
     this.lastUrl = url;
 
     this.connectPromise = new Promise((resolve, reject) => {
+      const connectionId = ++this.connectionSeq;
       const socket = new WebSocket(url);
       this.socket = socket;
+      let settled = false;
+      const connectTimeout = window.setTimeout(() => {
+        if (settled) return;
+        if (this.socket !== socket) return;
+        settled = true;
+        this.connectPromise = null;
+        this.socket = null;
+        try {
+          socket.close();
+        } catch {
+          // ignore close failure on timed out socket
+        }
+        reject(new Error('ws_connect_timeout'));
+      }, 8000);
+
+      const clearConnectTimeout = () => {
+        window.clearTimeout(connectTimeout);
+      };
 
       socket.onopen = () => {
+        if (this.socket !== socket || connectionId !== this.connectionSeq) {
+          try {
+            socket.close();
+          } catch {
+            // ignore stale socket close
+          }
+          return;
+        }
+        if (settled) return;
+        settled = true;
+        clearConnectTimeout();
         this.connectPromise = null;
         emit('ws:connected');
         resolve();
       };
 
       socket.onmessage = (event) => {
+        if (this.socket !== socket || connectionId !== this.connectionSeq) return;
         const packet = this.parsePacket(event.data);
         if (!packet) return;
         const [com, args, senderId, _recipientId, requestId] = packet;
@@ -84,19 +116,27 @@ export class WsClient {
       };
 
       socket.onerror = () => {
-        if (this.connectPromise) {
-          this.connectPromise = null;
-          reject(new Error('ws_connect_error'));
-        }
+        if (this.socket !== socket || connectionId !== this.connectionSeq) return;
+        if (settled) return;
+        settled = true;
+        clearConnectTimeout();
+        this.connectPromise = null;
+        reject(new Error('ws_connect_error'));
       };
 
       socket.onclose = () => {
+        if (this.socket !== socket || connectionId !== this.connectionSeq) return;
+        clearConnectTimeout();
         this.socket = null;
         this.connectPromise = null;
         Object.keys(this.requests).forEach((requestId) => {
           this.requests[requestId].resolve({ok: false, error: 'disconnected'});
           delete this.requests[requestId];
         });
+        if (!settled) {
+          settled = true;
+          reject(new Error('ws_disconnected'));
+        }
         emit('ws:disconnected');
       };
     });
@@ -105,9 +145,16 @@ export class WsClient {
   }
 
   disconnect() {
-    if (!this.socket) return;
-    this.socket.close();
+    const socket = this.socket;
+    this.connectionSeq += 1;
+    this.connectPromise = null;
     this.socket = null;
+    if (!socket) return;
+    try {
+      socket.close();
+    } catch {
+      // ignore close failure
+    }
   }
 
   async request(com: string, args: Record<string, any> = {}): Promise<WsResult> {

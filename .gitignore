@@ -35,6 +35,10 @@ frontend/android/.gradle/
 frontend/android/**/build/
 frontend/android/local.properties
 frontend/android/captures/
+frontend/android/keystore/
+frontend/android/*.jks
+frontend/android/*.keystore
+frontend/android/key.properties
 
 # --- Backend ---
 backend/node_modules/

@@ -9,6 +9,7 @@ import {randomBytes} from 'node:crypto';
 import type {IncomingMessage} from 'node:http';
 import {WebSocket, WebSocketServer as WsServer} from 'ws';
 import {config} from '../config.js';
+import {NativePushService} from '../common/native-push.js';
 import type {RoomRow} from '../common/rooms.js';
 import {WebPushService} from '../common/web-push.js';
 import {
@@ -46,11 +47,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private readonly callCleanupTimer: NodeJS.Timeout;
   private readonly commands: ChatCommandMap;
   private readonly webPushService: WebPushService | null;
+  private readonly nativePushService: NativePushService | null;
 
   constructor(
     @Optional() @Inject(WebPushService) webPushService?: WebPushService,
+    @Optional() @Inject(NativePushService) nativePushService?: NativePushService,
   ) {
     this.webPushService = webPushService || null;
+    this.nativePushService = nativePushService || null;
     this.commands = createChatCommands(this.createCommandHost());
     this.callCleanupTimer = setInterval(() => this.flushExpiredCalls(), 5000);
     this.callCleanupTimer.unref?.();
@@ -65,6 +69,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       chat: this.chatDomain,
       calls: this.calls,
       webPushService: this.webPushService,
+      nativePushService: this.nativePushService,
       fail: (errorRaw) => this.fail(errorRaw),
       subscribe: (client, roomId) => this.subscribe(client, roomId),
       unsubscribe: (client) => this.unsubscribe(client),

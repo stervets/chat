@@ -4,4 +4,6 @@
     <string name="title_activity_main">MARX</string>
     <string name="package_name">ru.core5.marx</string>
     <string name="custom_url_scheme">ru.core5.marx</string>
+    <string name="rustore_push_channel_messages">Сообщения MARX</string>
+    <string name="rustore_push_channel_calls">Звонки MARX</string>
 </resources>
