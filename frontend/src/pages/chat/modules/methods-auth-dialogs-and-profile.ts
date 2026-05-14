@@ -289,11 +289,11 @@ export const chatMethodsAuthDialogsAndProfile = {
         ));
     },
 
-    async fetchGeneralDialog(this: any) {
+    async fetchGeneralDialog(this: any, optionsRaw?: {allowHidden?: boolean}) {
       const result = await ws.request('room:group:get-default');
       if ((result as any)?.error || (result as any)?.ok === false) return null;
       const data = wsObject(result);
-      if (isTemporarilyHiddenRoomTitle(data.title)) return null;
+      if (isTemporarilyHiddenRoomTitle(data.title) && optionsRaw?.allowHidden !== true) return null;
       return {
         id: data.roomId,
         kind: 'group',
@@ -317,11 +317,24 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (this.generalDialog) {
         return this.generalDialog as Dialog;
       }
+      if (Array.isArray(this.publicRooms) && this.publicRooms.length > 0) {
+        return this.publicRooms[0] as Dialog;
+      }
       return null;
     },
 
     async selectDefaultGroupDialog(this: any, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; haptic?: boolean}) {
-      const defaultDialog = this.resolveDefaultGroupDialog();
+      let defaultDialog = this.resolveDefaultGroupDialog();
+      if (!defaultDialog) {
+        const hiddenFallbackDialog = await this.fetchGeneralDialog({allowHidden: true});
+        if (hiddenFallbackDialog) {
+          defaultDialog = hiddenFallbackDialog;
+          if (!this.generalDialog) {
+            this.generalDialog = hiddenFallbackDialog;
+          }
+        }
+      }
+
       if (!defaultDialog) {
         this.activeDialog = null;
         this.setActiveRoomScript(null);

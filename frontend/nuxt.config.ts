@@ -26,6 +26,10 @@ export default defineNuxtConfig({
     '@nuxtjs/tailwindcss',
   ],
 
+  experimental: {
+    appManifest: false,
+  },
+
   compatibilityDate: '2026-03-27',
 
   devtools: {enabled: isDevelopmentMode},

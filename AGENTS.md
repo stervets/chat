@@ -242,3 +242,5 @@ yarn run frontend:dev
 - временно скрыты раздел `VPN` в `/console` и комната `Новости MARX` в клиентской навигации (`/chat` и `/console`); это только UI-фильтр на фронте, без удаления backend-логики.
 - route `/vpn` теперь жёстко редиректит в `/console?tab=user` (без `tab=vpn`), чтобы старые deep-link/закладки не открывали скрытый VPN-раздел.
 - в Android runtime (`isNativeAndroidApp`) browser push controls в `/console` скрыты, `Notification.requestPermission()` там больше не вызывается; остаётся только native permission для RuStore/local notifications.
+- в чате fallback выбора стартового диалога усилен: если `joinedRooms` и `generalDialog` пусты (например после скрытия `Новости MARX`), автоматически открывается первая доступная `publicRooms` комната вместо пустого экрана.
+- дополнительно к fallback выше: если видимых комнат вообще нет, клиент делает аварийный fallback на `room:group:get-default` даже для временно скрытой `Новости MARX`, чтобы после логина не оставаться на пустом фоне с `activeDialog=null`.
