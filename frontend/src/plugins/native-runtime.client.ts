@@ -7,7 +7,14 @@ export default defineNuxtPlugin(() => {
   if (!isNativeAndroidApp()) return;
   if (typeof window === 'undefined') return;
 
+  const MIN_RECONNECT_GAP_MS = 5000;
+  let lastReconnectAt = 0;
+
   const reconnect = (reason: string) => {
+    if (reason === 'offline') return;
+    const now = Date.now();
+    if (now - lastReconnectAt < MIN_RECONNECT_GAP_MS) return;
+    lastReconnectAt = now;
     void forceWsReconnect(reason);
   };
 

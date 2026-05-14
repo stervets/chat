@@ -121,12 +121,18 @@ export default defineNuxtPlugin(() => {
   });
 
   void (async () => {
-    const launch = await RuStorePush.getLaunchNotification().catch(() => ({notification: null}));
+    const launch = await RuStorePush.getLaunchNotification().catch((error: unknown) => {
+      console.error('[rustore-push] getLaunchNotification failed', error);
+      return {notification: null};
+    });
     if (launch?.notification) {
       await openRouteFromPush(launch.notification);
     }
 
-    const result = await RuStorePush.register({projectId}).catch(() => ({token: ''}));
+    const result = await RuStorePush.register({projectId}).catch((error: unknown) => {
+      console.error('[rustore-push] register failed', error);
+      return {token: ''};
+    });
     const token = stringValue(result?.token);
     if (token) {
       console.info('[rustore-push] token', token);

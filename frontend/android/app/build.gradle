@@ -1,5 +1,12 @@
 apply plugin: 'com.android.application'
 
+def signingProps = new Properties()
+def signingPropsFile = rootProject.file('key.properties')
+def hasCustomSigning = signingPropsFile.exists()
+if (hasCustomSigning) {
+    signingProps.load(new FileInputStream(signingPropsFile))
+}
+
 android {
     namespace = "ru.core5.marx"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +23,28 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasCustomSigning) {
+            marx {
+                storeFile rootProject.file(signingProps['storeFile'])
+                storePassword signingProps['storePassword']
+                keyAlias signingProps['keyAlias']
+                keyPassword signingProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
+        debug {
+            if (hasCustomSigning) {
+                signingConfig signingConfigs.marx
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasCustomSigning) {
+                signingConfig signingConfigs.marx
+            }
         }
     }
 }

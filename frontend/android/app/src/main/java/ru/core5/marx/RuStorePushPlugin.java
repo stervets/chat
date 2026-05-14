@@ -11,6 +11,8 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import ru.rustore.sdk.core.exception.RuStoreException;
+import ru.rustore.sdk.core.feature.model.FeatureAvailabilityResult;
 import ru.rustore.sdk.pushclient.RuStorePushClient;
 import ru.rustore.sdk.pushclient.common.logger.DefaultLogger;
 
@@ -44,7 +46,34 @@ public class RuStorePushPlugin extends Plugin {
             return;
         }
 
-        resolveToken(call);
+        RuStorePushClient.INSTANCE.checkPushAvailability(getContext())
+            .addOnSuccessListener(result -> {
+                if (result instanceof FeatureAvailabilityResult.Available) {
+                    resolveToken(call);
+                    return;
+                }
+
+                if (result instanceof FeatureAvailabilityResult.Unavailable unavailable) {
+                    RuStoreException cause = unavailable.getCause();
+                    String reason = cause == null
+                        ? "unknown_unavailable"
+                        : cause.getClass().getSimpleName() + ": " + String.valueOf(cause.getMessage());
+                    Log.w(TAG, "RuStore Push unavailable: " + reason);
+                    call.reject("rustore_push_unavailable", reason);
+                    return;
+                }
+
+                call.reject("rustore_push_unavailable", "unexpected_availability_result");
+            })
+            .addOnFailureListener(error -> {
+                String reason = String.valueOf(error == null ? "unknown_error" : error.getMessage());
+                Log.w(TAG, "RuStore checkPushAvailability failed: " + reason);
+                if (error instanceof Exception) {
+                    call.reject("rustore_check_availability_failed", (Exception) error);
+                    return;
+                }
+                call.reject("rustore_check_availability_failed", new Exception(String.valueOf(error)));
+            });
     }
 
     @PluginMethod
@@ -105,6 +134,8 @@ public class RuStorePushPlugin extends Plugin {
                 call.resolve(result);
             })
             .addOnFailureListener(error -> {
+                String reason = String.valueOf(error == null ? "unknown_error" : error.getMessage());
+                Log.w(TAG, "RuStore getToken failed: " + reason);
                 if (error instanceof Exception) {
                     call.reject("rustore_get_token_failed", (Exception) error);
                     return;
