@@ -218,3 +218,8 @@ yarn run frontend:dev
 - `frontend/src/pages/chat/message-scriptable/registry.ts` теперь хранит определения scriptable-view (`kind -> component`) и optional `buildProps`; host не знает, какому типу нужны дополнительные props, например `passiveEffects` для `button_sound`.
 - стили scriptable-view разнесены по компонентам и подключаются через `frontend/src/components/chat/message-scriptable/components/shared-style.less`; родительский `message-scriptable/style.less` снова scoped и содержит только host layout.
 - при аудите по frontend/backend не найдено второго UI-renderer с ветвлением по `viewModel.kind`; room/runtime UI сейчас остаётся временно отключённым по общей политике проекта.
+
+## Актуализация 2026-05-14
+- backend для `scriptable` сообщений в chat payload теперь сохраняет `kind='scriptable'` (не мапит в `text`) и отдаёт `runtime.clientScript/runtime.serverScript/runtime.data` из `node`;
+- legacy fallback-текст для `scriptable` в `chat-context.messages` и `chat-dialogs.service` больше не подставляется, рендерится обычный `rawText`, чтобы клиент получал канонические runtime-данные.
+- игровые картинки карт (`frontend/src/public/cards/*.gif`) удалены из git и добавлены в `.gitignore`, чтобы не раздувать репозиторий временными ассетами.

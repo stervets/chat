@@ -362,13 +362,7 @@ export class ChatContextMessages {
       });
     }
     const isScriptable = messageRow.kind === 'scriptable';
-    const compiled = isScriptable
-      ? await this.compileMessageForRoom(
-        roomId,
-        this.getDisabledScriptableFallbackText(messageRow.rawText),
-        messageRow.id,
-      )
-      : await this.compileMessageForRoom(roomId, String(messageRow.rawText || ''), messageRow.id);
+    const compiled = await this.compileMessageForRoom(roomId, String(messageRow.rawText || ''), messageRow.id);
 
     const author = this.users.toMessageAuthor({
       senderId: messageRow.senderId,
@@ -379,7 +373,7 @@ export class ChatContextMessages {
       id: messageRow.id,
       roomId,
       dialogId: roomId,
-      kind: messageRow.kind === 'system' ? 'system' : 'text',
+      kind: messageRow.kind === 'system' || messageRow.kind === 'scriptable' ? messageRow.kind : 'text',
       authorId: author.authorId,
       authorNickname: author.authorNickname,
       authorName: author.authorName,
@@ -390,9 +384,11 @@ export class ChatContextMessages {
       renderedHtml: compiled.renderedHtml,
       renderedPreviews: compiled.renderedPreviews,
       runtime: {
-        clientScript: null,
-        serverScript: null,
-        data: {},
+        clientScript: isScriptable ? (messageRow.node?.clientScript || null) : null,
+        serverScript: isScriptable ? (messageRow.node?.serverScript || null) : null,
+        data: isScriptable && messageRow.node?.data && typeof messageRow.node.data === 'object' && !Array.isArray(messageRow.node.data)
+          ? messageRow.node.data as Record<string, any>
+          : {},
       },
       commentRoomId,
       commentCount,

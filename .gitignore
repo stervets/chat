@@ -30,6 +30,7 @@ frontend/.nuxt/
 frontend/.output/
 frontend/dist/
 frontend/src/public/amnezia/
+frontend/src/public/cards/
 
 # --- Backend ---
 backend/node_modules/
