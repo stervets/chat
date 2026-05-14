@@ -31,6 +31,10 @@ frontend/.output/
 frontend/dist/
 frontend/src/public/amnezia/
 frontend/src/public/cards/
+frontend/android/.gradle/
+frontend/android/**/build/
+frontend/android/local.properties
+frontend/android/captures/
 
 # --- Backend ---
 backend/node_modules/

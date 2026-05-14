@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MARX</string>
+    <string name="title_activity_main">MARX</string>
+    <string name="package_name">ru.core5.marx</string>
+    <string name="custom_url_scheme">ru.core5.marx</string>
+</resources>

@@ -224,3 +224,6 @@ yarn run frontend:dev
 - legacy fallback-текст для `scriptable` в `chat-context.messages` и `chat-dialogs.service` больше не подставляется, рендерится обычный `rawText`, чтобы клиент получал канонические runtime-данные.
 - игровые картинки карт (`frontend/src/public/cards/*.gif`) удалены из git и добавлены в `.gitignore`, чтобы не раздувать репозиторий временными ассетами.
 - `frontend/src/public/callout.mp3` перекодирован в `mono 48kbps` (mp3) для уменьшения веса ассета без изменения длительности.
+- добавлен минимальный Android wrapper через Capacitor в `frontend`: `capacitor.config.ts` (`appId=ru.core5.marx`, `appName=MARX`, `webDir=.output/public`), платформа `frontend/android`, скрипты `android:sync/android:open/android:run` в `frontend/package.json`;
+- для Android включён `android:usesCleartextTraffic=\"true\"` (т.к. `frontend/config.example.json` сейчас с `apiUrl: http://...`), `INTERNET` permission сохранён;
+- добавлена инструкция `docs/ANDROID_APK.md` с шагами `generate/sync/open/run` и путём к debug APK.
