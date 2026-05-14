@@ -223,3 +223,4 @@ yarn run frontend:dev
 - backend для `scriptable` сообщений в chat payload теперь сохраняет `kind='scriptable'` (не мапит в `text`) и отдаёт `runtime.clientScript/runtime.serverScript/runtime.data` из `node`;
 - legacy fallback-текст для `scriptable` в `chat-context.messages` и `chat-dialogs.service` больше не подставляется, рендерится обычный `rawText`, чтобы клиент получал канонические runtime-данные.
 - игровые картинки карт (`frontend/src/public/cards/*.gif`) удалены из git и добавлены в `.gitignore`, чтобы не раздувать репозиторий временными ассетами.
+- `frontend/src/public/callout.mp3` перекодирован в `mono 48kbps` (mp3) для уменьшения веса ассета без изменения длительности.
