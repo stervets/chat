@@ -1,8 +1,8 @@
 {
-  "mode": "dev",
-  "apiUrl": "http://localhost:8816",
+  "mode": "prod",
+  "apiUrl": "https://marx.core5.ru",
   "wsPath": "/ws",
-  "publicUrl": "",
+  "publicUrl": "https://marx.core5.ru",
   "vpn": {
     "mtProxyDeepLink": "tg://proxy?server=151.245.137.79&port=8443&secret=c6fab0c23452644261db3661aa963f50",
     "mtProxyWebLink": "https://t.me/proxy?server=151.245.137.79&port=8443&secret=c6fab0c23452644261db3661aa963f50",

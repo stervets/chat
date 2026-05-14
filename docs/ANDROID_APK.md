@@ -13,6 +13,10 @@ cd frontend
 yarn install
 cp config.example.json config.json
 ```
+По умолчанию `config.example.json` уже настроен на прод:
+- `apiUrl: https://marx.core5.ru`
+- `wsPath: /ws` (wsUrl будет вычислен как `wss://marx.core5.ru/ws`)
+- `publicUrl: https://marx.core5.ru`
 
 ## Сборка web assets
 ```bash
@@ -65,5 +69,6 @@ yarn android:run
 
 ## Примечания
 - В `AndroidManifest.xml` включён `INTERNET`.
-- `cleartext` включён (`usesCleartextTraffic=true`), потому что текущий `frontend/config.example.json` использует `apiUrl: http://...`.
+- `cleartext` выключен. Для `https://marx.core5.ru` он не нужен.
+- Если для локального дебага укажешь `apiUrl: http://...`, тогда включи `android:usesCleartextTraffic="true"` в `AndroidManifest.xml`.
 - PWA/service worker не отключались: на этом этапе они не блокируют `generate`/`sync` и запуск Android-wrapper.

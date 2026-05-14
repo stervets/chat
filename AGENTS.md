@@ -225,5 +225,7 @@ yarn run frontend:dev
 - игровые картинки карт (`frontend/src/public/cards/*.gif`) удалены из git и добавлены в `.gitignore`, чтобы не раздувать репозиторий временными ассетами.
 - `frontend/src/public/callout.mp3` перекодирован в `mono 48kbps` (mp3) для уменьшения веса ассета без изменения длительности.
 - добавлен минимальный Android wrapper через Capacitor в `frontend`: `capacitor.config.ts` (`appId=ru.core5.marx`, `appName=MARX`, `webDir=.output/public`), платформа `frontend/android`, скрипты `android:sync/android:open/android:run` в `frontend/package.json`;
-- для Android включён `android:usesCleartextTraffic=\"true\"` (т.к. `frontend/config.example.json` сейчас с `apiUrl: http://...`), `INTERNET` permission сохранён;
+- для Android сохранён `INTERNET` permission;
 - добавлена инструкция `docs/ANDROID_APK.md` с шагами `generate/sync/open/run` и путём к debug APK.
+- `frontend/config.example.json` переведён на прод-адреса: `apiUrl=https://marx.core5.ru`, `publicUrl=https://marx.core5.ru`, `wsPath=/ws` (ws вычисляется как `wss://marx.core5.ru/ws`);
+- для Android cleartext обратно отключён (удалён `android:usesCleartextTraffic`), т.к. мобильный клиент должен ходить на backend через HTTPS/WSS (`marx.core5.ru`).
