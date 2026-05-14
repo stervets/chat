@@ -81,22 +81,6 @@ export default defineNuxtConfig({
           content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'
         },
         {
-          name: 'mobile-web-app-capable',
-          content: 'yes'
-        },
-        {
-          name: 'apple-mobile-web-app-capable',
-          content: 'yes'
-        },
-        {
-          name: 'apple-mobile-web-app-title',
-          content: 'MARX'
-        },
-        {
-          name: 'apple-mobile-web-app-status-bar-style',
-          content: 'black-translucent'
-        },
-        {
           name: 'theme-color',
           content: '#182437'
         }
@@ -110,14 +94,6 @@ export default defineNuxtConfig({
         {
           rel: 'shortcut icon',
           href: '/favicon.png',
-        },
-        {
-          rel: 'manifest',
-          href: '/manifest.webmanifest',
-        },
-        {
-          rel: 'apple-touch-icon',
-          href: '/apple-touch-icon.png',
         },
       ],
     },

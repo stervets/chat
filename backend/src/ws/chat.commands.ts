@@ -3,7 +3,6 @@ import {config} from '../config.js';
 import type {NativePushService} from '../common/native-push.js';
 import type {RoomRow} from '../common/rooms.js';
 import {getRoomById} from '../common/rooms.js';
-import type {WebPushService} from '../common/web-push.js';
 import type {SocketState} from './protocol.js';
 import {boolValue, positiveInt, positiveIntList, stringChoice, textValue} from './chat.input.js';
 import type {ChatDomain} from './chat.domain.js';
@@ -39,7 +38,6 @@ export type ChatCommandMap = Record<string, ChatCommand>;
 
 export type ChatCommandHost = {
   chat: ChatDomain;
-  webPushService: WebPushService | null;
   nativePushService: NativePushService | null;
   calls: ChatCallsService;
   notifyCallEnded(call: CallPublicPayload): void;
@@ -471,13 +469,6 @@ function sendCallToParticipants(host: ChatCommandHost, call: CallPublicPayload, 
 function createCallCommands(host: ChatCommandHost): ChatCommandMap {
   const sendIncomingCallPush = async (call: CallPublicPayload, room: RoomRow | null) => {
     if (!room) return;
-    if (host.webPushService) {
-      await host.webPushService.sendIncomingCallPush({
-        room,
-        call,
-        caller: call.caller,
-      });
-    }
     if (host.nativePushService) {
       await host.nativePushService.sendIncomingCallPush({
         room,
@@ -818,15 +809,6 @@ function createMessageCommands(host: ChatCommandHost): ChatCommandMap {
 
         if (result.data.notifyComment?.userId) {
           host.sendToUser(result.data.notifyComment.userId, 'message:comment:notify', result.data.notifyComment);
-        }
-
-        if (!skipPush && host.webPushService && typeof host.webPushService.sendChatMessagePush === 'function') {
-          void host.webPushService.sendChatMessagePush({
-            room,
-            message: result.data.message,
-            senderId: positiveNumber(client.state?.user?.id),
-            excludeUserIds: host.getOnlineUserIds(),
-          });
         }
 
         if (!skipPush && host.nativePushService && typeof host.nativePushService.sendChatMessagePush === 'function') {

@@ -1,9 +1,7 @@
-import PwaInstallCard from '@/components/pwa-install-card/index.vue';
 import {ShieldCheck} from 'lucide-vue-next';
 
 export default {
   components: {
-    PwaInstallCard,
     ShieldCheck,
   },
 

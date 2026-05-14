@@ -25,11 +25,6 @@ type ConfigFile = {
     donationPhone?: string;
     donationBank?: string;
   };
-  push?: {
-    vapidPublicKey?: string;
-    vapidPrivateKey?: string;
-    vapidSubject?: string;
-  };
   nativePush?: {
     enabled?: boolean;
     provider?: string;
@@ -145,11 +140,6 @@ export const config = {
   vpn: {
     donationPhone: String(fileConfig.vpn?.donationPhone || '').trim(),
     donationBank: String(fileConfig.vpn?.donationBank || '').trim(),
-  },
-  push: {
-    vapidPublicKey: String(fileConfig.push?.vapidPublicKey || '').trim(),
-    vapidPrivateKey: String(fileConfig.push?.vapidPrivateKey || '').trim(),
-    vapidSubject: String(fileConfig.push?.vapidSubject || '').trim(),
   },
   nativePush: {
     enabled: fileConfig.nativePush?.enabled === true,

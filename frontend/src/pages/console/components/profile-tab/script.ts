@@ -23,13 +23,11 @@ export default {
   props: {
     browserNotificationPermission: {type: String, default: 'default'},
     browserNotificationsEnabled: Boolean,
-    canSendWebPushTest: Boolean,
     contactBusy: Boolean,
     hasDonationBadge: Boolean,
     isContact: Boolean,
     isDevMode: Boolean,
     isOwnProfile: Boolean,
-    isStandaloneApp: Boolean,
     newPassword: {type: String, default: ''},
     profile: Object,
     profileColorPicker: {type: String, default: '#61afef'},
@@ -45,15 +43,6 @@ export default {
     saving: Boolean,
     soundEnabled: Boolean,
     vibrationEnabled: Boolean,
-    webPushAvailable: Boolean,
-    webPushBusy: Boolean,
-    webPushError: {type: String, default: ''},
-    webPushRequiresIosInstall: Boolean,
-    webPushSettingEnabled: Boolean,
-    webPushStatusText: {type: String, default: ''},
-    webPushSupported: Boolean,
-    webPushTestBusy: Boolean,
-    webPushTestStatus: {type: String, default: ''},
     isSystemNickname: {type: Function, required: true},
     userAvatarFallback: {type: Function, required: true},
   },
@@ -66,7 +55,6 @@ export default {
     'media-open',
     'request-browser-permission',
     'save-profile',
-    'send-web-push-test',
     'sound-change',
     'toggle-contact',
     'update:browserNotificationsEnabled',
@@ -77,9 +65,7 @@ export default {
     'update:pushDisableAllMentions',
     'update:soundEnabled',
     'update:vibrationEnabled',
-    'update:webPushSettingEnabled',
     'vibration-change',
-    'web-push-change',
     'write-to-user',
   ],
 
@@ -92,7 +78,6 @@ export default {
     localPushDisableAllMentions: modelComputed('pushDisableAllMentions', 'update:pushDisableAllMentions'),
     localSoundEnabled: modelComputed('soundEnabled', 'update:soundEnabled'),
     localVibrationEnabled: modelComputed('vibrationEnabled', 'update:vibrationEnabled'),
-    localWebPushSettingEnabled: modelComputed('webPushSettingEnabled', 'update:webPushSettingEnabled'),
   },
 
   methods: {
@@ -126,14 +111,6 @@ export default {
 
     requestBrowserNotificationPermission(this: any) {
       this.$emit('request-browser-permission');
-    },
-
-    onWebPushEnabledChange(this: any) {
-      this.$emit('web-push-change');
-    },
-
-    sendWebPushTest(this: any) {
-      this.$emit('send-web-push-test');
     },
 
     onSaveProfile(this: any) {

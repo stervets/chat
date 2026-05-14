@@ -96,33 +96,6 @@
               Разрешить уведомления
             </button>
 
-            <template v-if="isStandaloneApp">
-              <div class="section-title">Web Push</div>
-              <div class="hint">Статус: {{ webPushStatusText }}</div>
-              <label class="toggle-row">
-                <input
-                  v-model="localWebPushSettingEnabled"
-                  type="checkbox"
-                  :disabled="webPushBusy || !webPushSupported || !webPushAvailable"
-                  @change="onWebPushEnabledChange"
-                />
-                <span>{{ webPushBusy ? 'Push-уведомления (обновляем...)' : 'Push-уведомления' }}</span>
-              </label>
-              <div v-if="webPushRequiresIosInstall" class="hint">
-                На iPhone Web Push работает только в установленном приложении.
-              </div>
-              <button
-                v-if="isDevMode && webPushSupported"
-                class="ghost-btn"
-                :disabled="webPushTestBusy || !canSendWebPushTest"
-                @click="sendWebPushTest"
-              >
-                {{ webPushTestBusy ? 'Отправляем тест...' : 'Тестовый push' }}
-              </button>
-              <div v-if="webPushTestStatus" class="hint">{{ webPushTestStatus }}</div>
-              <div v-if="webPushError" class="error">{{ webPushError }}</div>
-            </template>
-
             <div class="section-title">Пароль</div>
             <input v-model="localNewPassword" class="field-input" type="password" placeholder="Новый пароль" />
             <div class="hint">Если поле пустое, пароль не меняется.</div>
