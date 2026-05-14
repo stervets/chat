@@ -244,3 +244,7 @@ yarn run frontend:dev
 - в Android runtime (`isNativeAndroidApp`) browser push controls в `/console` скрыты, `Notification.requestPermission()` там больше не вызывается; остаётся только native permission для RuStore/local notifications.
 - в чате fallback выбора стартового диалога усилен: если `joinedRooms` и `generalDialog` пусты (например после скрытия `Новости MARX`), автоматически открывается первая доступная `publicRooms` комната вместо пустого экрана.
 - дополнительно к fallback выше: если видимых комнат вообще нет, клиент делает аварийный fallback на `room:group:get-default` даже для временно скрытой `Новости MARX`, чтобы после логина не оставаться на пустом фоне с `activeDialog=null`.
+- фикс post-login пустого экрана: в `chat` восстановлены выпиленные методы `initBrowserNotifications` и `showBrowserNotification`, из-за отсутствия которых `mounted/notification` падали `TypeError` и не доходили до выбора первой доступной комнаты.
+- route `/chat` больше не остаётся “без комнаты”: канонизация дефолтного group-диалога всегда пишет `room` в query (`/chat?room=<id>`), включая бывший general, поэтому после логина есть явный редирект в первую доступную комнату (например `room=1`).
+- для SPA-режима Nuxt в Android/WebView отключён `experimental.payloadExtraction`, чтобы клиент не пытался грузить отсутствующие `/_payload.json` и не спамил warning `Cannot load payload ... Unexpected token '<'`.
+- в `iframe allow` для message previews удалён `web-share`, чтобы WebView не показывал warning `Unrecognized feature: 'web-share'`.
