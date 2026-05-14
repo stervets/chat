@@ -21,6 +21,7 @@ public final class RuStorePushBridge {
 
     private static final String PREFS_NAME = "marx_rustore_push";
     private static final String PREF_TOKEN = "token";
+    private static final String PREF_PROJECT_ID = "project_id";
     private static final String PREF_LAUNCH_PAYLOAD = "launch_payload";
     private static final String EXTRA_PAYLOAD = "marx_rustore_push_payload";
 
@@ -65,8 +66,23 @@ public final class RuStorePushBridge {
         }
     }
 
+    public static void dispatchError(Context context, String code, String message) {
+        RuStorePushPlugin plugin = pluginRef.get();
+        if (plugin != null) {
+            plugin.notifyPushError(code == null ? "" : code, message == null ? "" : message);
+        }
+    }
+
     public static String getStoredToken(Context context) {
         return prefs(context).getString(PREF_TOKEN, "");
+    }
+
+    public static void storeProjectId(Context context, String projectId) {
+        prefs(context).edit().putString(PREF_PROJECT_ID, projectId == null ? "" : projectId.trim()).apply();
+    }
+
+    public static String getStoredProjectId(Context context) {
+        return prefs(context).getString(PREF_PROJECT_ID, "");
     }
 
     public static JSObject consumeLaunchPayload(Context context) {

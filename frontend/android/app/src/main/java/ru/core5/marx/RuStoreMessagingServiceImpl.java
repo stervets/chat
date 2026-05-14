@@ -33,9 +33,11 @@ public class RuStoreMessagingServiceImpl extends RuStoreMessagingService {
     public void onMessageReceived(RemoteMessage message) {
         Map<String, String> data = message == null ? null : message.getData();
         if (data == null || data.isEmpty()) {
+            Log.i(TAG, "RuStore push received without data payload");
             return;
         }
 
+        Log.i(TAG, "RuStore push received keys=" + data.keySet());
         JSObject payload = RuStorePushBridge.payloadToJsObject(data);
         RuStorePushBridge.dispatchPushReceived(this, payload);
 
@@ -53,6 +55,14 @@ public class RuStoreMessagingServiceImpl extends RuStoreMessagingService {
     public void onError(List<? extends RuStorePushClientException> errors) {
         int count = errors == null ? 0 : errors.size();
         Log.w(TAG, "RuStore push error count=" + count);
+        if (errors == null) return;
+        for (RuStorePushClientException error : errors) {
+            if (error == null) continue;
+            String code = error.getClass().getSimpleName();
+            String message = String.valueOf(error.getMessage());
+            Log.w(TAG, "RuStore push error item: " + code + ": " + message);
+            RuStorePushBridge.dispatchError(this, code, message);
+        }
     }
 
     private void showSystemNotification(JSObject payload) {

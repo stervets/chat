@@ -23,6 +23,11 @@ type RuStorePushTokenResult = {
   token: string;
 };
 
+type RuStorePushErrorPayload = {
+  code?: string;
+  message?: string;
+};
+
 type RuStorePushLaunchResult = {
   notification: RuStorePushPayload | null;
 };
@@ -31,9 +36,11 @@ type RuStorePushPlugin = {
   register(options: RuStorePushRegisterOptions): Promise<RuStorePushTokenResult>;
   getToken(): Promise<RuStorePushTokenResult>;
   getLaunchNotification(): Promise<RuStorePushLaunchResult>;
+  resolveError(payload: RuStorePushErrorPayload): Promise<void>;
   addListener(eventName: 'token', listenerFunc: (result: RuStorePushTokenResult) => void): Promise<{remove: () => Promise<void>}>;
   addListener(eventName: 'pushReceived', listenerFunc: (result: {notification: RuStorePushPayload}) => void): Promise<{remove: () => Promise<void>}>;
   addListener(eventName: 'pushActionPerformed', listenerFunc: (result: {notification: RuStorePushPayload}) => void): Promise<{remove: () => Promise<void>}>;
+  addListener(eventName: 'pushError', listenerFunc: (result: {code?: string; message?: string}) => void): Promise<{remove: () => Promise<void>}>;
 };
 
 export const RuStorePush = registerPlugin<RuStorePushPlugin>('RuStorePush');

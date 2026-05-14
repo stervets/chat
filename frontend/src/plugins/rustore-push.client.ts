@@ -41,6 +41,7 @@ export default defineNuxtPlugin(() => {
   let registeringBackendToken = false;
   let lastBackendRegisteredToken = '';
   let lastBackendSessionToken = '';
+  let backgroundResolveRequested = false;
 
   const openRouteFromPush = async (notification: RuStorePushPayload | null | undefined) => {
     const target = buildRuStorePushRoute(notification || {});
@@ -118,6 +119,23 @@ export default defineNuxtPlugin(() => {
 
   void RuStorePush.addListener('pushActionPerformed', ({notification}) => {
     void openRouteFromPush(notification || {});
+  });
+
+  void RuStorePush.addListener('pushError', ({code, message}) => {
+    const errorCode = stringValue(code);
+    const errorMessage = stringValue(message);
+    console.warn(`[rustore-push] pushError code=${errorCode} message=${errorMessage}`);
+    if (errorCode === 'HostAppBackgroundWorkPermissionNotGranted') {
+      console.warn('[rustore-push] RuStore background work is disabled. Enable background activity/battery unrestricted for RuStore app.');
+      if (backgroundResolveRequested) return;
+      backgroundResolveRequested = true;
+      void RuStorePush.resolveError({
+        code: errorCode,
+        message: errorMessage,
+      }).catch(() => {
+        backgroundResolveRequested = false;
+      });
+    }
   });
 
   void (async () => {

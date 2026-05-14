@@ -1,17 +1,20 @@
 import {App} from '@capacitor/app';
 import {Network} from '@capacitor/network';
-import {forceWsReconnect} from '@/composables/ws-rpc';
+import {forceWsReconnect, wsConnectionState} from '@/composables/ws-rpc';
 import {isNativeAndroidApp} from '@/composables/native-runtime';
 
 export default defineNuxtPlugin(() => {
   if (!isNativeAndroidApp()) return;
   if (typeof window === 'undefined') return;
 
-  const MIN_RECONNECT_GAP_MS = 5000;
+  const MIN_RECONNECT_GAP_MS = 12000;
   let lastReconnectAt = 0;
+  let lastNetworkConnected: boolean | null = null;
+  let windowOnline = navigator.onLine;
 
   const reconnect = (reason: string) => {
     if (reason === 'offline') return;
+    if (wsConnectionState.value !== 'disconnected') return;
     const now = Date.now();
     if (now - lastReconnectAt < MIN_RECONNECT_GAP_MS) return;
     lastReconnectAt = now;
@@ -27,16 +30,32 @@ export default defineNuxtPlugin(() => {
     reconnect('foreground');
   });
 
+  void Network.getStatus().then((status) => {
+    lastNetworkConnected = !!status.connected;
+  }).catch(() => {});
+
   void Network.addListener('networkStatusChange', (status) => {
-    if (!status.connected) return;
-    reconnect('network');
+    const connected = !!status.connected;
+    if (lastNetworkConnected === null) {
+      lastNetworkConnected = connected;
+      return;
+    }
+
+    const wasConnected = lastNetworkConnected;
+    lastNetworkConnected = connected;
+    if (!wasConnected && connected) {
+      reconnect('network');
+    }
   });
 
   window.addEventListener('online', () => {
-    reconnect('online');
+    if (!windowOnline) {
+      windowOnline = true;
+      reconnect('online');
+    }
   });
 
   window.addEventListener('offline', () => {
-    reconnect('offline');
+    windowOnline = false;
   });
 });
