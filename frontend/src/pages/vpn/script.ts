@@ -10,7 +10,7 @@ export default {
       await this.router.replace({
         path: '/console',
         query: {
-          tab: 'vpn',
+          tab: 'user',
         },
       });
     },

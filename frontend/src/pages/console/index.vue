@@ -19,6 +19,7 @@
           v-if="activeTab === 'user'"
           :browser-notification-permission="browserNotificationPermission"
           :browser-notifications-enabled="browserNotificationsEnabled"
+          :show-browser-push-controls="!isNativeAndroidRuntime"
           :contact-busy="contactBusy"
           :has-donation-badge="hasDonationBadge"
           :is-contact="isContact"
@@ -119,30 +120,6 @@
           @update:room-post-only-by-admin="roomPostOnlyByAdmin = $event"
           @update:room-title="roomTitle = $event"
           @update:room-visibility="roomVisibility = $event"
-        />
-
-        <VpnTab
-          v-else-if="activeTab === 'vpn'"
-          :amnezia-file-android="amneziaFileAndroid"
-          :amnezia-file-linux="amneziaFileLinux"
-          :amnezia-file-mac-os="amneziaFileMacOs"
-          :amnezia-file-windows="amneziaFileWindows"
-          :copied-vpn-link="copiedVpnLink"
-          :copy-vpn-error="copyVpnError"
-          :download-href-android="downloadHrefAndroid"
-          :download-href-linux="downloadHrefLinux"
-          :download-href-mac-os="downloadHrefMacOs"
-          :download-href-windows="downloadHrefWindows"
-          :mt-proxy-deep-link="mtProxyDeepLink"
-          :mt-proxy-web-link="mtProxyWebLink"
-          :vpn-provision-error="vpnProvisionError"
-          :vpn-provision-link="vpnProvisionLink"
-          :vpn-provision-qr-data-url="vpnProvisionQrDataUrl"
-          :vpn-provision-qr-error="vpnProvisionQrError"
-          :vpn-provision-state="vpnProvisionState"
-          @copy-vpn-link="copyVpnLink"
-          @download-click="onDownloadClick"
-          @request-vpn-provision="requestVpnProvision"
         />
 
         <InvitesTab

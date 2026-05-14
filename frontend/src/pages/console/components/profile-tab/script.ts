@@ -23,6 +23,7 @@ export default {
   props: {
     browserNotificationPermission: {type: String, default: 'default'},
     browserNotificationsEnabled: Boolean,
+    showBrowserPushControls: {type: Boolean, default: true},
     contactBusy: Boolean,
     hasDonationBadge: Boolean,
     isContact: Boolean,

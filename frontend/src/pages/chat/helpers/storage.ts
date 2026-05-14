@@ -3,7 +3,6 @@ export const HANDLED_MESSAGE_IDS_LIMIT = 8000;
 export const SOUND_ENABLED_STORAGE_KEY = 'chat:notifications-sound-enabled:v1';
 export const SOUND_OVERLAY_SKIP_ONCE_KEY = 'chat:sound-overlay-skip-once:v1';
 export const BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY = 'chat:browser-notifications-enabled:v1';
-export const WEB_PUSH_ENABLED_STORAGE_KEY = 'chat:web-push-enabled:v1';
 export const VIBRATION_ENABLED_STORAGE_KEY = 'chat:vibration-enabled:v1';
 export const PINNED_PANEL_HEIGHT_RATIO_STORAGE_KEY = 'chat:pinned-panel-height-ratio:v1';
 export const PINNED_COLLAPSED_STORAGE_PREFIX = 'chat:pinned-collapsed:v1';

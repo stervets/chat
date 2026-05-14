@@ -83,18 +83,20 @@
               <input v-model="localVibrationEnabled" type="checkbox" @change="onVibrationEnabledChange" />
               <span>Вибрация</span>
             </label>
-            <label class="toggle-row">
-              <input v-model="localBrowserNotificationsEnabled" type="checkbox" @change="onBrowserNotificationsEnabledChange" />
-              <span>Уведомления браузера</span>
-            </label>
-            <div class="hint">Browser permission: {{ browserNotificationPermission }}</div>
-            <button
-              v-if="browserNotificationsEnabled && browserNotificationPermission !== 'granted'"
-              class="ghost-btn"
-              @click="requestBrowserNotificationPermission"
-            >
-              Разрешить уведомления
-            </button>
+            <template v-if="showBrowserPushControls">
+              <label class="toggle-row">
+                <input v-model="localBrowserNotificationsEnabled" type="checkbox" @change="onBrowserNotificationsEnabledChange" />
+                <span>Уведомления браузера</span>
+              </label>
+              <div class="hint">Browser permission: {{ browserNotificationPermission }}</div>
+              <button
+                v-if="browserNotificationsEnabled && browserNotificationPermission !== 'granted'"
+                class="ghost-btn"
+                @click="requestBrowserNotificationPermission"
+              >
+                Разрешить уведомления
+              </button>
+            </template>
 
             <div class="section-title">Пароль</div>
             <input v-model="localNewPassword" class="field-input" type="password" placeholder="Новый пароль" />

@@ -1,7 +1,6 @@
 import type {Message, User} from '@/composables/types';
 import {on, off} from '@/composables/event-bus';
 import {setWsReconnectDialogResolver} from '@/composables/ws-rpc';
-import {isStandaloneDisplayMode} from '@/composables/use-web-push';
 import ChatHeader from './components/chat-header/index.vue';
 import ChatLeftDrawer from './components/chat-left-drawer/index.vue';
 import ChatToasts from './components/chat-toasts/index.vue';
@@ -52,11 +51,6 @@ export default {
   computed: {
     isDevMode(this: any) {
       return this.appMode === 'dev';
-    },
-
-    isStandaloneApp(this: any) {
-      if (typeof window === 'undefined') return false;
-      return isStandaloneDisplayMode();
     },
 
     filteredUsers(this: any) {
@@ -153,24 +147,6 @@ export default {
       if (this.wsConnectionState === 'connecting') return 'connecting...';
       if (this.wsConnectionState === 'disconnected') return 'offline';
       return '';
-    },
-
-    webPushStatusText(this: any) {
-      if (!this.webPushSupported) return 'не поддерживается';
-      if (!this.webPushAvailable) return 'backend /push/public-key отключен или недоступен';
-      if (this.isStandaloneApp && !this.webPushSettingEnabled) return 'выключено';
-      if (this.webPushPermission === 'denied') return 'запрещено в браузере';
-      if (this.webPushEnabled) return 'включено';
-      if (this.webPushPermission === 'granted' && !this.webPushSynced) {
-        return 'разрешено, но подписка не синхронизирована с сервером';
-      }
-      if (this.webPushPermission === 'granted') return 'готово к включению';
-      return 'не включено';
-    },
-
-    canSendWebPushTest(this: any) {
-      if (this.webPushEnabled) return true;
-      return this.webPushSupported && this.webPushPermission === 'granted';
     },
 
     unreadDirectDialogIds(this: any) {
@@ -463,7 +439,6 @@ export default {
     });
     this.resolveSoundStartupState();
     this.initBrowserNotifications();
-    await this.initWebPush();
 
     on('message:created', this.onChatMessage);
     on('message:updated', this.onChatMessageUpdated);

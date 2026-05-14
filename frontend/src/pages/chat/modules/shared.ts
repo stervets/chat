@@ -21,7 +21,6 @@ export {
   PINNED_PANEL_HEIGHT_RATIO_STORAGE_KEY,
   SOUND_ENABLED_STORAGE_KEY,
   VIBRATION_ENABLED_STORAGE_KEY,
-  WEB_PUSH_ENABLED_STORAGE_KEY,
   getPinnedCollapsedStorageKey,
   getHandledMessageIdsStorageKey,
   loadBooleanSetting,

@@ -21,6 +21,13 @@ import type {
   RouteMode,
 } from './shared';
 import {resolveMediaUrl} from '@/composables/media-url';
+
+const TEMP_HIDDEN_ROOM_TITLE = 'новости marx';
+
+function isTemporarilyHiddenRoomTitle(titleRaw: unknown) {
+  return String(titleRaw || '').trim().toLowerCase() === TEMP_HIDDEN_ROOM_TITLE;
+}
+
 export const chatMethodsAuthDialogsAndProfile = {
     applyMe(this: any, me: User) {
       const normalizedMe = this.normalizeUser(me) || me;
@@ -270,18 +277,23 @@ export const chatMethodsAuthDialogsAndProfile = {
 
       this.joinedRooms = wsData<any[]>(joinedResult, [])
         .map((row: any) => normalizeRoomDialog(row))
-        .filter((dialog: Dialog) => Number(dialog.id || 0) > 0);
+        .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !isTemporarilyHiddenRoomTitle(dialog.title));
 
       const joinedIds = new Set(this.joinedRooms.map((dialog: Dialog) => Number(dialog.id || 0)));
       this.publicRooms = wsData<any[]>(publicResult, [])
         .map((row: any) => normalizeRoomDialog(row))
-        .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !joinedIds.has(Number(dialog.id || 0)));
+        .filter((dialog: Dialog) => (
+          Number(dialog.id || 0) > 0
+          && !joinedIds.has(Number(dialog.id || 0))
+          && !isTemporarilyHiddenRoomTitle(dialog.title)
+        ));
     },
 
     async fetchGeneralDialog(this: any) {
       const result = await ws.request('room:group:get-default');
       if ((result as any)?.error || (result as any)?.ok === false) return null;
       const data = wsObject(result);
+      if (isTemporarilyHiddenRoomTitle(data.title)) return null;
       return {
         id: data.roomId,
         kind: 'group',
@@ -562,7 +574,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       await this.router.push({
         path: '/console',
         query: {
-          tab: 'vpn',
+          tab: 'user',
         },
       });
     },
