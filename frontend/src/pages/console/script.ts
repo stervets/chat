@@ -10,30 +10,19 @@ import DonationCard from './components/donation-card/index.vue';
 import InvitesTab from './components/invites-tab/index.vue';
 import ProfileTab from './components/profile-tab/index.vue';
 import RoomsTab from './components/rooms-tab/index.vue';
-import VpnTab from './components/vpn-tab/index.vue';
 import {resolveMediaUrl} from '@/composables/media-url';
 import {emit} from '@/composables/event-bus';
 import {loadLastChatPath} from '@/composables/last-chat';
+import {isNativeAndroidApp} from '@/composables/native-runtime';
 import {ws} from '@/composables/classes/ws';
 import {getSessionToken, restoreSession, wsChangePassword, wsData, wsObject, wsProvisionVpn, wsSetVpnDonation, wsUpdateProfile} from '@/composables/ws-rpc';
 import {
   BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY,
   SOUND_ENABLED_STORAGE_KEY,
   VIBRATION_ENABLED_STORAGE_KEY,
-  WEB_PUSH_ENABLED_STORAGE_KEY,
   loadBooleanSetting,
   persistBooleanSetting,
 } from '@/pages/chat/helpers/storage';
-import {
-  fetchWebPushServerConfig,
-  getWebPushPermission,
-  isIosForWebPush,
-  isStandaloneDisplayMode,
-  isWebPushSupported,
-  sendWebPushTest,
-  subscribeWebPush,
-  unsubscribeWebPush,
-} from '@/composables/use-web-push';
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_MTPROXY_DEEP_LINK = 'tg://proxy?server=151.245.137.79&port=8443&secret=c6fab0c23452644261db3661aa963f50';
@@ -44,8 +33,9 @@ const AVATAR_CROP_STAGE_SIZE = 280;
 const AVATAR_CROP_VISIBLE_SIZE = 232;
 const AVATAR_CROP_EXPORT_SIZE = 1024;
 const AVATAR_CROP_SCALE_MAX_MULTIPLIER = 6;
+const TEMP_HIDDEN_ROOM_TITLE = 'новости marx';
 
-type ConsoleTab = 'user' | 'rooms' | 'vpn' | 'invites';
+type ConsoleTab = 'user' | 'rooms' | 'invites';
 type VpnProvisionState = 'idle' | 'loading' | 'success' | 'error';
 type AvatarCropTarget = 'profile' | 'room' | 'roomCreate';
 
@@ -70,7 +60,6 @@ export default {
     InvitesTab,
     ProfileTab,
     RoomsTab,
-    VpnTab,
   },
 
   async setup() {
@@ -84,6 +73,7 @@ export default {
       route,
       router,
       config: runtimeConfig,
+      isNativeAndroidRuntime: isNativeAndroidApp(),
       activeTab: ref<ConsoleTab>('user'),
       appMode: String(runtimeConfig.public.mode || '').trim().toLowerCase(),
       me: ref<any | null>(null),
@@ -107,17 +97,6 @@ export default {
       vibrationEnabled: ref(true),
       browserNotificationsEnabled: ref(true),
       browserNotificationPermission: ref<'default' | 'denied' | 'granted'>('default'),
-      webPushSupported: ref(false),
-      webPushAvailable: ref(false),
-      webPushSettingEnabled: ref(true),
-      webPushEnabled: ref(false),
-      webPushBusy: ref(false),
-      webPushTestBusy: ref(false),
-      webPushPermission: ref<'default' | 'denied' | 'granted'>('default'),
-      webPushError: ref(''),
-      webPushTestStatus: ref(''),
-      webPushRequiresIosInstall: ref(false),
-      webPushVapidPublicKey: ref(''),
 
       roomsLoading: ref(false),
       roomsError: ref(''),
@@ -247,22 +226,6 @@ export default {
 
     isDevMode(this: any) {
       return this.appMode === 'dev';
-    },
-
-    isStandaloneApp() {
-      if (typeof window === 'undefined') return false;
-      return isStandaloneDisplayMode();
-    },
-
-    webPushStatusText(this: any) {
-      if (!this.webPushSupported) return 'не поддерживается';
-      if (!this.webPushAvailable) return 'выключен на сервере';
-      if (this.webPushEnabled) return 'включён';
-      return 'выключен';
-    },
-
-    canSendWebPushTest(this: any) {
-      return this.webPushPermission === 'granted' || this.webPushEnabled;
     },
 
     consoleUserTabLabel(this: any) {
@@ -417,7 +380,11 @@ export default {
 
     normalizeTab(this: any, raw: unknown): ConsoleTab {
       const value = String(raw || '').trim().toLowerCase();
-      return value === 'rooms' || value === 'vpn' || value === 'invites' ? value : 'user';
+      return value === 'rooms' || value === 'invites' ? value : 'user';
+    },
+
+    isTemporarilyHiddenRoomTitle(this: any, titleRaw: unknown) {
+      return String(titleRaw || '').trim().toLowerCase() === TEMP_HIDDEN_ROOM_TITLE;
     },
 
     routeNickname(this: any) {
@@ -958,6 +925,10 @@ export default {
     },
 
     syncBrowserNotificationPermission(this: any) {
+      if (this.isNativeAndroidRuntime) {
+        this.browserNotificationPermission = 'denied';
+        return;
+      }
       if (typeof Notification === 'undefined') {
         this.browserNotificationPermission = 'denied';
         return;
@@ -968,8 +939,13 @@ export default {
     loadLocalSettings(this: any) {
       this.soundEnabled = loadBooleanSetting(SOUND_ENABLED_STORAGE_KEY, true);
       this.vibrationEnabled = loadBooleanSetting(VIBRATION_ENABLED_STORAGE_KEY, true);
+      if (this.isNativeAndroidRuntime) {
+        this.browserNotificationsEnabled = false;
+        this.browserNotificationPermission = 'denied';
+        persistBooleanSetting(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY, false);
+        return;
+      }
       this.browserNotificationsEnabled = loadBooleanSetting(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY, true);
-      this.webPushSettingEnabled = loadBooleanSetting(WEB_PUSH_ENABLED_STORAGE_KEY, true);
       this.syncBrowserNotificationPermission();
     },
 
@@ -982,6 +958,10 @@ export default {
     },
 
     async requestBrowserNotificationPermission(this: any) {
+      if (this.isNativeAndroidRuntime) {
+        this.browserNotificationPermission = 'denied';
+        return;
+      }
       if (typeof Notification === 'undefined') return;
       try {
         this.browserNotificationPermission = await Notification.requestPermission();
@@ -991,117 +971,16 @@ export default {
     },
 
     onBrowserNotificationsEnabledChange(this: any) {
+      if (this.isNativeAndroidRuntime) {
+        this.browserNotificationsEnabled = false;
+        persistBooleanSetting(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY, false);
+        this.browserNotificationPermission = 'denied';
+        return;
+      }
       this.browserNotificationsEnabled = !!this.browserNotificationsEnabled;
       persistBooleanSetting(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY, !!this.browserNotificationsEnabled);
       if (this.browserNotificationsEnabled && this.browserNotificationPermission === 'default') {
         void this.requestBrowserNotificationPermission();
-      }
-    },
-
-    async initWebPush(this: any) {
-      this.webPushError = '';
-      this.webPushTestStatus = '';
-      this.webPushSupported = isWebPushSupported();
-      this.webPushPermission = getWebPushPermission();
-      this.webPushRequiresIosInstall = isIosForWebPush() && !isStandaloneDisplayMode();
-
-      if (!this.webPushSupported) {
-        this.webPushAvailable = false;
-        this.webPushEnabled = false;
-        return;
-      }
-
-      const apiBase = getApiBase();
-      const serverConfig = await fetchWebPushServerConfig(apiBase);
-      this.webPushAvailable = !!serverConfig.enabled;
-      this.webPushVapidPublicKey = serverConfig.vapidPublicKey;
-      if (!this.webPushAvailable) {
-        this.webPushEnabled = false;
-        return;
-      }
-
-      const registration = await navigator.serviceWorker.ready.catch(() => null);
-      if (!registration) {
-        this.webPushEnabled = false;
-        return;
-      }
-
-      const existing = await registration.pushManager.getSubscription();
-      this.webPushEnabled = !!existing && this.webPushPermission === 'granted';
-      if (this.isStandaloneApp && this.webPushSettingEnabled && !this.webPushEnabled && this.webPushPermission !== 'denied') {
-        await this.enableWebPush();
-      }
-    },
-
-    async enableWebPush(this: any) {
-      if (this.webPushBusy) return;
-      this.webPushBusy = true;
-      this.webPushError = '';
-
-      try {
-        if (!this.webPushSupported || !this.webPushAvailable || !this.webPushVapidPublicKey) {
-          this.webPushError = 'Web Push сейчас недоступен.';
-          return;
-        }
-        if (this.webPushPermission === 'default') {
-          await this.requestBrowserNotificationPermission();
-          this.webPushPermission = getWebPushPermission();
-        }
-        if (this.webPushPermission !== 'granted') {
-          this.webPushError = 'Без разрешения браузера push не включится.';
-          return;
-        }
-
-        const result = await subscribeWebPush(getApiBase(), getSessionToken(), this.webPushVapidPublicKey);
-        if (!result.ok) {
-          this.webPushError = 'Не удалось включить Web Push.';
-          return;
-        }
-
-        this.webPushEnabled = true;
-      } finally {
-        this.webPushBusy = false;
-      }
-    },
-
-    async disableWebPush(this: any) {
-      if (this.webPushBusy) return;
-      this.webPushBusy = true;
-      this.webPushError = '';
-
-      try {
-        await unsubscribeWebPush(getApiBase(), getSessionToken());
-        this.webPushEnabled = false;
-      } finally {
-        this.webPushBusy = false;
-      }
-    },
-
-    onWebPushEnabledChange(this: any) {
-      this.webPushSettingEnabled = !!this.webPushSettingEnabled;
-      persistBooleanSetting(WEB_PUSH_ENABLED_STORAGE_KEY, !!this.webPushSettingEnabled);
-      if (this.webPushSettingEnabled) {
-        void this.enableWebPush();
-        return;
-      }
-      void this.disableWebPush();
-    },
-
-    async sendWebPushTest(this: any) {
-      if (!this.isDevMode || this.webPushTestBusy) return;
-      this.webPushTestBusy = true;
-      this.webPushError = '';
-      this.webPushTestStatus = '';
-      try {
-        const result = await sendWebPushTest(getApiBase(), getSessionToken());
-        if (!result.ok) {
-          this.webPushError = 'Тестовый push не отправился.';
-          this.webPushTestStatus = 'Ошибка';
-          return;
-        }
-        this.webPushTestStatus = 'Тестовый push отправлен';
-      } finally {
-        this.webPushTestBusy = false;
       }
     },
 
@@ -1137,7 +1016,9 @@ export default {
       this.roomsError = '';
       try {
         const rows = wsData<any[]>(await ws.request('room:list', {kind: 'group', scope: 'all'}), []);
-        this.allRooms = rows.map((row: any) => this.normalizeRoom(row)).filter(Boolean);
+        this.allRooms = rows
+          .map((row: any) => this.normalizeRoom(row))
+          .filter((room: any) => !!room && !this.isTemporarilyHiddenRoomTitle(room?.title));
       } finally {
         this.roomsLoading = false;
       }
@@ -1171,6 +1052,18 @@ export default {
         postOnlyByAdmin: !!data.postOnlyByAdmin,
         createdById: Number(data.createdById || 0) || null,
       };
+      if (this.isTemporarilyHiddenRoomTitle(this.selectedRoom?.title)) {
+        this.selectedRoom = this.roomsTabList[0] || null;
+        if (!this.selectedRoom) {
+          this.roomMembers = [];
+          await this.updateRoute({roomId: undefined});
+          return;
+        }
+        this.applyRoomForm(this.selectedRoom);
+        await this.updateRoute({roomId: this.selectedRoom.id});
+        await this.fetchRoomMembers(this.selectedRoom.id);
+        return;
+      }
       this.applyRoomForm(this.selectedRoom);
       await this.fetchRoomMembers(roomId);
     },
@@ -1672,10 +1565,6 @@ export default {
       } else if (this.activeTab === 'invites') {
         await this.fetchInviteRooms();
         await this.fetchInvites();
-      } else if (this.activeTab === 'vpn') {
-        if (!this.donationPhone && !this.donationBank && !this.vpnInfoLoading) {
-          await this.fetchVpnInfo();
-        }
       }
     },
   },
@@ -1690,10 +1579,7 @@ export default {
     const ok = await this.ensureAuth();
     if (!ok) return;
     this.loadLocalSettings();
-    await Promise.all([
-      this.initWebPush(),
-      this.fetchVpnInfo(),
-    ]);
+    await this.fetchVpnInfo();
     this.loading = false;
     await this.syncFromRoute();
   },

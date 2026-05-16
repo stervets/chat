@@ -1,9 +1,8 @@
-import {MessagesSquare, ShieldCheck, Ticket, UserRound} from 'lucide-vue-next';
+import {MessagesSquare, Ticket, UserRound} from 'lucide-vue-next';
 
 export default {
   components: {
     MessagesSquare,
-    ShieldCheck,
     Ticket,
     UserRound,
   },

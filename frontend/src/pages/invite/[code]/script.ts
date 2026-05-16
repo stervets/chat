@@ -1,7 +1,6 @@
 import {ref} from 'vue';
 import {restoreSession, wsCheckInvite, wsObject, wsRedeemInvite} from '@/composables/ws-rpc';
 import {vibrateConfirm, vibrateError} from '@/utils/vibrate';
-import {usePwaInstall} from '@/composables/use-pwa-install';
 
 export default {
   async setup() {
@@ -15,7 +14,6 @@ export default {
     const forcedTelegramMode = querySource === 'tg'
       || querySource === 'telegram'
       || querySource === '1';
-    const {isTelegramInApp} = usePwaInstall();
     return {
       router: useRouter(),
       code: ref(codeParam || ''),
@@ -27,7 +25,7 @@ export default {
       inviteValid: ref(false),
       existingUserApplied: ref(false),
       existingUserMessage: ref(''),
-      isTelegramInApp,
+      isTelegramInApp: ref(false),
       forceTelegramMode: ref(forcedTelegramMode),
       telegramExternalOpenAttempted: ref(false),
     };

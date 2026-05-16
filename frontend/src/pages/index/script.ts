@@ -15,25 +15,19 @@ export default {
         return;
       }
 
-      for (let attempt = 0; attempt < 6; attempt += 1) {
-        try {
-          const session = await restoreSession();
-          if ((session as any)?.ok && wsObject(session).user?.id) {
-            await this.router.replace('/chat');
-            return;
-          }
-
-          if ((session as any)?.error === 'unauthorized') {
-            await this.router.replace('/login');
-            return;
-          }
-        } catch {
-          // keep retrying, then fallback to chat
+      try {
+        const session = await restoreSession();
+        if ((session as any)?.ok && wsObject(session).user?.id) {
+          await this.router.replace('/chat');
+          return;
         }
 
-        if (attempt < 5) {
-          await new Promise((resolve) => setTimeout(resolve, 450));
+        if ((session as any)?.error === 'unauthorized') {
+          await this.router.replace('/login');
+          return;
         }
+      } catch {
+        // сеть может быть мертва при старте, не держим splash вечно
       }
 
       await this.router.replace('/chat');

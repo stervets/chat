@@ -1,11 +1,6 @@
 <template>
         <div class="console-card">
           <section class="block">
-            <h2>Установка приложения</h2>
-            <PwaInstallCard class="vpn-pwa-install" />
-          </section>
-
-          <section class="block">
             <h2>Proxy для Telegram</h2>
             <div class="links">
               <a class="vpn-link" :href="mtProxyDeepLink" target="_blank" rel="noopener noreferrer">{{ mtProxyDeepLink }}</a>

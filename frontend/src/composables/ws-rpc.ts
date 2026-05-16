@@ -2,6 +2,7 @@ import {ref} from 'vue';
 import {getWsUrlCandidates} from '@/composables/api';
 import {ws, type WsResult} from '@/composables/classes/ws';
 import {emit, on} from '@/composables/event-bus';
+import {getStoredRuStorePushToken} from '@/composables/rustore-push';
 
 const SESSION_TOKEN_KEY = 'marx_session_token';
 const RECONNECT_BASE_DELAY_MS = 500;
@@ -211,6 +212,23 @@ export function clearSessionToken() {
   localStorage.removeItem(SESSION_TOKEN_KEY);
 }
 
+export async function forceWsReconnect(reason = 'manual') {
+  initReconnectRuntime();
+  clearReconnectTimer();
+  reconnectInFlight = false;
+  resetReconnectAttempts();
+  ws.disconnect();
+
+  if (!getSessionToken()) {
+    setWsState('disconnected');
+    return {ok: false, error: 'unauthorized', reason};
+  }
+
+  setWsState('connecting');
+  void runReconnect();
+  return {ok: true, reason};
+}
+
 export async function ensureWsConnected() {
   initReconnectRuntime();
 
@@ -275,8 +293,16 @@ export async function wsCheckInvite(code: string) {
 }
 
 export async function wsLogout() {
+  const nativePushToken = getStoredRuStorePushToken();
   const connected = await ensureWsConnected();
   if ((connected as any).ok) {
+    if (nativePushToken) {
+      await ws.request('push:native:unregister', {
+        provider: 'rustore',
+        token: nativePushToken,
+        platform: 'android',
+      });
+    }
     await ws.request('auth:logout');
   }
   clearSessionToken();
@@ -331,4 +357,32 @@ export async function wsGamesAction(sessionId: number, action: {type: string; pa
   const session = await restoreSession();
   if (!(session as any)?.ok) return session;
   return ws.request('game:session:action', {sessionId, action});
+}
+
+export async function wsRegisterNativePushToken(tokenRaw: string, providerRaw = 'rustore', platformRaw = 'android') {
+  const session = await restoreSession();
+  if (!(session as any)?.ok) return session;
+
+  const token = String(tokenRaw || '').trim();
+  const provider = String(providerRaw || 'rustore').trim().toLowerCase() || 'rustore';
+  const platform = String(platformRaw || 'android').trim().toLowerCase() || 'android';
+  if (!token) {
+    return {ok: false, error: 'invalid_token'} as const;
+  }
+
+  return ws.request('push:native:register', {provider, token, platform});
+}
+
+export async function wsUnregisterNativePushToken(tokenRaw: string, providerRaw = 'rustore', platformRaw = 'android') {
+  const session = await restoreSession();
+  if (!(session as any)?.ok) return session;
+
+  const token = String(tokenRaw || '').trim();
+  const provider = String(providerRaw || 'rustore').trim().toLowerCase() || 'rustore';
+  const platform = String(platformRaw || 'android').trim().toLowerCase() || 'android';
+  if (!token) {
+    return {ok: false, error: 'invalid_token'} as const;
+  }
+
+  return ws.request('push:native:unregister', {provider, token, platform});
 }

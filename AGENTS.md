@@ -211,3 +211,40 @@ yarn run frontend:dev
 - на странице `/invite/[code]` добавлен видимый debug-блок `User-Agent`, который показывает текущее значение `navigator.userAgent` прямо в интерфейсе.
 - для invite-flow добавлен резервный телеграм-детект без доверия к UA: режим Telegram включается не только по `isTelegramInApp`, но и по query-параметрам (`?src=tg|telegram|1`, `?from=...`) и по `document.referrer` (`t.me`/`telegram`); ссылки инвайтов из `/console` теперь генерируются как `/invite/<code>?src=tg`.
 - по UI invite-страницы убран debug-блок `User-Agent`; в предупреждении оставлен текст `Если Вы открыли эту ссылку через Telegram, откройте её в обычном браузере!` с сохранением ссылки и кнопки `Попробовать открыть в браузере`; генерация invite-ссылок из `/console` возвращена к виду `/invite/<code>` без `?src=tg`.
+
+## Актуализация 2026-04-30
+- `frontend/src/pages/chat/message-scriptable/index.vue` остаётся тонким host-компонентом: dynamic `<component :is="...">`, fallback-empty/fallback-unknown и единый forwarding события `action`; конкретные scriptable-типы в шаблоне host больше не перечисляются.
+- type-specific состояние, watchers, effects и action payloads вынесены из host в компоненты конкретных view: `view-guess-word` сам хранит input и отправляет `submit_guess`, `view-bot-control-surface` сам хранит level draft и отправляет `toggle_enabled`/`set_level`, `view-poll-surface` сам отправляет `vote_option`, `view-button-sound` сам управляет audio/soundTick.
+- `frontend/src/pages/chat/message-scriptable/registry.ts` теперь хранит определения scriptable-view (`kind -> component`) и optional `buildProps`; host не знает, какому типу нужны дополнительные props, например `passiveEffects` для `button_sound`.
+- стили scriptable-view разнесены по компонентам и подключаются через `frontend/src/components/chat/message-scriptable/components/shared-style.less`; родительский `message-scriptable/style.less` снова scoped и содержит только host layout.
+- при аудите по frontend/backend не найдено второго UI-renderer с ветвлением по `viewModel.kind`; room/runtime UI сейчас остаётся временно отключённым по общей политике проекта.
+
+## Актуализация 2026-05-14
+- backend для `scriptable` сообщений в chat payload теперь сохраняет `kind='scriptable'` (не мапит в `text`) и отдаёт `runtime.clientScript/runtime.serverScript/runtime.data` из `node`;
+- legacy fallback-текст для `scriptable` в `chat-context.messages` и `chat-dialogs.service` больше не подставляется, рендерится обычный `rawText`, чтобы клиент получал канонические runtime-данные.
+- игровые картинки карт (`frontend/src/public/cards/*.gif`) удалены из git и добавлены в `.gitignore`, чтобы не раздувать репозиторий временными ассетами.
+- `frontend/src/public/callout.mp3` перекодирован в `mono 48kbps` (mp3) для уменьшения веса ассета без изменения длительности.
+- добавлен минимальный Android wrapper через Capacitor в `frontend`: `capacitor.config.ts` (`appId=ru.core5.marx`, `appName=MARX`, `webDir=.output/public`), платформа `frontend/android`, скрипты `android:sync/android:open/android:run` в `frontend/package.json`;
+- для Android сохранён `INTERNET` permission;
+- добавлена инструкция `docs/ANDROID_APK.md` с шагами `generate/sync/open/run` и путём к debug APK.
+- `frontend/config.example.json` переведён на прод-адреса: `apiUrl=https://marx.core5.ru`, `publicUrl=https://marx.core5.ru`, `wsPath=/ws` (ws вычисляется как `wss://marx.core5.ru/ws`);
+- для Android cleartext обратно отключён (удалён `android:usesCleartextTraffic`), т.к. мобильный клиент должен ходить на backend через HTTPS/WSS (`marx.core5.ru`).
+- в Android runtime browser web-push/PWA-регистрация теперь отключены: `frontend/src/plugins/pwa.client.ts` и `frontend/src/composables/use-web-push.ts` рано выходят при `Capacitor.getPlatform()==='android'`, browser Notification API в чате тоже не используется как основной transport;
+- добавлен native runtime helper `frontend/src/composables/native-runtime.ts` и плагины `frontend/src/plugins/native-runtime.client.ts` + `frontend/src/plugins/rustore-push.client.ts`; JS-обвязка RuStore живёт в `frontend/src/composables/rustore-push.ts`;
+- Android APK теперь регистрирует RuStore push token через локальный Capacitor plugin `RuStorePush`; при foreground push показывает local notification через `@capacitor/local-notifications`, а по tap переводит в `/chat?room=...&focusMessage=...&callId=...`;
+- frontend `ws.ts/ws-rpc.ts` усилены под mobile reconnect: `connect()` получил timeout `8000ms`, stale-socket guards и `forceWsReconnect(reason)`, который дёргается на `resume/appStateChange/networkStatusChange/online/offline`;
+- стартовый route `/` и chat auth-check больше не держат пользователя в долгом retry-loop при мёртвом соединении: при сетевой ошибке идёт быстрый переход в `/chat` с reconnect/offline-поведением вместо вечного splash;
+- backend получил native Android push через RuStore Push API: таблица `native_push_tokens` хранит `provider/platform/token`, конфиг `nativePush.enabled/provider/rustoreProjectId/rustoreServiceToken/androidPackageName`, WS-команды `push:native:register` и `push:native:unregister`, отправка RuStore push на новые сообщения и входящие direct-звонки;
+- backend шлёт push в `https://vkpns-universal.rustore.ru/v1/send`, не логирует полный token и удаляет невалидные RuStore tokens по текстам provider-ошибок;
+- Android manifest дополнен permissions `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `POST_NOTIFICATIONS`, launcher icons пересобраны из `frontend/src/public/pwa-192.png`, а Android signing-мусор (`*.jks`, `*.keystore`, `key.properties`) добавлен в `.gitignore`;
+- `docs/ANDROID_APK.md` и `docs/RUSTORE_PUSH.md` расширены инструкцией по RuStore project, `rustoreProjectId`, `rustoreServiceToken`, миграции `yarn prisma migrate deploy`, проверке test push, микрофона, WebView console и reconnect после VPN toggle.
+- PWA/web-push полностью выпилены из `frontend/backend`: удалены `frontend/src/composables/use-web-push.ts`, `frontend/src/plugins/pwa.client.ts`, `frontend/src/public/sw.js`, `frontend/src/public/manifest.webmanifest`, UI/стейт/методы web-push из `/chat` и `/console`, а также backend `push.controller` + `web-push` сервис и `push` секция из backend-конфига; в проекте оставлен только native Android push-контур (RuStore).
+- временно скрыты раздел `VPN` в `/console` и комната `Новости MARX` в клиентской навигации (`/chat` и `/console`); это только UI-фильтр на фронте, без удаления backend-логики.
+- route `/vpn` теперь жёстко редиректит в `/console?tab=user` (без `tab=vpn`), чтобы старые deep-link/закладки не открывали скрытый VPN-раздел.
+- в Android runtime (`isNativeAndroidApp`) browser push controls в `/console` скрыты, `Notification.requestPermission()` там больше не вызывается; остаётся только native permission для RuStore/local notifications.
+- в чате fallback выбора стартового диалога усилен: если `joinedRooms` и `generalDialog` пусты (например после скрытия `Новости MARX`), автоматически открывается первая доступная `publicRooms` комната вместо пустого экрана.
+- дополнительно к fallback выше: если видимых комнат вообще нет, клиент делает аварийный fallback на `room:group:get-default` даже для временно скрытой `Новости MARX`, чтобы после логина не оставаться на пустом фоне с `activeDialog=null`.
+- фикс post-login пустого экрана: в `chat` восстановлены выпиленные методы `initBrowserNotifications` и `showBrowserNotification`, из-за отсутствия которых `mounted/notification` падали `TypeError` и не доходили до выбора первой доступной комнаты.
+- route `/chat` больше не остаётся “без комнаты”: канонизация дефолтного group-диалога всегда пишет `room` в query (`/chat?room=<id>`), включая бывший general, поэтому после логина есть явный редирект в первую доступную комнату (например `room=1`).
+- для SPA-режима Nuxt в Android/WebView отключён `experimental.payloadExtraction`, чтобы клиент не пытался грузить отсутствующие `/_payload.json` и не спамил warning `Cannot load payload ... Unexpected token '<'`.
+- в `iframe allow` для message previews удалён `web-share`, чтобы WebView не показывал warning `Unrecognized feature: 'web-share'`.

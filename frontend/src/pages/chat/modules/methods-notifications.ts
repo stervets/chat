@@ -104,6 +104,51 @@ export const chatMethodsNotifications = {
       return !this.windowFocused || !this.documentVisible;
     },
 
+    closeOldBrowserNotifications(this: any) {
+      const items = Array.isArray(this.activeBrowserNotifications)
+        ? this.activeBrowserNotifications
+        : [];
+      const MAX_NOTIFICATIONS = 8;
+      if (items.length <= MAX_NOTIFICATIONS) return;
+      const stale = items.slice(0, Math.max(0, items.length - MAX_NOTIFICATIONS));
+      stale.forEach((item: Notification) => {
+        try {
+          item.close();
+        } catch {}
+      });
+      this.activeBrowserNotifications = items.slice(-MAX_NOTIFICATIONS);
+    },
+
+    showBrowserNotification(this: any, notification: NotificationItem) {
+      if (typeof window === 'undefined') return;
+      if (!this.isBrowserNotificationsSupported?.()) return;
+      if (!this.browserNotificationsEnabled || this.browserNotificationPermission !== 'granted') return;
+
+      const roomId = Number(notification.roomId || 0);
+      const targetMessageId = Number(notification.targetMessageId || 0);
+      const browserNotification = new Notification(
+        `MARX · ${this.getNotificationDialogTitle(notification)}`,
+        {
+          body: `${notification.authorName}: ${this.getNotificationBodyPreview(notification)}`,
+          icon: notification.targetUser?.avatarUrl || '/favicon-alert.png',
+          tag: targetMessageId > 0 ? `marx-message-${targetMessageId}` : `marx-room-${roomId}`,
+          data: {
+            roomId: roomId > 0 ? roomId : null,
+            focusMessage: targetMessageId > 0 ? targetMessageId : null,
+          },
+        }
+      );
+      browserNotification.onclick = () => {
+        try {
+          window.focus();
+        } catch {}
+        void this.openNotification(notification);
+        browserNotification.close();
+      };
+      this.activeBrowserNotifications = [...(this.activeBrowserNotifications || []), browserNotification];
+      this.closeOldBrowserNotifications();
+    },
+
     pushToast(this: any, title: string, body: string, notificationId?: number) {
       const id = Date.now() + Math.floor(Math.random() * 1000);
       this.toasts = [{id, title, body, notificationId}, ...this.toasts].slice(0, 4);

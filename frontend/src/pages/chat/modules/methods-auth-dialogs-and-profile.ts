@@ -21,6 +21,13 @@ import type {
   RouteMode,
 } from './shared';
 import {resolveMediaUrl} from '@/composables/media-url';
+
+const TEMP_HIDDEN_ROOM_TITLE = 'новости marx';
+
+function isTemporarilyHiddenRoomTitle(titleRaw: unknown) {
+  return String(titleRaw || '').trim().toLowerCase() === TEMP_HIDDEN_ROOM_TITLE;
+}
+
 export const chatMethodsAuthDialogsAndProfile = {
     applyMe(this: any, me: User) {
       const normalizedMe = this.normalizeUser(me) || me;
@@ -203,7 +210,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         return false;
       }
 
-      for (let attempt = 0; attempt < 6; attempt += 1) {
+      try {
         const session = await restoreSession();
         const data = wsObject(session);
         if ((session as any)?.ok && data.user?.id) {
@@ -216,10 +223,8 @@ export const chatMethodsAuthDialogsAndProfile = {
           await this.router.push('/login');
           return false;
         }
-
-        if (attempt < 5) {
-          await new Promise((resolve) => setTimeout(resolve, 450));
-        }
+      } catch {
+        // fallback below
       }
 
       this.error = 'Связь с сервером недоступна. Проверь интернет, авторизация не сброшена.';
@@ -272,18 +277,23 @@ export const chatMethodsAuthDialogsAndProfile = {
 
       this.joinedRooms = wsData<any[]>(joinedResult, [])
         .map((row: any) => normalizeRoomDialog(row))
-        .filter((dialog: Dialog) => Number(dialog.id || 0) > 0);
+        .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !isTemporarilyHiddenRoomTitle(dialog.title));
 
       const joinedIds = new Set(this.joinedRooms.map((dialog: Dialog) => Number(dialog.id || 0)));
       this.publicRooms = wsData<any[]>(publicResult, [])
         .map((row: any) => normalizeRoomDialog(row))
-        .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !joinedIds.has(Number(dialog.id || 0)));
+        .filter((dialog: Dialog) => (
+          Number(dialog.id || 0) > 0
+          && !joinedIds.has(Number(dialog.id || 0))
+          && !isTemporarilyHiddenRoomTitle(dialog.title)
+        ));
     },
 
-    async fetchGeneralDialog(this: any) {
+    async fetchGeneralDialog(this: any, optionsRaw?: {allowHidden?: boolean}) {
       const result = await ws.request('room:group:get-default');
       if ((result as any)?.error || (result as any)?.ok === false) return null;
       const data = wsObject(result);
+      if (isTemporarilyHiddenRoomTitle(data.title) && optionsRaw?.allowHidden !== true) return null;
       return {
         id: data.roomId,
         kind: 'group',
@@ -307,11 +317,24 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (this.generalDialog) {
         return this.generalDialog as Dialog;
       }
+      if (Array.isArray(this.publicRooms) && this.publicRooms.length > 0) {
+        return this.publicRooms[0] as Dialog;
+      }
       return null;
     },
 
     async selectDefaultGroupDialog(this: any, optionsRaw?: {routeMode?: RouteMode; closeMenu?: boolean; haptic?: boolean}) {
-      const defaultDialog = this.resolveDefaultGroupDialog();
+      let defaultDialog = this.resolveDefaultGroupDialog();
+      if (!defaultDialog) {
+        const hiddenFallbackDialog = await this.fetchGeneralDialog({allowHidden: true});
+        if (hiddenFallbackDialog) {
+          defaultDialog = hiddenFallbackDialog;
+          if (!this.generalDialog) {
+            this.generalDialog = hiddenFallbackDialog;
+          }
+        }
+      }
+
       if (!defaultDialog) {
         this.activeDialog = null;
         this.setActiveRoomScript(null);
@@ -564,7 +587,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       await this.router.push({
         path: '/console',
         query: {
-          tab: 'vpn',
+          tab: 'user',
         },
       });
     },

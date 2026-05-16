@@ -15,10 +15,12 @@
     "donationPhone": "+7-999-999-9999",
     "donationBank": "Райффайзенбанк"
   },
-  "push": {
-    "vapidPublicKey": "",
-    "vapidPrivateKey": "",
-    "vapidSubject": ""
+  "nativePush": {
+    "enabled": false,
+    "provider": "rustore",
+    "rustoreProjectId": "",
+    "rustoreServiceToken": "",
+    "androidPackageName": "ru.core5.marx"
   },
   "webrtc": {
     "iceServers": [

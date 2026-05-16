@@ -83,44 +83,19 @@
               <input v-model="localVibrationEnabled" type="checkbox" @change="onVibrationEnabledChange" />
               <span>Вибрация</span>
             </label>
-            <label class="toggle-row">
-              <input v-model="localBrowserNotificationsEnabled" type="checkbox" @change="onBrowserNotificationsEnabledChange" />
-              <span>Уведомления браузера</span>
-            </label>
-            <div class="hint">Browser permission: {{ browserNotificationPermission }}</div>
-            <button
-              v-if="browserNotificationsEnabled && browserNotificationPermission !== 'granted'"
-              class="ghost-btn"
-              @click="requestBrowserNotificationPermission"
-            >
-              Разрешить уведомления
-            </button>
-
-            <template v-if="isStandaloneApp">
-              <div class="section-title">Web Push</div>
-              <div class="hint">Статус: {{ webPushStatusText }}</div>
+            <template v-if="showBrowserPushControls">
               <label class="toggle-row">
-                <input
-                  v-model="localWebPushSettingEnabled"
-                  type="checkbox"
-                  :disabled="webPushBusy || !webPushSupported || !webPushAvailable"
-                  @change="onWebPushEnabledChange"
-                />
-                <span>{{ webPushBusy ? 'Push-уведомления (обновляем...)' : 'Push-уведомления' }}</span>
+                <input v-model="localBrowserNotificationsEnabled" type="checkbox" @change="onBrowserNotificationsEnabledChange" />
+                <span>Уведомления браузера</span>
               </label>
-              <div v-if="webPushRequiresIosInstall" class="hint">
-                На iPhone Web Push работает только в установленном приложении.
-              </div>
+              <div class="hint">Browser permission: {{ browserNotificationPermission }}</div>
               <button
-                v-if="isDevMode && webPushSupported"
+                v-if="browserNotificationsEnabled && browserNotificationPermission !== 'granted'"
                 class="ghost-btn"
-                :disabled="webPushTestBusy || !canSendWebPushTest"
-                @click="sendWebPushTest"
+                @click="requestBrowserNotificationPermission"
               >
-                {{ webPushTestBusy ? 'Отправляем тест...' : 'Тестовый push' }}
+                Разрешить уведомления
               </button>
-              <div v-if="webPushTestStatus" class="hint">{{ webPushTestStatus }}</div>
-              <div v-if="webPushError" class="error">{{ webPushError }}</div>
             </template>
 
             <div class="section-title">Пароль</div>

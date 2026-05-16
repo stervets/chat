@@ -694,11 +694,9 @@ export class ChatDialogsService {
     );
 
     const ordered = result.reverse().map((row) => {
-      const sourceText = row.kind === 'scriptable'
-        ? this.ctx.messages.getDisabledScriptableFallbackText(row.rawText)
-        : String(row.rawText || '');
+      const isScriptable = row.kind === 'scriptable';
       const compiled = this.ctx.messages.compileMessageWithContext(
-        sourceText,
+        String(row.rawText || ''),
         renderContext,
         row.id,
       );
@@ -711,7 +709,7 @@ export class ChatDialogsService {
         id: row.id,
         roomId,
         dialogId: roomId,
-        kind: row.kind === 'system' ? 'system' : 'text',
+        kind: row.kind === 'system' || row.kind === 'scriptable' ? row.kind : 'text',
         authorId: author.authorId,
         authorNickname: author.authorNickname,
         authorName: author.authorName,
@@ -722,9 +720,11 @@ export class ChatDialogsService {
         renderedHtml: compiled.renderedHtml,
         renderedPreviews: compiled.renderedPreviews,
         runtime: {
-          clientScript: null,
-          serverScript: null,
-          data: {},
+          clientScript: isScriptable ? (row.node?.clientScript || null) : null,
+          serverScript: isScriptable ? (row.node?.serverScript || null) : null,
+          data: isScriptable && row.node?.data && typeof row.node.data === 'object' && !Array.isArray(row.node.data)
+            ? row.node.data as Record<string, any>
+            : {},
         },
         commentRoomId: discussionByMessageId.get(row.id) || null,
         commentCount: commentCountByRoomId.get(discussionByMessageId.get(row.id) || 0) || 0,

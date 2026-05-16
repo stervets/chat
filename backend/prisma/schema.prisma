@@ -45,6 +45,7 @@ model User {
   sessions              Session[]
   reactions             MessageReaction[]
   pushSubscriptions     PushSubscription[]
+  nativePushTokens      NativePushToken[]
   createdGameSessions   GameSession[]       @relation("GameSessionCreatedBy")
   gameSessionPlayers    GameSessionPlayer[]
   ownedContacts         UserContact[]       @relation("ContactOwner")
@@ -216,6 +217,23 @@ model PushSubscription {
 
   @@index([userId], map: "push_subscriptions_user_idx")
   @@map("push_subscriptions")
+}
+
+model NativePushToken {
+  id         Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider    String   @db.VarChar(24)
+  platform    String   @db.VarChar(24)
+  token       String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+
+  @@index([userId], map: "native_push_tokens_user_idx")
+  @@unique([provider, token], map: "native_push_tokens_provider_token_key")
+  @@index([platform], map: "native_push_tokens_platform_idx")
+  @@map("native_push_tokens")
 }
 
 model InviteRoom {

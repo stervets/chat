@@ -25,10 +25,12 @@ type ConfigFile = {
     donationPhone?: string;
     donationBank?: string;
   };
-  push?: {
-    vapidPublicKey?: string;
-    vapidPrivateKey?: string;
-    vapidSubject?: string;
+  nativePush?: {
+    enabled?: boolean;
+    provider?: string;
+    rustoreProjectId?: string;
+    rustoreServiceToken?: string;
+    androidPackageName?: string;
   };
   webrtc?: {
     iceServers?: Array<{
@@ -139,10 +141,12 @@ export const config = {
     donationPhone: String(fileConfig.vpn?.donationPhone || '').trim(),
     donationBank: String(fileConfig.vpn?.donationBank || '').trim(),
   },
-  push: {
-    vapidPublicKey: String(fileConfig.push?.vapidPublicKey || '').trim(),
-    vapidPrivateKey: String(fileConfig.push?.vapidPrivateKey || '').trim(),
-    vapidSubject: String(fileConfig.push?.vapidSubject || '').trim(),
+  nativePush: {
+    enabled: fileConfig.nativePush?.enabled === true,
+    provider: String(fileConfig.nativePush?.provider || 'rustore').trim().toLowerCase() || 'rustore',
+    rustoreProjectId: String(fileConfig.nativePush?.rustoreProjectId || '').trim(),
+    rustoreServiceToken: String(fileConfig.nativePush?.rustoreServiceToken || '').trim(),
+    androidPackageName: String(fileConfig.nativePush?.androidPackageName || 'ru.core5.marx').trim() || 'ru.core5.marx',
   },
   webrtc: {
     iceServers: configuredIceServers.length > 0 ? configuredIceServers : fallbackIceServers,

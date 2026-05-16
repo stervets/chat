@@ -11,6 +11,7 @@ async function run() {
       rooms,
       nodes,
       push_subscriptions,
+      native_push_tokens,
       sessions,
       invites,
       users

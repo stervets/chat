@@ -8,10 +8,6 @@
           <MessagesSquare :size="16" />
           <span>Комнаты</span>
         </button>
-        <button class="console-tab" :class="{active: activeTab === 'vpn'}" @click="setActiveTab('vpn')">
-          <ShieldCheck :size="16" />
-          <span>VPN</span>
-        </button>
         <button class="console-tab" :class="{active: activeTab === 'invites'}" @click="setActiveTab('invites')">
           <Ticket :size="16" />
           <span>Инвайты</span>
