@@ -496,22 +496,15 @@ export class MaxReserveBridge {
 
         const opcode = Number(parsed?.opcode || 0);
         const cmd = Number(parsed?.cmd || 0);
-        if (opcode !== 64) {
+        if (opcode !== 64 && opcode !== 128) {
           const key = `${cmd}:${opcode}`;
           if (!this.seenUnhandledOpcodeKeys.has(key)) {
             this.seenUnhandledOpcodeKeys.add(key);
             this.logger.log(`MAX unhandled opcode cmd=${cmd} opcode=${opcode}`);
-            if (opcode === 128) {
-              try {
-                const preview = JSON.stringify(parsed).slice(0, 1200);
-                this.logger.log(`MAX opcode128 preview=${preview}`);
-              } catch {
-                // ignore preview error
-              }
-            }
           }
           return;
         }
+
         const messageText = String(parsed?.payload?.message?.text || '').trim();
         if (!messageText) return;
 
