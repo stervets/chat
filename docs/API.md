@@ -28,6 +28,41 @@ HTTP остаётся только для upload и web-push.
 - позиционных аргументов в публичном API нет;
 - команды называются только по схеме `entity:action` или `entity:subentity:action`.
 
+## Reserve Channel (MAX fallback)
+
+Основной транспорт остаётся обычный MARX WS (`/ws`).
+Fallback включается только в Android APK (Capacitor runtime) и использует native plugin (`OkHttp WebSocket`) как carrier до `wss://ws-api.oneme.ru/websocket`.
+В обычном браузере fallback недоступен.
+MARX packet format не меняется.
+
+Frontend localStorage ключи:
+- `marx_reserve_channel_enabled` — включён ли fallback;
+- `marx_reserve_channel_no_prompt` — запрет авто-popup при отвале основного WS.
+
+MAX text envelope:
+
+```text
+<recipientId> <encryptedData>
+```
+
+Где:
+- `0` — backend;
+- `_...` — временный clientId до авторизации;
+- `<userId>` — пользователь после авторизации.
+
+Шифрование:
+- login handshake: RSA-OAEP(SHA-256), frontend шлёт `clientId + tmpSessionKey + packet` на `recipientId=0`;
+- login response: backend шифрует ответ в `tmpSessionKey`;
+- post-login channel: AES-256-GCM через общий `maxSessionKey` пользователя (`iv.payload` в base64url, без timestamp полей).
+
+`maxSessionKey`:
+- один ключ на пользователя для всех его MAX-клиентов;
+- rotation: 7 дней (перегенерация на успешном login при отсутствии/устаревании);
+- после login backend отдаёт `max.userId` и `max.maxSessionKey` только внутри encrypted login response.
+
+Backend читает только сообщения с `recipientId=0`.
+Клиент обрабатывает только сообщения с `recipientId=_clientId` (до login) или `recipientId=<userId>` (после login).
+
 ## Auth
 
 - `auth:login({nickname, password})`

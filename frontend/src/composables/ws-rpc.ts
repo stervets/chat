@@ -3,10 +3,40 @@ import {getWsUrlCandidates} from '@/composables/api';
 import {ws, type WsResult} from '@/composables/classes/ws';
 import {emit, on} from '@/composables/event-bus';
 import {getStoredRuStorePushToken} from '@/composables/rustore-push';
+import {isNativeAndroidApp} from '@/composables/native-runtime';
 
 const SESSION_TOKEN_KEY = 'marx_session_token';
+const RESERVE_CHANNEL_ENABLED_KEY = 'marx_reserve_channel_enabled';
+const RESERVE_CHANNEL_NO_PROMPT_KEY = 'marx_reserve_channel_no_prompt';
 const RECONNECT_BASE_DELAY_MS = 500;
 const RECONNECT_MAX_DELAY_MS = 12000;
+const RESERVE_PROMPT_COOLDOWN_MS = 120000;
+
+type ReservePromptAction = 'yes' | 'no' | 'never';
+
+type ReservePromptPayload = {
+  id: string;
+};
+
+type ReserveRuntimeConfig = {
+  available: boolean;
+  wsUrl: string;
+  token: string;
+  deviceId: string;
+  chatId: number;
+  backendPublicKeyPem: string;
+  userAgent: {
+    deviceType: string;
+    locale: string;
+    deviceLocale: string;
+    osVersion: string;
+    deviceName: string;
+    headerUserAgent: string;
+    appVersion: string;
+    screen: string;
+    timezone: string;
+  };
+};
 
 const hasWindow = () => typeof window !== 'undefined';
 
@@ -39,6 +69,10 @@ let reconnectAttempt = 0;
 let reconnectTimer: number | null = null;
 let reconnectInFlight = false;
 let reconnectRoomResolver: (() => number | null) | null = null;
+
+let reservePromptInFlight = false;
+let reservePromptLastAt = 0;
+const reservePromptResolvers = new Map<string, (action: ReservePromptAction) => void>();
 
 function setWsState(nextState: WsConnectionState) {
   wsConnectionState.value = nextState;
@@ -80,9 +114,214 @@ async function joinActiveRoomAfterReconnect() {
   return roomId;
 }
 
+function getReserveRuntimeConfig(): ReserveRuntimeConfig {
+  const defaults = {
+    deviceType: 'WEB',
+    locale: 'ru',
+    deviceLocale: 'ru',
+    osVersion: 'Linux',
+    deviceName: 'Chrome',
+    headerUserAgent: hasWindow() ? window.navigator.userAgent : 'Mozilla/5.0',
+    appVersion: '26.5.8',
+    screen: hasWindow()
+      ? `${Math.max(window.screen?.width || 0, 1)}x${Math.max(window.screen?.height || 0, 1)} ${Number(window.devicePixelRatio || 1).toFixed(1)}x`
+      : '1440x2560 1.0x',
+    timezone: hasWindow()
+      ? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow')
+      : 'Europe/Moscow',
+  };
+
+  try {
+    if (!isNativeAndroidApp()) {
+      return {
+        available: false,
+        wsUrl: '',
+        token: '',
+        deviceId: '',
+        chatId: 0,
+        backendPublicKeyPem: '',
+        userAgent: defaults,
+      };
+    }
+
+    const runtimeConfig = useRuntimeConfig();
+    const source = ((runtimeConfig.public as any)?.maxReserve || {}) as Record<string, any>;
+    const rawUserAgent = source.userAgent && typeof source.userAgent === 'object' ? source.userAgent : {};
+
+    const wsUrl = String(source.wsUrl || '').trim();
+    const token = String(source.token || '').trim();
+    const deviceId = String(source.deviceId || '').trim();
+    const backendPublicKeyPem = String(source.backendPublicKeyPem || '').trim();
+    const chatId = Number(source.chatId || 0);
+
+    const availableByConfig = source.enabled === true || source.available === true;
+    const requiredFilled = !!wsUrl && !!token && !!deviceId && !!backendPublicKeyPem;
+
+    return {
+      available: availableByConfig && requiredFilled,
+      wsUrl,
+      token,
+      deviceId,
+      chatId: Number.isFinite(chatId) ? chatId : 0,
+      backendPublicKeyPem,
+      userAgent: {
+        deviceType: String(rawUserAgent.deviceType || defaults.deviceType).trim() || defaults.deviceType,
+        locale: String(rawUserAgent.locale || defaults.locale).trim() || defaults.locale,
+        deviceLocale: String(rawUserAgent.deviceLocale || defaults.deviceLocale).trim() || defaults.deviceLocale,
+        osVersion: String(rawUserAgent.osVersion || defaults.osVersion).trim() || defaults.osVersion,
+        deviceName: String(rawUserAgent.deviceName || defaults.deviceName).trim() || defaults.deviceName,
+        headerUserAgent: String(rawUserAgent.headerUserAgent || defaults.headerUserAgent).trim() || defaults.headerUserAgent,
+        appVersion: String(rawUserAgent.appVersion || defaults.appVersion).trim() || defaults.appVersion,
+        screen: String(rawUserAgent.screen || defaults.screen).trim() || defaults.screen,
+        timezone: String(rawUserAgent.timezone || defaults.timezone).trim() || defaults.timezone,
+      },
+    };
+  } catch {
+    return {
+      available: false,
+      wsUrl: '',
+      token: '',
+      deviceId: '',
+      chatId: 0,
+      backendPublicKeyPem: '',
+      userAgent: defaults,
+    };
+  }
+}
+
+function syncReserveTransportConfig() {
+  const reserveConfig = getReserveRuntimeConfig();
+  if (!reserveConfig.available) {
+    ws.setReserveConfig(null);
+    ws.setReserveActive(false);
+    return reserveConfig;
+  }
+
+  ws.setReserveConfig({
+    wsUrl: reserveConfig.wsUrl,
+    token: reserveConfig.token,
+    deviceId: reserveConfig.deviceId,
+    chatId: reserveConfig.chatId,
+    backendPublicKeyPem: reserveConfig.backendPublicKeyPem,
+    userAgent: reserveConfig.userAgent,
+  });
+  return reserveConfig;
+}
+
+function getReserveChannelEnabled() {
+  if (!hasWindow()) return false;
+  return localStorage.getItem(RESERVE_CHANNEL_ENABLED_KEY) === '1';
+}
+
+function setReserveChannelEnabled(enabledRaw: boolean) {
+  if (!hasWindow()) return;
+  const enabled = !!enabledRaw;
+  localStorage.setItem(RESERVE_CHANNEL_ENABLED_KEY, enabled ? '1' : '0');
+  if (enabled) {
+    localStorage.setItem(RESERVE_CHANNEL_NO_PROMPT_KEY, '0');
+  }
+  if (!enabled) {
+    ws.setReserveActive(false);
+  }
+}
+
+function getReserveChannelNoPrompt() {
+  if (!hasWindow()) return false;
+  return localStorage.getItem(RESERVE_CHANNEL_NO_PROMPT_KEY) === '1';
+}
+
+function setReserveChannelNoPrompt(valueRaw: boolean) {
+  if (!hasWindow()) return;
+  localStorage.setItem(RESERVE_CHANNEL_NO_PROMPT_KEY, valueRaw ? '1' : '0');
+}
+
+function canPromptReserveChannel() {
+  if (!hasWindow()) return false;
+  if (reservePromptInFlight) return false;
+  if (getReserveChannelNoPrompt()) return false;
+  if (Date.now() - reservePromptLastAt < RESERVE_PROMPT_COOLDOWN_MS) return false;
+  return true;
+}
+
+function reservePromptId() {
+  return `reserve-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+async function showReservePrompt() {
+  if (!canPromptReserveChannel()) return 'no' as ReservePromptAction;
+  reservePromptInFlight = true;
+  reservePromptLastAt = Date.now();
+
+  const id = reservePromptId();
+  const result = await new Promise<ReservePromptAction>((resolve) => {
+    reservePromptResolvers.set(id, resolve);
+    emit('reserve:prompt:show', {id} satisfies ReservePromptPayload);
+    window.setTimeout(() => {
+      const resolver = reservePromptResolvers.get(id);
+      if (!resolver) return;
+      reservePromptResolvers.delete(id);
+      resolver('no');
+    }, 60000);
+  });
+
+  reservePromptInFlight = false;
+  return result;
+}
+
+export function resolveReservePromptAction(idRaw: string, actionRaw: string) {
+  const id = String(idRaw || '').trim();
+  if (!id) return;
+  const resolver = reservePromptResolvers.get(id);
+  if (!resolver) return;
+  reservePromptResolvers.delete(id);
+
+  const normalized = String(actionRaw || '').trim().toLowerCase();
+  if (normalized === 'yes') {
+    resolver('yes');
+    return;
+  }
+  if (normalized === 'never') {
+    resolver('never');
+    return;
+  }
+  resolver('no');
+}
+
+async function tryEnableReserveByPrompt() {
+  const reserveConfig = syncReserveTransportConfig();
+  if (!reserveConfig.available) return false;
+  if (getReserveChannelEnabled()) return true;
+
+  const decision = await showReservePrompt();
+  if (decision === 'never') {
+    setReserveChannelNoPrompt(true);
+    return false;
+  }
+  if (decision === 'yes') {
+    setReserveChannelEnabled(true);
+    setReserveChannelNoPrompt(false);
+    return true;
+  }
+  return false;
+}
+
 async function connectToAnyWsUrl() {
+  const reserveConfig = syncReserveTransportConfig();
+
+  ws.setReserveActive(false);
+
   const wsUrls = getWsUrlCandidates();
   if (!wsUrls.length) {
+    if (reserveConfig.available && getReserveChannelEnabled()) {
+      ws.setReserveActive(true);
+      try {
+        await ws.connectReserve();
+        return {ok: true};
+      } catch (err: any) {
+        ws.setReserveActive(false);
+        return {ok: false, error: String(err?.message || err || 'reserve_connect_error')};
+      }
+    }
     return {ok: false, error: 'ws_url_empty'};
   }
 
@@ -93,6 +332,17 @@ async function connectToAnyWsUrl() {
       return {ok: true};
     } catch (err: any) {
       lastError = String(err?.message || err || 'ws_connect_error');
+    }
+  }
+
+  if (reserveConfig.available && getReserveChannelEnabled()) {
+    ws.setReserveActive(true);
+    try {
+      await ws.connectReserve();
+      return {ok: true};
+    } catch (err: any) {
+      ws.setReserveActive(false);
+      lastError = String(err?.message || err || 'reserve_connect_error');
     }
   }
 
@@ -136,6 +386,13 @@ async function runReconnect() {
   if (!(connected as any)?.ok) {
     reconnectInFlight = false;
     setWsState('disconnected');
+
+    const prompted = await tryEnableReserveByPrompt();
+    if (prompted) {
+      void runReconnect();
+      return;
+    }
+
     scheduleReconnect();
     return;
   }
@@ -188,7 +445,7 @@ function initReconnectRuntime() {
   on('ws:connected', onWsConnected);
   on('ws:disconnected', onWsDisconnected);
 
-  if (ws.socket?.readyState === WebSocket.OPEN) {
+  if (ws.isConnected()) {
     setWsState('connected');
   }
 }
@@ -212,6 +469,33 @@ export function clearSessionToken() {
   localStorage.removeItem(SESSION_TOKEN_KEY);
 }
 
+export function isReserveChannelEnabled() {
+  return getReserveChannelEnabled();
+}
+
+export function setReserveChannelEnabledByUser(enabledRaw: boolean) {
+  const reserveConfig = syncReserveTransportConfig();
+  if (!reserveConfig.available && enabledRaw) {
+    setReserveChannelEnabled(false);
+    return false;
+  }
+  setReserveChannelEnabled(enabledRaw);
+  return !!enabledRaw;
+}
+
+export function isReserveChannelAvailable() {
+  const reserveConfig = syncReserveTransportConfig();
+  return reserveConfig.available;
+}
+
+export function isReserveChannelNoPrompt() {
+  return getReserveChannelNoPrompt();
+}
+
+export function setReserveChannelNoPromptByUser(valueRaw: boolean) {
+  setReserveChannelNoPrompt(valueRaw);
+}
+
 export async function forceWsReconnect(reason = 'manual') {
   initReconnectRuntime();
   clearReconnectTimer();
@@ -232,7 +516,7 @@ export async function forceWsReconnect(reason = 'manual') {
 export async function ensureWsConnected() {
   initReconnectRuntime();
 
-  if (ws.socket?.readyState === WebSocket.OPEN) {
+  if (ws.isConnected()) {
     setWsState('connected');
     return {ok: true};
   }
@@ -242,6 +526,15 @@ export async function ensureWsConnected() {
   if ((connected as any)?.ok) {
     setWsState('connected');
     return connected;
+  }
+
+  const prompted = await tryEnableReserveByPrompt();
+  if (prompted) {
+    const retried = await connectToAnyWsUrl();
+    if ((retried as any)?.ok) {
+      setWsState('connected');
+      return retried;
+    }
   }
 
   setWsState('disconnected');

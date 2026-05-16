@@ -7,6 +7,25 @@
     "provider": "rustore",
     "rustoreProjectId": ""
   },
+  "maxReserve": {
+    "enabled": false,
+    "wsUrl": "wss://ws-api.oneme.ru/websocket",
+    "token": "CHANGE_ME",
+    "chatId": 0,
+    "deviceId": "CHANGE_ME",
+    "backendPublicKeyPem": "-----BEGIN PUBLIC KEY-----\\nCHANGE_ME\\n-----END PUBLIC KEY-----",
+    "userAgent": {
+      "deviceType": "WEB",
+      "locale": "ru",
+      "deviceLocale": "ru",
+      "osVersion": "Linux",
+      "deviceName": "Chrome",
+      "headerUserAgent": "Mozilla/5.0",
+      "appVersion": "26.5.8",
+      "screen": "1440x2560 1.0x",
+      "timezone": "Europe/Moscow"
+    }
+  },
   "vpn": {
     "mtProxyDeepLink": "tg://proxy?server=151.245.137.79&port=8443&secret=c6fab0c23452644261db3661aa963f50",
     "mtProxyWebLink": "https://t.me/proxy?server=151.245.137.79&port=8443&secret=c6fab0c23452644261db3661aa963f50",

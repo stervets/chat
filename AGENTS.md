@@ -248,3 +248,23 @@ yarn run frontend:dev
 - route `/chat` больше не остаётся “без комнаты”: канонизация дефолтного group-диалога всегда пишет `room` в query (`/chat?room=<id>`), включая бывший general, поэтому после логина есть явный редирект в первую доступную комнату (например `room=1`).
 - для SPA-режима Nuxt в Android/WebView отключён `experimental.payloadExtraction`, чтобы клиент не пытался грузить отсутствующие `/_payload.json` и не спамил warning `Cannot load payload ... Unexpected token '<'`.
 - в `iframe allow` для message previews удалён `web-share`, чтобы WebView не показывал warning `Unrecognized feature: 'web-share'`.
+- при открытии левого drawer в `/chat` вкладка навигации теперь всегда сбрасывается на `Комнаты` (`leftNavMode='rooms'` в `toggleLeftMenu`), чтобы дефолт не зависел от предыдущего состояния UI.
+- в `frontend/src/plugins/rustore-push.client.ts` отключён вызов `RuStorePush.resolveError(...)` для `HostAppBackgroundWorkPermissionNotGranted`, чтобы Android-клиент не спамил нативным диалогом `Скачайте RuStore...` поверх интерфейса.
+- во фронте временно скрыт раздел `Поддержка проекта` в `/console`: `DonationCard` обёрнут флагом `showProjectSupportSection=false` в `frontend/src/pages/console/index.vue` / `script.ts`.
+
+## Актуализация 2026-05-16
+- frontend `getApiBase/getWsUrlCandidates` теперь разводит endpoint-логику по рантайму: native app всегда ходит в `https://marx.core5.ru` (и `wss://.../ws`), обычный web-клиент на локали ходит в локальный backend `:<8816>`, а web на серверном host — в backend этого же host;
+- в web-режиме убран приоритет `config.wsUrl` для WS-подключения (он теперь используется только в native runtime), чтобы локальный фронт не цеплялся к продовому `wss://marx.core5.ru/ws` при dev-запуске.
+- добавлен резервный WS-канал через MAX как fallback transport без смены MARX packet format: frontend `ws/ws-rpc` может переключаться с обычного `/ws` на MAX bridge и продолжает слать те же пакеты `[com,args,senderId,recipientId,requestId]`;
+- frontend добавил popup при недоступности основного WS: `Подключить резервный канал?` (`Да/Нет/Больше не предлагать`) с антиспам cooldown и localStorage-флагами `marx_reserve_channel_enabled` / `marx_reserve_channel_no_prompt`;
+- в `/console` (профиль пользователя) добавлен тумблер `Резервный канал` для ручного включения/выключения fallback;
+- frontend reserve transport переведён на Android native plugin carrier (`MaxNativeTransport`), а browser JS MAX transport больше не используется в рабочем пути;
+- fallback popup/тумблер `Резервный канал` теперь доступны только в Capacitor Android runtime; в обычном браузере reserve считается недоступным и UI не показывается;
+- frontend reserve crypto-модель обновлена: до login используется `_clientId + tmpSessionKey`, после успешного login сохраняется общий `maxSessionKey` пользователя и трафик идёт через `AES-256-GCM(maxSessionKey)`;
+- backend добавил MAX bridge (`backend/src/ws/max-reserve.bridge.ts`) и конфиг `maxReserve` в `backend/config*.json`: подключение к MAX, приём inbound `recipientId=0`, RSA/AES decrypt, dispatch в существующий `ChatGateway`, отправка response/event обратно в MAX;
+- backend MAX bridge хранит `maxSessionKey` в БД (`max_reserve_user_sessions`), делает ротацию ключа раз в 7 дней на успешном login, отдаёт `max.userId + max.maxSessionKey` только в encrypted login response и шлёт post-login packets на `recipientId=<userId>` без дублирования по clientId;
+- backend `ChatGateway` поддерживает виртуальных reserve-клиентов и участвует в обычной рассылке `sendToUser/broadcastToAuthorized/broadcastToRoomMembers`, чтобы события доходили и по fallback-каналу;
+- добавлены поля `maxReserve` в `frontend/config.example.json` и `backend/config.example.json`, а также обновлены `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/SMOKE_TEST.md` с описанием reserve flow.
+- browser-origin smoke подтвердил блокировку MAX WS для web-клиента (`http://127.0.0.1:* -> wss://ws-api.oneme.ru/websocket`, close `1006` до `open`);
+- добавлен debug Capacitor plugin `MaxNativeSmokeTest` (`frontend/android/app/src/main/java/ru/core5/marx/MaxNativeSmokePlugin.java`) для native Android проверки MAX WS path: выставляет `Origin/User-Agent`, гоняет `opcode 6 -> 19 -> 64`, логирует шаги в `adb logcat` с tag `MaxNativeSmoke`;
+- рабочий Android plugin `MaxNativeTransport` зарегистрирован в `MainActivity`, поддерживает `init/connect/disconnect/sendText`, event-каналы `state/message/error` и авто-reconnect; старый smoke-плагин оставлен в коде, но не участвует в рабочем fallback-пути.

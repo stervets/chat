@@ -136,6 +136,39 @@ button:not(:disabled):active,
   @apply h-screen;
 }
 
+.reserve-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.reserve-prompt {
+  width: min(480px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #1f242d;
+  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.35);
+  padding: 16px;
+}
+
+.reserve-prompt-title {
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.reserve-prompt-actions {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   button,
   .btn,

@@ -13,7 +13,7 @@ export default {
     isDirectDialogUnread: {type: Function, required: true},
     isSystemUser: {type: Function, required: true},
     leftMenuOpen: Boolean,
-    leftNavMode: {type: String, default: 'directs'},
+    leftNavMode: {type: String, default: 'rooms'},
     me: Object,
     resolveDialogAvatarUrl: {type: Function, required: true},
     roomSearchQuery: {type: String, default: ''},

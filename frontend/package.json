@@ -8,6 +8,7 @@
     "build": "nuxt generate",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
+    "check:max-browser-ws": "node ../scripts/check-max-browser-ws.mjs",
     "android:sync": "yarn generate && cap sync android",
     "android:open": "cap open android",
     "android:run": "cap run android"

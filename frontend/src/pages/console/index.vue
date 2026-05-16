@@ -36,6 +36,8 @@
           :profile-name="profileName"
           :profile-nickname-color="profileNicknameColor"
           :push-disable-all-mentions="pushDisableAllMentions"
+          :reserve-channel-available="reserveChannelAvailable"
+          :reserve-channel-enabled="reserveChannelEnabled"
           :save-error="saveError"
           :save-success="saveSuccess"
           :saving="saving"
@@ -48,6 +50,7 @@
           @color-picked="onColorPicked"
           @media-open="openMediaViewer"
           @request-browser-permission="requestBrowserNotificationPermission"
+          @reserve-channel-change="onReserveChannelEnabledChange"
           @save-profile="onSaveProfile"
           @sound-change="onSoundEnabledChange"
           @toggle-contact="toggleContact"
@@ -57,6 +60,7 @@
           @update:profile-info="profileInfo = $event"
           @update:profile-name="profileName = $event"
           @update:push-disable-all-mentions="pushDisableAllMentions = $event"
+          @update:reserve-channel-enabled="reserveChannelEnabled = $event"
           @update:sound-enabled="soundEnabled = $event"
           @update:vibration-enabled="vibrationEnabled = $event"
           @vibration-change="onVibrationEnabledChange"
@@ -140,6 +144,7 @@
         />
 
         <DonationCard
+          v-if="showProjectSupportSection"
           :copied-donation-phone="copiedDonationPhone"
           :donation-action-error="donationActionError"
           :donation-bank="donationBank"

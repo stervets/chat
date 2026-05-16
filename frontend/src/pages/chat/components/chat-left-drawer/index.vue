@@ -29,11 +29,11 @@
           </div>
 
           <div class="left-nav-tabs">
-            <button class="left-nav-tab" :class="{active: localLeftNavMode === 'directs'}" @click="localLeftNavMode = 'directs'">
-              Директы
-            </button>
             <button class="left-nav-tab" :class="{active: localLeftNavMode === 'rooms'}" @click="localLeftNavMode = 'rooms'">
               Комнаты
+            </button>
+            <button class="left-nav-tab" :class="{active: localLeftNavMode === 'directs'}" @click="localLeftNavMode = 'directs'">
+              Директы
             </button>
           </div>
 

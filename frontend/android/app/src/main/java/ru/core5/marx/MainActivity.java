@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(RuStorePushPlugin.class);
+        registerPlugin(MaxNativeTransportPlugin.class);
         super.onCreate(savedInstanceState);
         RuStorePushBridge.handleLaunchIntent(this, getIntent());
     }

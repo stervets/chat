@@ -46,6 +46,7 @@ model User {
   reactions             MessageReaction[]
   pushSubscriptions     PushSubscription[]
   nativePushTokens      NativePushToken[]
+  maxReserveSession     MaxReserveUserSession?
   createdGameSessions   GameSession[]       @relation("GameSessionCreatedBy")
   gameSessionPlayers    GameSessionPlayer[]
   ownedContacts         UserContact[]       @relation("ContactOwner")
@@ -234,6 +235,18 @@ model NativePushToken {
   @@unique([provider, token], map: "native_push_tokens_provider_token_key")
   @@index([platform], map: "native_push_tokens_platform_idx")
   @@map("native_push_tokens")
+}
+
+model MaxReserveUserSession {
+  userId        Int      @id @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  maxSessionKey String   @map("max_session_key") @db.Text
+  rotatedAt     DateTime @map("rotated_at") @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([rotatedAt], map: "max_reserve_user_sessions_rotated_idx")
+  @@map("max_reserve_user_sessions")
 }
 
 model InviteRoom {

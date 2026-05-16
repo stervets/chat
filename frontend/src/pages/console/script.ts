@@ -15,7 +15,19 @@ import {emit} from '@/composables/event-bus';
 import {loadLastChatPath} from '@/composables/last-chat';
 import {isNativeAndroidApp} from '@/composables/native-runtime';
 import {ws} from '@/composables/classes/ws';
-import {getSessionToken, restoreSession, wsChangePassword, wsData, wsObject, wsProvisionVpn, wsSetVpnDonation, wsUpdateProfile} from '@/composables/ws-rpc';
+import {
+  getSessionToken,
+  isReserveChannelAvailable,
+  isReserveChannelEnabled,
+  restoreSession,
+  setReserveChannelEnabledByUser,
+  wsChangePassword,
+  wsData,
+  wsObject,
+  wsProvisionVpn,
+  wsSetVpnDonation,
+  wsUpdateProfile,
+} from '@/composables/ws-rpc';
 import {
   BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY,
   SOUND_ENABLED_STORAGE_KEY,
@@ -74,6 +86,7 @@ export default {
       router,
       config: runtimeConfig,
       isNativeAndroidRuntime: isNativeAndroidApp(),
+      showProjectSupportSection: ref(false),
       activeTab: ref<ConsoleTab>('user'),
       appMode: String(runtimeConfig.public.mode || '').trim().toLowerCase(),
       me: ref<any | null>(null),
@@ -97,6 +110,8 @@ export default {
       vibrationEnabled: ref(true),
       browserNotificationsEnabled: ref(true),
       browserNotificationPermission: ref<'default' | 'denied' | 'granted'>('default'),
+      reserveChannelEnabled: ref(false),
+      reserveChannelAvailable: ref(false),
 
       roomsLoading: ref(false),
       roomsError: ref(''),
@@ -939,6 +954,8 @@ export default {
     loadLocalSettings(this: any) {
       this.soundEnabled = loadBooleanSetting(SOUND_ENABLED_STORAGE_KEY, true);
       this.vibrationEnabled = loadBooleanSetting(VIBRATION_ENABLED_STORAGE_KEY, true);
+      this.reserveChannelAvailable = isReserveChannelAvailable();
+      this.reserveChannelEnabled = this.reserveChannelAvailable ? isReserveChannelEnabled() : false;
       if (this.isNativeAndroidRuntime) {
         this.browserNotificationsEnabled = false;
         this.browserNotificationPermission = 'denied';
@@ -955,6 +972,13 @@ export default {
 
     onVibrationEnabledChange(this: any) {
       persistBooleanSetting(VIBRATION_ENABLED_STORAGE_KEY, !!this.vibrationEnabled);
+    },
+
+    onReserveChannelEnabledChange(this: any) {
+      const shouldEnable = !!this.reserveChannelEnabled;
+      const enabled = setReserveChannelEnabledByUser(shouldEnable);
+      this.reserveChannelEnabled = !!enabled;
+      this.reserveChannelAvailable = isReserveChannelAvailable();
     },
 
     async requestBrowserNotificationPermission(this: any) {

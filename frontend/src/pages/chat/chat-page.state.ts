@@ -89,7 +89,7 @@ export function createChatPageState() {
     leftMenuOpen: ref(false),
     rightMenuOpen: ref(false),
     isCompactLayout: ref(false),
-    leftNavMode: ref<'directs' | 'rooms'>('directs'),
+    leftNavMode: ref<'directs' | 'rooms'>('rooms'),
     searchQuery: ref(''),
     roomSearchQuery: ref(''),
     joinedRooms: ref<Dialog[]>([]),

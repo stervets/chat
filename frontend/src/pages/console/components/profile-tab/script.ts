@@ -39,6 +39,8 @@ export default {
     profileName: {type: String, default: ''},
     profileNicknameColor: {type: String, default: ''},
     pushDisableAllMentions: Boolean,
+    reserveChannelAvailable: Boolean,
+    reserveChannelEnabled: Boolean,
     saveError: {type: String, default: ''},
     saveSuccess: {type: String, default: ''},
     saving: Boolean,
@@ -55,9 +57,11 @@ export default {
     'color-picked',
     'media-open',
     'request-browser-permission',
+    'reserve-channel-change',
     'save-profile',
     'sound-change',
     'toggle-contact',
+    'update:reserveChannelEnabled',
     'update:browserNotificationsEnabled',
     'update:newPassword',
     'update:profileColorPicker',
@@ -72,6 +76,7 @@ export default {
 
   computed: {
     localBrowserNotificationsEnabled: modelComputed('browserNotificationsEnabled', 'update:browserNotificationsEnabled'),
+    localReserveChannelEnabled: modelComputed('reserveChannelEnabled', 'update:reserveChannelEnabled'),
     localNewPassword: modelComputed('newPassword', 'update:newPassword'),
     localProfileColorPicker: modelComputed('profileColorPicker', 'update:profileColorPicker'),
     localProfileInfo: modelComputed('profileInfo', 'update:profileInfo'),
@@ -112,6 +117,10 @@ export default {
 
     requestBrowserNotificationPermission(this: any) {
       this.$emit('request-browser-permission');
+    },
+
+    onReserveChannelEnabledChange(this: any) {
+      this.$emit('reserve-channel-change');
     },
 
     onSaveProfile(this: any) {

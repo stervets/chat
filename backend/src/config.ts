@@ -50,6 +50,27 @@ type ConfigFile = {
     port?: number;
     path?: string;
   };
+  maxReserve?: {
+    enabled?: boolean;
+    wsUrl?: string;
+    token?: string;
+    chatId?: number;
+    deviceId?: string;
+    privateKey?: string;
+    privateKeyPath?: string;
+    publicKeyId?: string;
+    userAgent?: {
+      deviceType?: string;
+      locale?: string;
+      deviceLocale?: string;
+      osVersion?: string;
+      deviceName?: string;
+      headerUserAgent?: string;
+      appVersion?: string;
+      screen?: string;
+      timezone?: string;
+    };
+  };
 };
 
 const trimTrailingSlashes = (value: string) => value.replace(/\/+$/, '');
@@ -114,6 +135,18 @@ const fallbackIceServers: IceServerConfig[] = [
   {urls: 'stun:stun.l.google.com:19302'},
 ];
 
+const maxReservePrivateKeyFromPath = (() => {
+  const path = String(fileConfig.maxReserve?.privateKeyPath || '').trim();
+  if (!path) return '';
+  try {
+    return readFileSync(path, 'utf-8');
+  } catch {
+    return '';
+  }
+})();
+
+const maxReserveUserAgentSource = fileConfig.maxReserve?.userAgent || {};
+
 export const config = {
   env: 'development',
   host: fileConfig.host || '0.0.0.0',
@@ -151,5 +184,25 @@ export const config = {
   webrtc: {
     iceServers: configuredIceServers.length > 0 ? configuredIceServers : fallbackIceServers,
     callRingTimeoutMs: normalizePositiveNumber(fileConfig.webrtc?.callRingTimeoutMs, 45_000, 10_000, 5 * 60_000),
+  },
+  maxReserve: {
+    enabled: fileConfig.maxReserve?.enabled === true,
+    wsUrl: String(fileConfig.maxReserve?.wsUrl || 'wss://ws-api.oneme.ru/websocket').trim(),
+    token: String(fileConfig.maxReserve?.token || '').trim(),
+    chatId: Math.max(0, Number(fileConfig.maxReserve?.chatId || 0)),
+    deviceId: String(fileConfig.maxReserve?.deviceId || '').trim(),
+    privateKey: String(fileConfig.maxReserve?.privateKey || '').trim() || maxReservePrivateKeyFromPath,
+    publicKeyId: String(fileConfig.maxReserve?.publicKeyId || '').trim(),
+    userAgent: {
+      deviceType: String(maxReserveUserAgentSource.deviceType || 'WEB').trim() || 'WEB',
+      locale: String(maxReserveUserAgentSource.locale || 'ru').trim() || 'ru',
+      deviceLocale: String(maxReserveUserAgentSource.deviceLocale || 'ru').trim() || 'ru',
+      osVersion: String(maxReserveUserAgentSource.osVersion || 'Linux').trim() || 'Linux',
+      deviceName: String(maxReserveUserAgentSource.deviceName || 'Chrome').trim() || 'Chrome',
+      headerUserAgent: String(maxReserveUserAgentSource.headerUserAgent || 'Mozilla/5.0').trim() || 'Mozilla/5.0',
+      appVersion: String(maxReserveUserAgentSource.appVersion || '26.5.8').trim() || '26.5.8',
+      screen: String(maxReserveUserAgentSource.screen || '1440x2560 1.0x').trim() || '1440x2560 1.0x',
+      timezone: String(maxReserveUserAgentSource.timezone || 'Europe/Moscow').trim() || 'Europe/Moscow',
+    },
   },
 };

@@ -1,8 +1,30 @@
 import {emit} from '@/composables/event-bus';
+import {MaxReserveTransport} from '@/composables/classes/max-reserve-transport';
 
 export type WsResult<T = any> =
   | {ok: true; data: T}
   | {ok: false; error: any};
+
+type MarxPacket = [string, Record<string, any> | any[], string, string, string?];
+
+type ReserveConfig = {
+  wsUrl: string;
+  token: string;
+  deviceId: string;
+  chatId: number;
+  backendPublicKeyPem: string;
+  userAgent: {
+    deviceType: string;
+    locale: string;
+    deviceLocale: string;
+    osVersion: string;
+    deviceName: string;
+    headerUserAgent: string;
+    appVersion: string;
+    screen: string;
+    timezone: string;
+  };
+};
 
 export class WsClient {
   socket: WebSocket | null = null;
@@ -10,8 +32,14 @@ export class WsClient {
   private readonly requests: Record<string, {resolve: (result: WsResult) => void}> = {};
   private lastUrl = '';
   private connectionSeq = 0;
+  private reserveActive = false;
 
-  private parsePacket(raw: string): [string, Record<string, any> | any[], string, string, string?] | null {
+  private readonly reserveTransport = new MaxReserveTransport(
+    (packet) => this.handleIncomingPacket(packet),
+    () => this.onReserveDisconnected(),
+  );
+
+  private parsePacket(raw: string): MarxPacket | null {
     try {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed) || parsed.length < 4) return null;
@@ -50,7 +78,90 @@ export class WsClient {
     return {ok: true, data: value};
   }
 
+  private resolveAllPendingAsDisconnected() {
+    Object.keys(this.requests).forEach((requestId) => {
+      this.requests[requestId].resolve({ok: false, error: 'disconnected'});
+      delete this.requests[requestId];
+    });
+  }
+
+  private handleIncomingPacket(packet: MarxPacket) {
+    const [com, args, senderId, _recipientId, requestId] = packet;
+
+    if (com === '[res]') {
+      if (!requestId || !this.requests[requestId]) return;
+      const pending = this.requests[requestId];
+      pending.resolve(this.normalizeIncomingResult(Array.isArray(args) ? args[0] : undefined));
+      delete this.requests[requestId];
+      return;
+    }
+
+    emit(com, Array.isArray(args) ? {} : args, senderId);
+  }
+
+  private onReserveDisconnected() {
+    if (!this.reserveActive) return;
+    this.resolveAllPendingAsDisconnected();
+    emit('ws:disconnected');
+  }
+
+  setReserveConfig(config: ReserveConfig | null) {
+    this.reserveTransport.setConfig(config);
+  }
+
+  hasReserveConfig() {
+    return this.reserveTransport.isConfigured();
+  }
+
+  setReserveActive(active: boolean) {
+    const next = !!active;
+    if (this.reserveActive === next) return;
+
+    this.reserveActive = next;
+
+    if (next) {
+      this.connectionSeq += 1;
+      this.connectPromise = null;
+      const socket = this.socket;
+      this.socket = null;
+      if (socket) {
+        try {
+          socket.close();
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
+
+    this.reserveTransport.disconnect();
+  }
+
+  isReserveActive() {
+    return this.reserveActive;
+  }
+
+  isConnected() {
+    if (this.reserveActive) {
+      return this.reserveTransport.isConnected();
+    }
+    return !!this.socket && this.socket.readyState === WebSocket.OPEN;
+  }
+
+  async connectReserve() {
+    if (!this.reserveActive) {
+      throw new Error('reserve_not_enabled');
+    }
+
+    await this.reserveTransport.connect();
+    emit('ws:connected');
+  }
+
   connect(url: string) {
+    if (this.reserveActive) {
+      return this.connectReserve();
+    }
+
     if (this.socket?.readyState === WebSocket.OPEN) {
       return Promise.resolve();
     }
@@ -100,19 +211,9 @@ export class WsClient {
 
       socket.onmessage = (event) => {
         if (this.socket !== socket || connectionId !== this.connectionSeq) return;
-        const packet = this.parsePacket(event.data);
+        const packet = this.parsePacket(String(event.data || ''));
         if (!packet) return;
-        const [com, args, senderId, _recipientId, requestId] = packet;
-
-        if (com === '[res]') {
-          if (!requestId || !this.requests[requestId]) return;
-          const pending = this.requests[requestId];
-          pending.resolve(this.normalizeIncomingResult(Array.isArray(args) ? args[0] : undefined));
-          delete this.requests[requestId];
-          return;
-        }
-
-        emit(com, Array.isArray(args) ? {} : args, senderId);
+        this.handleIncomingPacket(packet);
       };
 
       socket.onerror = () => {
@@ -129,10 +230,7 @@ export class WsClient {
         clearConnectTimeout();
         this.socket = null;
         this.connectPromise = null;
-        Object.keys(this.requests).forEach((requestId) => {
-          this.requests[requestId].resolve({ok: false, error: 'disconnected'});
-          delete this.requests[requestId];
-        });
+        this.resolveAllPendingAsDisconnected();
         if (!settled) {
           settled = true;
           reject(new Error('ws_disconnected'));
@@ -149,21 +247,31 @@ export class WsClient {
     this.connectionSeq += 1;
     this.connectPromise = null;
     this.socket = null;
-    if (!socket) return;
-    try {
-      socket.close();
-    } catch {
-      // ignore close failure
+
+    this.reserveTransport.disconnect();
+
+    if (socket) {
+      try {
+        socket.close();
+      } catch {
+        // ignore close failure
+      }
     }
+
+    this.resolveAllPendingAsDisconnected();
   }
 
   async request(com: string, args: Record<string, any> = {}): Promise<WsResult> {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      if (!this.lastUrl) {
+    if (!this.isConnected()) {
+      if (!this.lastUrl && !this.reserveActive) {
         return {ok: false, error: 'not_connected'};
       }
       try {
-        await this.connect(this.lastUrl);
+        if (this.reserveActive) {
+          await this.connectReserve();
+        } else {
+          await this.connect(this.lastUrl);
+        }
       } catch (error: any) {
         return {
           ok: false,
@@ -172,37 +280,62 @@ export class WsClient {
       }
     }
 
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+    if (!this.isConnected()) {
       return {ok: false, error: 'not_connected'};
     }
 
     const requestId = this.genId();
-    const packet: [string, Record<string, any>, string, string, string] = [
+    const senderId = this.reserveActive
+      ? (this.reserveTransport.getSenderId() || this.reserveTransport.getClientId() || 'frontend')
+      : 'frontend';
+    const recipientId = this.reserveActive ? '0' : 'backend';
+
+    const packet: MarxPacket = [
       com,
       args,
-      'frontend',
-      'backend',
+      senderId,
+      recipientId,
       requestId,
     ];
 
     return new Promise((resolve) => {
       this.requests[requestId] = {resolve};
-      try {
-        this.socket!.send(JSON.stringify(packet));
-      } catch (error: any) {
+      const fail = (error: any) => {
         delete this.requests[requestId];
         resolve({
           ok: false,
           error: String(error?.message || error || 'ws_send_error').trim() || 'ws_send_error',
         });
+      };
+
+      try {
+        if (this.reserveActive) {
+          void this.reserveTransport.sendPacket(packet).catch(fail);
+          return;
+        }
+        this.socket!.send(JSON.stringify(packet));
+      } catch (error: any) {
+        fail(error);
       }
     });
   }
 
   send(com: string, args: Record<string, any> = {}) {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-    const packet: [string, Record<string, any>, string, string] = [com, args, 'frontend', 'backend'];
-    this.socket.send(JSON.stringify(packet));
+    if (!this.isConnected()) return;
+
+    const senderId = this.reserveActive
+      ? (this.reserveTransport.getSenderId() || this.reserveTransport.getClientId() || 'frontend')
+      : 'frontend';
+    const recipientId = this.reserveActive ? '0' : 'backend';
+
+    const packet: MarxPacket = [com, args, senderId, recipientId];
+
+    if (this.reserveActive) {
+      void this.reserveTransport.sendPacket(packet);
+      return;
+    }
+
+    this.socket!.send(JSON.stringify(packet));
   }
 }
 

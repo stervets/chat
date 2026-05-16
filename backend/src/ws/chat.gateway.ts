@@ -24,6 +24,7 @@ import {
 } from './chat.commands.js';
 import {createChatDomain} from './chat.domain.js';
 import {ChatCallsService, type CallPublicPayload} from './chat-calls.service.js';
+import {MaxReserveBridge} from './max-reserve.bridge.js';
 import {
   BACKEND_PEER_ID,
   FRONTEND_PEER_ID,
@@ -46,18 +47,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private readonly callCleanupTimer: NodeJS.Timeout;
   private readonly commands: ChatCommandMap;
   private readonly nativePushService: NativePushService | null;
+  private readonly reserveClients = new Map<string, ClientSocket>();
+  private readonly reserveBridge: MaxReserveBridge | null;
 
   constructor(
     @Optional() @Inject(NativePushService) nativePushService?: NativePushService,
   ) {
     this.nativePushService = nativePushService || null;
     this.commands = createChatCommands(this.createCommandHost());
+    this.reserveBridge = config.maxReserve.enabled
+      && !!config.maxReserve.privateKey
+      && !!config.maxReserve.token
+      && !!config.maxReserve.deviceId
+      && !!config.maxReserve.wsUrl
+      ? new MaxReserveBridge({
+        enabled: true,
+        wsUrl: config.maxReserve.wsUrl,
+        token: config.maxReserve.token,
+        chatId: config.maxReserve.chatId,
+        deviceId: config.maxReserve.deviceId,
+        privateKeyPem: config.maxReserve.privateKey,
+        userAgent: config.maxReserve.userAgent,
+      }, {
+        onPacket: (envelope) => this.onReservePacket(envelope.clientId, envelope.packet),
+      })
+      : null;
     this.callCleanupTimer = setInterval(() => this.flushExpiredCalls(), 5000);
     this.callCleanupTimer.unref?.();
   }
 
   onModuleDestroy() {
     clearInterval(this.callCleanupTimer);
+    this.reserveBridge?.dispose();
   }
 
   private createCommandHost(): ChatCommandHost {
@@ -78,6 +99,117 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       notifyCallEnded: (call) => this.notifyCallEnded(call),
       flushExpiredCalls: () => this.flushExpiredCalls(),
     };
+  }
+
+  private isReserveClient(client: ClientSocket) {
+    return (client as any).__reserve === true;
+  }
+
+  private getOrCreateReserveClient(clientIdRaw: string): ClientSocket {
+    const clientId = String(clientIdRaw || '').trim();
+    const existing = this.reserveClients.get(clientId);
+    if (existing) return existing;
+
+    const client = {
+      readyState: WebSocket.OPEN,
+      state: {
+        id: clientId,
+        ip: 'max-reserve',
+        userAgent: 'max-reserve',
+        token: null,
+        user: null,
+        roomId: null,
+      },
+      send: (raw: unknown) => {
+        if (!this.reserveBridge) return;
+        try {
+          const parsed = JSON.parse(String(raw || ''));
+          if (!Array.isArray(parsed) || parsed.length < 4) return;
+          const com = typeof parsed[0] === 'string' ? parsed[0] : '';
+          const args = Array.isArray(parsed[1])
+            ? parsed[1]
+            : parsed[1] && typeof parsed[1] === 'object'
+              ? parsed[1]
+              : {};
+          const senderId = typeof parsed[2] === 'string' ? parsed[2] : BACKEND_PEER_ID;
+          const recipientId = typeof parsed[3] === 'string' ? parsed[3] : client.state.id;
+          const requestId = typeof parsed[4] === 'string' ? parsed[4] : undefined;
+          if (!com) return;
+
+          void this.reserveBridge.sendPacket([
+            com,
+            args,
+            senderId,
+            recipientId,
+            requestId,
+          ]);
+        } catch {
+          // ignore malformed packet
+        }
+      },
+    } as unknown as ClientSocket;
+
+    (client as any).__reserve = true;
+    this.reserveClients.set(clientId, client);
+    return client;
+  }
+
+  private async onReservePacket(clientId: string, packet: Packet) {
+    const client = this.getOrCreateReserveClient(clientId);
+    await this.onParsedPacket(client, [
+      packet[0],
+      packet[1] && typeof packet[1] === 'object' && !Array.isArray(packet[1]) ? packet[1] as WsArgs : {},
+      packet[2],
+      packet[3],
+      packet[4],
+    ]);
+
+    const userId = Number(client.state?.user?.id || 0);
+    if (Number.isFinite(userId) && userId > 0) {
+      this.reserveBridge?.bindClientToUser(clientId, userId);
+      client.state.id = String(userId);
+    }
+  }
+
+  private forEachWsClient(callback: (client: ClientSocket) => void) {
+    for (const rawClient of this.server.clients) {
+      callback(rawClient as ClientSocket);
+    }
+  }
+
+  private forEachAuthorizedWsClient(callback: (client: ClientSocket) => void) {
+    this.forEachWsClient((client) => {
+      if (!client.state?.user) return;
+      callback(client);
+    });
+  }
+
+  private forEachReserveUserId(callback: (userId: number) => void) {
+    const seen = new Set<number>();
+    for (const client of this.reserveClients.values()) {
+      const userId = Number(client.state?.user?.id || 0);
+      if (!Number.isFinite(userId) || userId <= 0) continue;
+      if (seen.has(userId)) continue;
+      seen.add(userId);
+      callback(userId);
+    }
+  }
+
+  private sendReservePacket(packet: Packet) {
+    if (!this.reserveBridge) return;
+    void this.reserveBridge.sendPacket(packet);
+  }
+
+  private sendReserveEventToUser(userId: number, com: string, payload: Record<string, unknown> | unknown = {}) {
+    if (!this.reserveBridge) return;
+    const recipientId = String(userId || '').trim();
+    if (!recipientId) return;
+    this.sendReservePacket([
+      com,
+      payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {},
+      BACKEND_PEER_ID,
+      recipientId,
+    ]);
   }
 
   handleConnection(client: ClientSocket, ...args: any[]) {
@@ -113,6 +245,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private hasOtherOpenSocketForUser(userId: number, currentClient: ClientSocket) {
     for (const rawClient of this.server.clients) {
       const client = rawClient as ClientSocket;
+      if (client === currentClient) continue;
+      if (client.readyState !== WebSocket.OPEN) continue;
+      if (Number(client.state?.user?.id || 0) !== userId) continue;
+      return true;
+    }
+
+    for (const client of this.reserveClients.values()) {
       if (client === currentClient) continue;
       if (client.readyState !== WebSocket.OPEN) continue;
       if (Number(client.state?.user?.id || 0) !== userId) continue;
@@ -211,45 +350,66 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private broadcast(roomId: number, com: string, payload: Record<string, unknown> | unknown = {}) {
     const set = this.subscriptions.get(roomId);
     if (!set) return;
+
+    const reserveUserIds = new Set<number>();
     for (const client of set) {
+      if (this.isReserveClient(client)) {
+        const userId = Number(client.state?.user?.id || 0);
+        if (Number.isFinite(userId) && userId > 0) {
+          reserveUserIds.add(userId);
+        }
+        continue;
+      }
       this.sendEvent(client, com, payload);
+    }
+
+    for (const userId of reserveUserIds) {
+      this.sendReserveEventToUser(userId, com, payload);
     }
   }
 
   private broadcastToRoomMembers(room: RoomRow, com: string, payload: Record<string, unknown> | unknown = {}) {
-    for (const rawClient of this.server.clients) {
-      const client = rawClient as ClientSocket;
-      if (!client.state?.user) continue;
-      if (!room.member_user_ids.includes(client.state.user.id)) continue;
+    this.forEachAuthorizedWsClient((client) => {
+      if (!room.member_user_ids.includes(client.state.user.id)) return;
       this.sendEvent(client, com, payload);
+    });
+
+    const reserveUserIds = new Set<number>();
+    this.forEachReserveUserId((userId) => {
+      if (!room.member_user_ids.includes(userId)) return;
+      reserveUserIds.add(userId);
+    });
+    for (const userId of reserveUserIds) {
+      this.sendReserveEventToUser(userId, com, payload);
     }
   }
 
   private sendToUser(userId: number, com: string, payload: Record<string, unknown> | unknown = {}) {
-    for (const rawClient of this.server.clients) {
-      const client = rawClient as ClientSocket;
-      if (!client.state?.user) continue;
-      if (client.state.user.id !== userId) continue;
+    this.forEachAuthorizedWsClient((client) => {
+      if (client.state.user.id !== userId) return;
       this.sendEvent(client, com, payload);
-    }
+    });
+    this.sendReserveEventToUser(userId, com, payload);
   }
 
   private broadcastToAuthorized(com: string, payload: Record<string, unknown> | unknown = {}) {
-    for (const rawClient of this.server.clients) {
-      const client = rawClient as ClientSocket;
-      if (!client.state?.user) continue;
+    this.forEachAuthorizedWsClient((client) => {
       this.sendEvent(client, com, payload);
-    }
+    });
+
+    this.forEachReserveUserId((userId) => {
+      this.sendReserveEventToUser(userId, com, payload);
+    });
   }
 
   private getOnlineUserIds() {
     const ids = new Set<number>();
-    for (const rawClient of this.server.clients) {
-      const client = rawClient as ClientSocket;
+    this.forEachAuthorizedWsClient((client) => {
       const userId = Number(client.state?.user?.id || 0);
-      if (!Number.isFinite(userId) || userId <= 0) continue;
+      if (!Number.isFinite(userId) || userId <= 0) return;
       ids.add(userId);
-    }
+    });
+    this.forEachReserveUserId((userId) => ids.add(userId));
     return Array.from(ids);
   }
 
@@ -264,8 +424,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       this.subscriptions.delete(roomId);
     }
 
-    for (const rawClient of this.server.clients) {
-      const client = rawClient as ClientSocket;
+    this.forEachWsClient((client) => {
+      if (client.state?.roomId === roomId) {
+        client.state.roomId = null;
+      }
+    });
+
+    for (const client of this.reserveClients.values()) {
       if (client.state?.roomId === roomId) {
         client.state.roomId = null;
       }
@@ -290,8 +455,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       }
     }
 
-    for (const rawClient of this.server.clients) {
-      const client = rawClient as ClientSocket;
+    this.forEachWsClient((client) => {
+      if (Number(client.state?.user?.id || 0) !== userId) return;
+      if (client.state?.roomId === roomId) {
+        client.state.roomId = null;
+      }
+    });
+
+    for (const client of this.reserveClients.values()) {
       if (Number(client.state?.user?.id || 0) !== userId) continue;
       if (client.state?.roomId === roomId) {
         client.state.roomId = null;
@@ -377,10 +548,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
-  private async onPacket(client: ClientSocket, raw: string) {
-    const packet = this.parsePacket(raw);
-    if (!packet) return;
-
+  private async onParsedPacket(client: ClientSocket, packet: [string, WsArgs, string, string, string?]) {
     const [com, args, senderId, _recipientId, requestId] = packet;
     if (com === RESULT_COMMAND) return;
 
@@ -395,5 +563,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         this.sendResult(client, senderId, requestId, this.fail(err));
       }
     }
+  }
+
+  private async onPacket(client: ClientSocket, raw: string) {
+    const packet = this.parsePacket(raw);
+    if (!packet) return;
+    await this.onParsedPacket(client, packet);
   }
 }

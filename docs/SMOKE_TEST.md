@@ -104,6 +104,27 @@ yarn run invite:create
 
 6. После проверки остановить процессы backend/frontend.
 
+## Reserve fallback smoke (MAX)
+
+1. В `frontend/config.json` и `backend/config.json` заполнить `maxReserve` (без коммита секретов).
+2. Запустить backend/frontend и Android APK (Capacitor).
+3. Убедиться, что в обычном браузере тумблер `Резервный канал` не показывается.
+4. В Android APK на странице профиля (`/console?tab=user`) убедиться, что тумблер `Резервный канал` виден.
+5. Выключить доступ к основному backend WS (или остановить backend).
+6. Дождаться popup `Подключить резервный канал?` и нажать `Да`.
+7. Проверить в логах:
+- `MAX connected`
+- `MAX opcode 6 ok`
+- `MAX opcode 19 ok`
+- `MAX received text`
+- `MAX decrypt ok`
+- `MAX dispatched command=...`
+- `MAX response sent`
+8. Выполнить `auth:login` и убедиться, что response пришёл через reserve и содержит `data.max.userId + data.max.maxSessionKey`.
+9. Проверить `room:list`/`message:list` и отправку `message:create` в чат через post-login `maxSessionKey`.
+10. Убедиться, что backend отвечает/events на `recipientId=<userId>` (без дублирования на несколько clientId).
+11. Убедиться, что при выключении тумблера `Резервный канал` fallback перестаёт использоваться.
+
 ## Что больше не проверяем
 
 - `graph:*`

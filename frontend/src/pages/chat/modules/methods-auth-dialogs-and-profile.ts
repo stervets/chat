@@ -828,6 +828,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.hapticTap();
       this.leftMenuOpen = !this.leftMenuOpen;
       if (this.leftMenuOpen) {
+        this.leftNavMode = 'rooms';
         this.rightMenuOpen = false;
         this.notificationsMenuOpen = false;
         void this.fetchRoomsNavigation();

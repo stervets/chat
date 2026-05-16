@@ -58,6 +58,7 @@ const ANDROID_PLATFORM = 'android';
 const RUSTORE_PUSH_API_URL = 'https://vkpns-universal.rustore.ru/v1/send';
 const MESSAGE_CHANNEL_ID = 'marx-messages';
 const CALL_CHANNEL_ID = 'marx-calls';
+const MAX_TOKENS_PER_USER = 3;
 
 function stringValue(value: unknown) {
   return String(value || '').trim();
@@ -145,6 +146,7 @@ export class NativePushService {
         lastSeenAt: now,
       },
     });
+    await this.pruneUserTokens(userId, provider, platform);
 
     this.logger.log(`RuStore token upsert userId=${userId} token=${shortToken(token)}`);
     return {ok: true};
@@ -319,7 +321,7 @@ export class NativePushService {
   }
 
   private async findTokensByUserIds(userIds: number[]) {
-    return db.nativePushToken.findMany({
+    const rows: Array<NativePushTokenRow & {updatedAt: Date}> = await db.nativePushToken.findMany({
       where: {
         provider: RUSTORE_PROVIDER,
         platform: ANDROID_PLATFORM,
@@ -333,7 +335,57 @@ export class NativePushService {
         provider: true,
         platform: true,
         token: true,
+        updatedAt: true,
       },
-    }) as Promise<NativePushTokenRow[]>;
+      orderBy: [
+        {userId: 'asc'},
+        {updatedAt: 'desc'},
+      ],
+    });
+
+    const perUserTokenCounter = new Map<number, number>();
+    const filtered: NativePushTokenRow[] = [];
+
+    for (const row of rows) {
+      const currentCount = perUserTokenCounter.get(row.userId) || 0;
+      if (currentCount >= MAX_TOKENS_PER_USER) continue;
+      perUserTokenCounter.set(row.userId, currentCount + 1);
+      filtered.push({
+        id: row.id,
+        userId: row.userId,
+        provider: row.provider,
+        platform: row.platform,
+        token: row.token,
+      });
+    }
+
+    return filtered;
+  }
+
+  private async pruneUserTokens(userId: number, provider: string, platform: string) {
+    const rows = await db.nativePushToken.findMany({
+      where: {
+        userId,
+        provider,
+        platform,
+      },
+      select: {
+        id: true,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    if (rows.length <= MAX_TOKENS_PER_USER) return;
+    const staleRows = rows.slice(MAX_TOKENS_PER_USER);
+    await db.nativePushToken.deleteMany({
+      where: {
+        id: {
+          in: staleRows.map((row) => row.id),
+        },
+      },
+    });
+    this.logger.log(`RuStore token prune userId=${userId} removed=${staleRows.length}`);
   }
 }

@@ -44,5 +44,25 @@
     "host": "127.0.0.1",
     "port": 8921,
     "path": "/script-runner"
+  },
+  "maxReserve": {
+    "enabled": false,
+    "wsUrl": "wss://ws-api.oneme.ru/websocket",
+    "token": "CHANGE_ME",
+    "chatId": 0,
+    "deviceId": "CHANGE_ME",
+    "privateKeyPath": "./secrets/max-reserve-private.pem",
+    "publicKeyId": "reserve-key-v1",
+    "userAgent": {
+      "deviceType": "WEB",
+      "locale": "ru",
+      "deviceLocale": "ru",
+      "osVersion": "Linux",
+      "deviceName": "Chrome",
+      "headerUserAgent": "Mozilla/5.0",
+      "appVersion": "26.5.8",
+      "screen": "1440x2560 1.0x",
+      "timezone": "Europe/Moscow"
+    }
   }
 }

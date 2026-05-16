@@ -232,6 +232,20 @@ Runtime определяется только полями node:
 - `game:event`
 - `game:state:updated`
 
+## Reserve Transport (MAX)
+
+- Основной канал: штатный MARX WebSocket (`frontend -> backend /ws`).
+- Резервный канал: MAX WebSocket (`wss://ws-api.oneme.ru/websocket`) как fallback-транспорт.
+- Reserve transport доступен только в Android APK (Capacitor native runtime через plugin `MaxNativeTransport`); в обычном browser-runtime fallback выключен.
+- Протокол команд MARX не меняется: тот же пакет `[com, args, senderId, recipientId, requestId?]`.
+- Frontend при недоступности основного WS может включить reserve (popup/переключатель в профиле Android).
+- Backend поднимает MAX bridge и прокидывает reserve-пакеты в существующий `ChatGateway` dispatch без отдельного command layer.
+- Inbound в backend: только envelope с `recipientId=0`.
+- Outbound из backend: ответы/events идут как `<recipientId> <aesEncryptedPacket>`, где `recipientId` — `_clientId` до auth или `<userId>` после auth.
+- Login handshake: `0 <rsaEncryptedData(clientId,tmpSessionKey,auth:login packet)>`.
+- Login response шифруется через `tmpSessionKey` и содержит `max.userId + max.maxSessionKey`.
+- После login весь трафик шифруется через единый `maxSessionKey` пользователя; backend отправляет один пакет на `userId` без дублирования по `clientId`.
+
 ## Миграция живой БД
 
 `backend/src/scripts/migrate-to-nodes.ts`:
