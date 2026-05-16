@@ -259,7 +259,7 @@ public class MaxNativeTransportPlugin extends Plugin {
                         return;
                     }
 
-                    if (opcode == 64) {
+                    if (opcode == 64 || opcode == 128) {
                         JSONObject payload = parsed.optJSONObject("payload");
                         JSONObject message = payload == null ? null : payload.optJSONObject("message");
                         String messageText = message == null ? "" : stringOrDefault(message.optString("text", ""), "");
@@ -267,7 +267,7 @@ public class MaxNativeTransportPlugin extends Plugin {
                             JSObject event = new JSObject();
                             event.put("text", messageText);
                             notifyListeners("message", event);
-                            Log.i(TAG, "received opcode64 text");
+                            Log.i(TAG, "received opcode" + opcode + " text");
                         }
                     }
                 } catch (Throwable error) {
