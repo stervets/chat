@@ -450,6 +450,7 @@ export class MaxReserveTransport {
   private async onNativeText(textRaw: string) {
     const parsed = this.parseReserveText(textRaw);
     if (!parsed) return;
+    console.info(`[max-reserve] recv recipient=${parsed.recipientId}`);
     if (!this.shouldAcceptRecipient(parsed.recipientId)) return;
 
     const key = parsed.recipientId === this.clientId
@@ -478,6 +479,7 @@ export class MaxReserveTransport {
       this.userId = loginMeta.userId;
       this.maxSessionKey = loginMeta.maxSessionKey;
       this.persistStoredSession();
+      console.info(`[max-reserve] login ok userId=${this.userId}`);
     }
 
     this.onPacket(packet);
@@ -513,6 +515,7 @@ export class MaxReserveTransport {
       await MaxNativeTransport.connect();
       await this.waitForState('online', 12000);
       this.connected = true;
+      console.info('[max-reserve] native transport online');
     })();
 
     try {
@@ -531,14 +534,15 @@ export class MaxReserveTransport {
   private async sendLoginHandshake(packet: MarxPacket) {
     const publicKey = await this.ensurePublicKeyImported();
 
-    const envelope = JSON.stringify({
+    const keyEnvelope = JSON.stringify({
       clientId: this.clientId,
       tmpSessionKey: toBase64(this.tmpSessionKey),
-      packet,
     });
 
-    const encrypted = await rsaEncryptToBase64Url(publicKey, envelope);
-    await this.sendMaxText(`${RESERVED_BACKEND_RECIPIENT} ${encrypted}`);
+    const encryptedKey = await rsaEncryptToBase64Url(publicKey, keyEnvelope);
+    const encryptedPacket = await aesEncryptToCompact(this.tmpSessionKey, JSON.stringify(packet));
+    console.info(`[max-reserve] send login handshake clientId=${this.clientId}`);
+    await this.sendMaxText(`${RESERVED_BACKEND_RECIPIENT} ${encryptedKey}:${encryptedPacket}`);
   }
 
   private async sendEncryptedPacket(packet: MarxPacket) {
@@ -547,6 +551,7 @@ export class MaxReserveTransport {
     }
 
     const encrypted = await aesEncryptToCompact(this.maxSessionKey, JSON.stringify(packet));
+    console.info(`[max-reserve] send encrypted com=${packet[0]} userId=${this.userId}`);
     await this.sendMaxText(`${RESERVED_BACKEND_RECIPIENT} ${encrypted}`);
   }
 
@@ -564,6 +569,7 @@ export class MaxReserveTransport {
       throw new Error('reserve_login_required');
     }
 
+    console.info(`[max-reserve] send packet before login com=${packet[0]}`);
     await this.sendLoginHandshake(packet);
   }
 }

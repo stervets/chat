@@ -50,8 +50,25 @@ type InboundEnvelope = {
   packet: Packet;
 };
 
+type HandshakeKeyData = {
+  clientId: string;
+  tmpSessionKey: Buffer;
+  packet?: Packet;
+};
+
 type MaxReserveBridgeHandlers = {
   onPacket: (envelope: InboundEnvelope) => Promise<void> | void;
+};
+
+type MaxReserveBridgeStatus = {
+  enabled: boolean;
+  connected: boolean;
+  reconnectAttempt: number;
+  hasReconnectTimer: boolean;
+  lastConnectedAtMs: number;
+  lastInboundAtMs: number;
+  lastOutboundAtMs: number;
+  lastError: string;
 };
 
 const BACKEND_RECIPIENT_ID = '0';
@@ -215,6 +232,11 @@ export class MaxReserveBridge {
   private pending = new Map<string, PendingOpcodeRequest>();
   private seq = 2;
   private cidNonce = 0;
+  private connected = false;
+  private lastConnectedAtMs = 0;
+  private lastInboundAtMs = 0;
+  private lastOutboundAtMs = 0;
+  private lastError = '';
 
   private readonly loginSessionsByClientId = new Map<string, LoginSession>();
   private readonly clientIdByUserId = new Map<number, string>();
@@ -244,6 +266,7 @@ export class MaxReserveBridge {
     const socket = this.socket;
     this.socket = null;
     this.connectPromise = null;
+    this.connected = false;
 
     if (socket) {
       try {
@@ -261,6 +284,19 @@ export class MaxReserveBridge {
     if (!clientId || !clientId.startsWith('_')) return;
     if (!Number.isFinite(userId) || userId <= 0) return;
     this.clientIdByUserId.set(userId, clientId);
+  }
+
+  getStatus(): MaxReserveBridgeStatus {
+    return {
+      enabled: this.config.enabled,
+      connected: this.connected && this.socket?.readyState === WebSocket.OPEN,
+      reconnectAttempt: this.reconnectAttempt,
+      hasReconnectTimer: !!this.reconnectTimer,
+      lastConnectedAtMs: this.lastConnectedAtMs,
+      lastInboundAtMs: this.lastInboundAtMs,
+      lastOutboundAtMs: this.lastOutboundAtMs,
+      lastError: this.lastError,
+    };
   }
 
   private nextCid() {
@@ -426,9 +462,14 @@ export class MaxReserveBridge {
           await this.sendOpcode6();
           await this.sendOpcode19();
           this.reconnectAttempt = 0;
+          this.connected = true;
+          this.lastConnectedAtMs = Date.now();
+          this.lastError = '';
           this.logger.log('MAX connected');
           resolveOnce();
         } catch (error: any) {
+          this.connected = false;
+          this.lastError = String(error?.message || error || 'unknown');
           this.logger.warn(`MAX handshake failed: ${String(error?.message || error || 'unknown')}`);
           rejectOnce(new Error('reserve_handshake_failed'));
           try {
@@ -440,6 +481,7 @@ export class MaxReserveBridge {
       });
 
       socket.on('message', (raw) => {
+        this.lastInboundAtMs = Date.now();
         const text = raw.toString();
         let parsed: any = null;
 
@@ -460,12 +502,14 @@ export class MaxReserveBridge {
 
       socket.on('error', (error) => {
         const message = String((error as any)?.message || 'socket_error');
+        this.lastError = message;
         if (!settled) {
           rejectOnce(new Error(message));
         }
       });
 
       socket.on('close', () => {
+        this.connected = false;
         this.clearPending('reserve_disconnected');
         this.socket = null;
         this.connectPromise = null;
@@ -482,8 +526,8 @@ export class MaxReserveBridge {
     }
   }
 
-  private decryptHandshake(data: string) {
-    const encrypted = fromBase64Url(data);
+  private decryptHandshakeKey(encryptedRaw: string): HandshakeKeyData {
+    const encrypted = fromBase64Url(encryptedRaw);
     const decrypted = privateDecrypt({
       key: this.config.privateKeyPem,
       padding: constants.RSA_PKCS1_OAEP_PADDING,
@@ -506,14 +550,49 @@ export class MaxReserveBridge {
       throw new Error('reserve_invalid_tmp_session_key');
     }
 
+    const result: HandshakeKeyData = {
+      clientId,
+      tmpSessionKey,
+    };
+
     const packet = parsePacket(JSON.stringify(payload.packet));
+    if (packet) {
+      result.packet = packet;
+    }
+
+    return result;
+  }
+
+  private decryptHandshake(data: string) {
+    const separatorIndex = data.indexOf(':');
+    if (separatorIndex <= 0) {
+      const handshake = this.decryptHandshakeKey(data);
+      if (!handshake.packet) {
+        throw new Error('reserve_invalid_packet');
+      }
+      return {
+        clientId: handshake.clientId,
+        tmpSessionKey: handshake.tmpSessionKey,
+        packet: handshake.packet,
+      };
+    }
+
+    const encryptedKey = data.slice(0, separatorIndex).trim();
+    const encryptedPacket = data.slice(separatorIndex + 1).trim();
+    if (!encryptedKey || !encryptedPacket) {
+      throw new Error('reserve_invalid_handshake_payload');
+    }
+
+    const handshake = this.decryptHandshakeKey(encryptedKey);
+    const decryptedPacket = decryptAesCompact(handshake.tmpSessionKey, encryptedPacket);
+    const packet = parsePacket(decryptedPacket);
     if (!packet) {
       throw new Error('reserve_invalid_packet');
     }
 
     return {
-      clientId,
-      tmpSessionKey,
+      clientId: handshake.clientId,
+      tmpSessionKey: handshake.tmpSessionKey,
       packet,
     };
   }
@@ -671,7 +750,7 @@ export class MaxReserveBridge {
     }
 
     try {
-      if (!parsed.data.includes('.')) {
+      if (parsed.data.includes(':') || !parsed.data.includes('.')) {
         const handshake = this.decryptHandshake(parsed.data);
         this.loginSessionsByClientId.set(handshake.clientId, {
           clientId: handshake.clientId,
@@ -777,6 +856,7 @@ export class MaxReserveBridge {
           notify: true,
         },
       }));
+      this.lastOutboundAtMs = Date.now();
 
       this.logger.log(`MAX send text recipient=${recipientId}`);
       this.logger.log('MAX response sent');
@@ -786,4 +866,4 @@ export class MaxReserveBridge {
   }
 }
 
-export type {MaxReserveBridgeConfig};
+export type {MaxReserveBridgeConfig, MaxReserveBridgeStatus};

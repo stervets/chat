@@ -268,3 +268,6 @@ yarn run frontend:dev
 - browser-origin smoke подтвердил блокировку MAX WS для web-клиента (`http://127.0.0.1:* -> wss://ws-api.oneme.ru/websocket`, close `1006` до `open`);
 - добавлен debug Capacitor plugin `MaxNativeSmokeTest` (`frontend/android/app/src/main/java/ru/core5/marx/MaxNativeSmokePlugin.java`) для native Android проверки MAX WS path: выставляет `Origin/User-Agent`, гоняет `opcode 6 -> 19 -> 64`, логирует шаги в `adb logcat` с tag `MaxNativeSmoke`;
 - рабочий Android plugin `MaxNativeTransport` зарегистрирован в `MainActivity`, поддерживает `init/connect/disconnect/sendText`, event-каналы `state/message/error` и авто-reconnect; старый smoke-плагин оставлен в коде, но не участвует в рабочем fallback-пути.
+- backend dual transport сделан always-on: обычный WS и MAX канал постоянно активны одновременно, а входящие команды из обоих каналов идут в единый `ChatGateway.onParsedPacket()/dispatch` без отдельной бизнес-ветки;
+- для runtime-контроля двух каналов добавлен transport health monitor в `backend/src/ws/chat.gateway.ts` (периодический лог `wsOpen/wsAuthorized/maxConnected/maxLastInMs/maxLastOutMs/reserveUsers`);
+- `MaxReserveBridge` получил статусные метрики (`getStatus`, `lastConnectedAtMs`, `lastInboundAtMs`, `lastOutboundAtMs`, `lastError`) для постоянного health-контроля MAX соединения.

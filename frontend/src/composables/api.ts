@@ -33,10 +33,22 @@ const getWebBackendOrigin = () => {
   return `${protocol}//${window.location.host}`;
 };
 
+const getConfiguredApiOrigin = () => {
+  try {
+    const config = useRuntimeConfig();
+    const raw = String(config.public.apiUrl || '').trim();
+    if (!raw) return '';
+    const parsed = new URL(raw);
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+};
+
 export const getApiBase = () => {
   if (process.client) {
     if (isNativeRuntime()) {
-      return PRODUCTION_API_ORIGIN;
+      return getConfiguredApiOrigin() || PRODUCTION_API_ORIGIN;
     }
     return getWebBackendOrigin();
   }

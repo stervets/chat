@@ -300,6 +300,7 @@ async function tryEnableReserveByPrompt() {
   if (decision === 'yes') {
     setReserveChannelEnabled(true);
     setReserveChannelNoPrompt(false);
+    console.info('[ws-route] reserve enabled by prompt');
     return true;
   }
   return false;
@@ -338,6 +339,7 @@ async function connectToAnyWsUrl() {
   if (reserveConfig.available && getReserveChannelEnabled()) {
     ws.setReserveActive(true);
     try {
+      console.info('[ws-route] connect via reserve');
       await ws.connectReserve();
       return {ok: true};
     } catch (err: any) {
@@ -558,6 +560,7 @@ export async function wsLogin(nickname: string, password: string) {
   if (!(connected as any).ok) return connected;
 
   const normalizedNickname = String(nickname || '').trim().toLowerCase();
+  console.info(`[ws-route] login nickname=${normalizedNickname}`);
   const result = await ws.request('auth:login', {nickname: normalizedNickname, password});
   const data = wsObject(result);
   if ((result as any)?.ok && data.token) {

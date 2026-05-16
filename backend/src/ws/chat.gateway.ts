@@ -4,7 +4,7 @@ import {
   type OnGatewayConnection,
   type OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import {Inject, Logger, Optional, type OnModuleDestroy} from '@nestjs/common';
+import {Inject, Logger, Optional, type OnModuleDestroy, type OnModuleInit} from '@nestjs/common';
 import {randomBytes} from 'node:crypto';
 import type {IncomingMessage} from 'node:http';
 import {WebSocket, WebSocketServer as WsServer} from 'ws';
@@ -35,7 +35,7 @@ import {
 @WebSocketGateway({
   path: config.wsPath,
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy {
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   @WsServerDecorator() server!: WsServer;
 
   private readonly logger = new Logger(ChatGateway.name);
@@ -45,6 +45,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     ringTimeoutMs: config.webrtc.callRingTimeoutMs,
   });
   private readonly callCleanupTimer: NodeJS.Timeout;
+  private readonly transportHealthTimer: NodeJS.Timeout;
   private readonly commands: ChatCommandMap;
   private readonly nativePushService: NativePushService | null;
   private readonly reserveClients = new Map<string, ClientSocket>();
@@ -74,11 +75,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       : null;
     this.callCleanupTimer = setInterval(() => this.flushExpiredCalls(), 5000);
     this.callCleanupTimer.unref?.();
+    this.transportHealthTimer = setInterval(() => this.logTransportHealth(), 30000);
+    this.transportHealthTimer.unref?.();
   }
 
   onModuleDestroy() {
     clearInterval(this.callCleanupTimer);
+    clearInterval(this.transportHealthTimer);
     this.reserveBridge?.dispose();
+  }
+
+  onModuleInit() {
+    this.logTransportHealth();
   }
 
   private createCommandHost(): ChatCommandHost {
@@ -192,6 +200,53 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       if (seen.has(userId)) continue;
       seen.add(userId);
       callback(userId);
+    }
+  }
+
+  private getDirectWsStats() {
+    let open = 0;
+    let authorized = 0;
+    this.forEachWsClient((client) => {
+      if (client.readyState !== WebSocket.OPEN) return;
+      open += 1;
+      if (client.state?.user?.id) {
+        authorized += 1;
+      }
+    });
+    return {open, authorized};
+  }
+
+  private logTransportHealth() {
+    const wsStats = this.getDirectWsStats();
+    const reserveUserCount = (() => {
+      let count = 0;
+      this.forEachReserveUserId(() => {
+        count += 1;
+      });
+      return count;
+    })();
+    const reserveStatus = this.reserveBridge?.getStatus();
+
+    if (!reserveStatus) {
+      this.logger.log(`Transport health wsOpen=${wsStats.open} wsAuthorized=${wsStats.authorized} max=disabled reserveUsers=${reserveUserCount}`);
+      return;
+    }
+
+    const now = Date.now();
+    const lastInMs = reserveStatus.lastInboundAtMs ? now - reserveStatus.lastInboundAtMs : -1;
+    const lastOutMs = reserveStatus.lastOutboundAtMs ? now - reserveStatus.lastOutboundAtMs : -1;
+
+    this.logger.log(
+      `Transport health wsOpen=${wsStats.open} wsAuthorized=${wsStats.authorized}`
+      + ` maxConnected=${reserveStatus.connected ? 1 : 0}`
+      + ` maxReconnectAttempt=${reserveStatus.reconnectAttempt}`
+      + ` maxLastInMs=${lastInMs}`
+      + ` maxLastOutMs=${lastOutMs}`
+      + ` reserveUsers=${reserveUserCount}`,
+    );
+
+    if (!reserveStatus.connected && reserveStatus.lastError) {
+      this.logger.warn(`MAX health warning lastError=${reserveStatus.lastError}`);
     }
   }
 

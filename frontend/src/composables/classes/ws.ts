@@ -117,6 +117,7 @@ export class WsClient {
     const next = !!active;
     if (this.reserveActive === next) return;
 
+    console.info(`[ws-route] reserveActive=${next ? '1' : '0'}`);
     this.reserveActive = next;
 
     if (next) {
@@ -297,6 +298,10 @@ export class WsClient {
       recipientId,
       requestId,
     ];
+
+    if (com === 'auth:login' || this.reserveActive) {
+      console.info(`[ws-route] request com=${com} via=${this.reserveActive ? 'max' : 'ws'} sender=${senderId} recipient=${recipientId} requestId=${requestId}`);
+    }
 
     return new Promise((resolve) => {
       this.requests[requestId] = {resolve};
