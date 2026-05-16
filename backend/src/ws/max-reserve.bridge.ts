@@ -241,6 +241,7 @@ export class MaxReserveBridge {
   private readonly loginSessionsByClientId = new Map<string, LoginSession>();
   private readonly clientIdByUserId = new Map<number, string>();
   private readonly maxSessionCacheByUserId = new Map<number, UserSessionKey>();
+  private readonly seenUnhandledOpcodeKeys = new Set<string>();
 
   constructor(config: MaxReserveBridgeConfig, handlers: MaxReserveBridgeHandlers) {
     this.config = config;
@@ -493,7 +494,16 @@ export class MaxReserveBridge {
 
         if (this.resolvePending(parsed)) return;
 
-        if (Number(parsed?.opcode || 0) !== 64) return;
+        const opcode = Number(parsed?.opcode || 0);
+        const cmd = Number(parsed?.cmd || 0);
+        if (opcode !== 64) {
+          const key = `${cmd}:${opcode}`;
+          if (!this.seenUnhandledOpcodeKeys.has(key)) {
+            this.seenUnhandledOpcodeKeys.add(key);
+            this.logger.log(`MAX unhandled opcode cmd=${cmd} opcode=${opcode}`);
+          }
+          return;
+        }
         const messageText = String(parsed?.payload?.message?.text || '').trim();
         if (!messageText) return;
 
