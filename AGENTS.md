@@ -271,3 +271,18 @@ yarn run frontend:dev
 - backend dual transport сделан always-on: обычный WS и MAX канал постоянно активны одновременно, а входящие команды из обоих каналов идут в единый `ChatGateway.onParsedPacket()/dispatch` без отдельной бизнес-ветки;
 - для runtime-контроля двух каналов добавлен transport health monitor в `backend/src/ws/chat.gateway.ts` (периодический лог `wsOpen/wsAuthorized/maxConnected/maxLastInMs/maxLastOutMs/reserveUsers`);
 - `MaxReserveBridge` получил статусные метрики (`getStatus`, `lastConnectedAtMs`, `lastInboundAtMs`, `lastOutboundAtMs`, `lastError`) для постоянного health-контроля MAX соединения.
+- в MAX fallback добавлен chunking транспортного payload без изменения MARX packet format: внешний текст MAX теперь `A:<payload>` для коротких сообщений и `C:<chunkId>:<index>:<total>:<part>` для длинных, legacy-формат `<recipientId> <payload>` временно принимается как atomic;
+- chunking работает симметрично на backend и frontend через codec-файлы `backend/src/ws/max-reserve-chunk-codec.ts` и `frontend/src/composables/classes/max-reserve-chunk-codec.ts`, лимит строки задаётся `maxReserve.chunkTextLimit` (default `3000`) в `backend/config*.json` и `frontend/config*.json`;
+- сборщик чанков держит incomplete payload только в памяти (`recipientId + chunkId`, `max 100` чанков, TTL `2 минуты`), принимает out-of-order/duplicate чанки и не трогает crypto/MARX-слой до полной сборки payload.
+- в Android native plugin `MaxNativeTransport` добавлена защита от stale socket callback-гонок при reconnect: socket-epoch проверка (`webSocket + epoch`), игнор старых `onOpen/onMessage/onFailure/onClosed`, debounce reconnect через один `reconnectRunnable`, и отмена лишних reconnect задач при новом открытии/закрытии сокета;
+- в chat UI убрано залипание ошибки `Не удалось подключиться к диалогу.`/`Не удалось загрузить историю.`: при успешных `room:get` и `message:list` соответствующие error-сообщения автоматически очищаются.
+
+## Актуализация 2026-05-17
+- при e2e-тестах на реальном телефоне пользователь (`lisov`) вводит login/password вручную; агент не пытается автологиниться через adb-ввод credentials в webview;
+- reserve-history в Android MAX fallback ужат до последних `10` сообщений: `message:list` в reserve-режиме теперь `limit=10`, бесконечная догрузка старой истории в reserve отключена;
+- `auth:session` на фронте получил in-flight dedupe, чтобы не стрелять дубликатами при нестабильном reconnect;
+- MAX transport получил ротацию transport-channel: backend хранит `currentTransportChatId` + short-list `previousTransportChatIds`, создаёт private channel через `opcode 64` с `CONTROL(event=new, chatType=CHANNEL, access=PRIVATE)` и переключает отправку на новый chat;
+- backend шлёт служебный packet `max:channel-switch`, Android native plugin `MaxNativeTransport` применяет новый `chatId` через `setChatId(...)` без reconnect;
+- старый transport-channel держится в overlap (`channelSwitchOverlapMs`, default `120000`), затем backend пытается cleanup через `opcode 54` + `opcode 48`; ошибки cleanup только логируются;
+- inbound MAX на backend фильтруется по `currentTransportChatId` и активным previous chatId, чтобы не обрабатывать мусор из чужих/устаревших каналов;
+- добавлен smoke-check `yarn check:max-reserve-chunk` для codec/assembler (`short`, `long`, `out-of-order`, `duplicate`, `legacy`).

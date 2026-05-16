@@ -48,10 +48,13 @@ public class MaxNativeTransportPlugin extends Plugin {
     private int reconnectAttempt = 0;
 
     private int seq = 2;
-    private long cidNonce = 0;
+    private long lastNegativeCid = 0;
 
     private boolean waitOpcode6 = false;
     private boolean waitOpcode19 = false;
+    private long socketEpoch = 0;
+    @Nullable
+    private Runnable reconnectRunnable = null;
 
     private final List<PluginCall> pendingConnectCalls = new ArrayList<>();
 
@@ -59,7 +62,7 @@ public class MaxNativeTransportPlugin extends Plugin {
     private String origin = DEFAULT_ORIGIN;
     private String userAgentHeader = DEFAULT_USER_AGENT;
     private String token = "";
-    private int chatId = 0;
+    private long chatId = 0L;
 
     private final JSONObject userAgentPayload = new JSONObject();
     private String deviceId = DEFAULT_DEVICE_ID;
@@ -80,7 +83,7 @@ public class MaxNativeTransportPlugin extends Plugin {
                 userAgentHeader = stringOrDefault(call.getString("userAgent"), DEFAULT_USER_AGENT);
                 token = stringOrDefault(call.getString("token"), "");
                 deviceId = stringOrDefault(call.getString("deviceId"), DEFAULT_DEVICE_ID);
-                chatId = Math.max(0, call.getInt("chatId", 0));
+                chatId = parseChatId(stringOrDefault(call.getString("chatId"), "0"), 0L);
 
                 JSONObject raw = call.getObject("userAgentPayload", null);
                 resetUserAgentPayload();
@@ -152,6 +155,30 @@ public class MaxNativeTransportPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setChatId(PluginCall call) {
+        String rawChatId = stringOrDefault(call.getString("chatId"), "");
+        if (rawChatId.isEmpty()) {
+            call.reject("max_chat_id_required");
+            return;
+        }
+
+        long nextChatId = parseChatId(rawChatId, 0L);
+        if (nextChatId == 0L) {
+            call.reject("max_chat_id_invalid");
+            return;
+        }
+
+        synchronized (lock) {
+            chatId = nextChatId;
+        }
+        Log.i(TAG, "setChatId chatId=" + nextChatId);
+
+        JSObject ok = new JSObject();
+        ok.put("ok", true);
+        call.resolve(ok);
+    }
+
+    @PluginMethod
     public void sendText(PluginCall call) {
         String text = stringOrDefault(call.getString("text"), "");
         if (text.isEmpty()) {
@@ -165,6 +192,10 @@ public class MaxNativeTransportPlugin extends Plugin {
             localSocket = socket;
             if (localSocket == null || !isOnline()) {
                 call.reject("max_not_connected");
+                return;
+            }
+            if (chatId == 0L) {
+                call.reject("max_chat_not_ready");
                 return;
             }
             localSeq = seq;
@@ -185,8 +216,10 @@ public class MaxNativeTransportPlugin extends Plugin {
     }
 
     private void openSocketLocked() {
+        cancelReconnectLocked();
         closeSocketLocked(1000, "reconnect");
         updateStateLocked("connecting");
+        final long openEpoch = ++socketEpoch;
 
         Request request = new Request.Builder()
             .url(wsUrl)
@@ -201,8 +234,9 @@ public class MaxNativeTransportPlugin extends Plugin {
             @Override
             public void onOpen(@NonNull WebSocket webSocket, @NonNull Response response) {
                 synchronized (lock) {
+                    if (!isCurrentSocketLocked(webSocket, openEpoch)) return;
                     seq = 2;
-                    cidNonce = 0;
+                    lastNegativeCid = 0;
                     waitOpcode6 = true;
                     waitOpcode19 = false;
                 }
@@ -211,7 +245,7 @@ public class MaxNativeTransportPlugin extends Plugin {
 
                 boolean sent = webSocket.send(buildOpcode6());
                 if (!sent) {
-                    onFatalError("max_send_opcode6_failed");
+                    onFatalError(webSocket, openEpoch, "max_send_opcode6_failed");
                     return;
                 }
                 Log.i(TAG, "sent opcode6");
@@ -219,50 +253,82 @@ public class MaxNativeTransportPlugin extends Plugin {
 
             @Override
             public void onMessage(@NonNull WebSocket webSocket, @NonNull String text) {
+                synchronized (lock) {
+                    if (!isCurrentSocketLocked(webSocket, openEpoch)) return;
+                }
+
                 try {
                     JSONObject parsed = new JSONObject(text);
                     int opcode = parsed.optInt("opcode", 0);
                     int cmd = parsed.optInt("cmd", 0);
 
-                    if (cmd == 3 && (waitOpcode6 || waitOpcode19)) {
+                    if (cmd == 3 && isHandshakePendingLocked(webSocket, openEpoch)) {
                         JSONObject payload = parsed.optJSONObject("payload");
                         String error = payload == null
                             ? "reserve_opcode_error"
                             : stringOrDefault(payload.optString("message", payload.optString("error", "reserve_opcode_error")), "reserve_opcode_error");
-                        onFatalError(error);
+                        onFatalError(webSocket, openEpoch, error);
                         return;
                     }
 
-                    if (waitOpcode6 && opcode == 6) {
+                    if (cmd == 3 && opcode == 64) {
+                        JSONObject payload = parsed.optJSONObject("payload");
+                        String error = payload == null
+                            ? "reserve_opcode64_error"
+                            : stringOrDefault(payload.optString("message", payload.optString("error", "reserve_opcode64_error")), "reserve_opcode64_error");
+                        Log.e(TAG, "opcode64 error=" + error);
                         synchronized (lock) {
-                            waitOpcode6 = false;
+                            if (!isCurrentSocketLocked(webSocket, openEpoch)) return;
+                            emitError(error);
+                        }
+                        return;
+                    }
+
+                    if (opcode == 6 && consumeOpcode6Locked(webSocket, openEpoch)) {
+                        synchronized (lock) {
                             waitOpcode19 = true;
                         }
                         Log.i(TAG, "opcode6 ok");
                         boolean sent = webSocket.send(buildOpcode19());
                         if (!sent) {
-                            onFatalError("max_send_opcode19_failed");
+                            onFatalError(webSocket, openEpoch, "max_send_opcode19_failed");
                             return;
                         }
                         Log.i(TAG, "sent opcode19");
                         return;
                     }
 
-                    if (waitOpcode19 && opcode == 19) {
+                    if (opcode == 19 && consumeOpcode19Locked(webSocket, openEpoch)) {
+                        long syncChatId = findSyncChatId(parsed.optJSONObject("payload"));
+                        if (syncChatId != 0L) {
+                            synchronized (lock) {
+                                chatId = syncChatId;
+                            }
+                            Log.i(TAG, "resolved sync chatId=" + syncChatId + " from opcode19");
+                        } else {
+                            long currentChatId;
+                            synchronized (lock) {
+                                currentChatId = chatId;
+                            }
+                            if (currentChatId == 0L) {
+                                onFatalError(webSocket, openEpoch, "max_sync_chat_not_found");
+                                return;
+                            }
+                            Log.w(TAG, "sync chat not found in opcode19 payload, keep configured chatId=" + currentChatId);
+                        }
+
                         synchronized (lock) {
-                            waitOpcode19 = false;
                             reconnectAttempt = 0;
                             updateStateLocked("online");
                             resolvePendingConnectLocked();
+                            cancelReconnectLocked();
                         }
                         Log.i(TAG, "opcode19 ok");
                         return;
                     }
 
                     if (opcode == 64 || opcode == 128) {
-                        JSONObject payload = parsed.optJSONObject("payload");
-                        JSONObject message = payload == null ? null : payload.optJSONObject("message");
-                        String messageText = message == null ? "" : stringOrDefault(message.optString("text", ""), "");
+                        String messageText = extractMessageText(parsed.optJSONObject("payload"));
                         if (!messageText.isEmpty()) {
                             JSObject event = new JSObject();
                             event.put("text", messageText);
@@ -271,7 +337,10 @@ public class MaxNativeTransportPlugin extends Plugin {
                         }
                     }
                 } catch (Throwable error) {
-                    emitError("max_message_parse_error");
+                    synchronized (lock) {
+                        if (!isCurrentSocketLocked(webSocket, openEpoch)) return;
+                        emitError("max_message_parse_error");
+                    }
                 }
             }
 
@@ -280,21 +349,22 @@ public class MaxNativeTransportPlugin extends Plugin {
                 String message = t.getClass().getSimpleName() + ": " + String.valueOf(t.getMessage());
                 int httpCode = response == null ? 0 : response.code();
                 Log.e(TAG, "onFailure error=" + message + " httpCode=" + httpCode);
-                handleDisconnectWithError(message);
+                handleDisconnectWithError(webSocket, openEpoch, message);
             }
 
             @Override
             public void onClosed(@NonNull WebSocket webSocket, int code, @NonNull String reason) {
                 Log.i(TAG, "onClosed code=" + code + " reason=" + reason);
-                handleSocketClosed("closed:" + code);
+                handleSocketClosed(webSocket, openEpoch, "closed:" + code);
             }
         });
     }
 
-    private void onFatalError(String messageRaw) {
+    private void onFatalError(@NonNull WebSocket sourceSocket, long sourceEpoch, String messageRaw) {
         String message = stringOrDefault(messageRaw, "max_error");
         Log.e(TAG, "fatal error=" + message);
         synchronized (lock) {
+            if (!isCurrentSocketLocked(sourceSocket, sourceEpoch)) return;
             emitError(message);
             clearPendingConnectLocked(message);
             closeSocketLocked(1002, message);
@@ -303,9 +373,10 @@ public class MaxNativeTransportPlugin extends Plugin {
         }
     }
 
-    private void handleDisconnectWithError(String messageRaw) {
+    private void handleDisconnectWithError(@NonNull WebSocket sourceSocket, long sourceEpoch, String messageRaw) {
         String message = stringOrDefault(messageRaw, "max_disconnect");
         synchronized (lock) {
+            if (!isCurrentSocketLocked(sourceSocket, sourceEpoch)) return;
             emitError(message);
             clearPendingConnectLocked(message);
             closeSocketLocked(1002, "failure");
@@ -314,8 +385,9 @@ public class MaxNativeTransportPlugin extends Plugin {
         }
     }
 
-    private void handleSocketClosed(String reasonRaw) {
+    private void handleSocketClosed(@NonNull WebSocket sourceSocket, long sourceEpoch, String reasonRaw) {
         synchronized (lock) {
+            if (!isCurrentSocketLocked(sourceSocket, sourceEpoch)) return;
             clearPendingConnectLocked(reasonRaw);
             closeSocketLocked(1000, "closed");
             updateStateLocked("disconnected");
@@ -326,17 +398,21 @@ public class MaxNativeTransportPlugin extends Plugin {
     private void scheduleReconnectLocked() {
         if (!shouldReconnect) return;
         if ("connecting".equals(state) || "online".equals(state)) return;
+        if (reconnectRunnable != null) return;
 
         int delay = Math.min(500 * (1 << Math.min(reconnectAttempt, 5)), MAX_RECONNECT_DELAY_MS);
         reconnectAttempt += 1;
 
-        mainHandler.postDelayed(() -> {
+        Runnable nextReconnect = () -> {
             synchronized (lock) {
+                reconnectRunnable = null;
                 if (!shouldReconnect) return;
                 if ("connecting".equals(state) || "online".equals(state)) return;
                 openSocketLocked();
             }
-        }, delay);
+        };
+        reconnectRunnable = nextReconnect;
+        mainHandler.postDelayed(nextReconnect, delay);
     }
 
     private void resolvePendingConnectLocked() {
@@ -384,6 +460,7 @@ public class MaxNativeTransportPlugin extends Plugin {
     }
 
     private void closeSocketLocked(int code, String reason) {
+        cancelReconnectLocked();
         WebSocket local = socket;
         socket = null;
         waitOpcode6 = false;
@@ -394,6 +471,39 @@ public class MaxNativeTransportPlugin extends Plugin {
             local.close(code, reason);
         } catch (Throwable ignored) {
             // ignore
+        }
+    }
+
+    private void cancelReconnectLocked() {
+        if (reconnectRunnable == null) return;
+        mainHandler.removeCallbacks(reconnectRunnable);
+        reconnectRunnable = null;
+    }
+
+    private boolean isCurrentSocketLocked(@NonNull WebSocket sourceSocket, long sourceEpoch) {
+        return sourceSocket == socket && sourceEpoch == socketEpoch;
+    }
+
+    private boolean isHandshakePendingLocked(@NonNull WebSocket sourceSocket, long sourceEpoch) {
+        if (!isCurrentSocketLocked(sourceSocket, sourceEpoch)) return false;
+        return waitOpcode6 || waitOpcode19;
+    }
+
+    private boolean consumeOpcode6Locked(@NonNull WebSocket sourceSocket, long sourceEpoch) {
+        synchronized (lock) {
+            if (!isCurrentSocketLocked(sourceSocket, sourceEpoch)) return false;
+            if (!waitOpcode6) return false;
+            waitOpcode6 = false;
+            return true;
+        }
+    }
+
+    private boolean consumeOpcode19Locked(@NonNull WebSocket sourceSocket, long sourceEpoch) {
+        synchronized (lock) {
+            if (!isCurrentSocketLocked(sourceSocket, sourceEpoch)) return false;
+            if (!waitOpcode19) return false;
+            waitOpcode19 = false;
+            return true;
         }
     }
 
@@ -463,15 +573,128 @@ public class MaxNativeTransportPlugin extends Plugin {
         }
     }
 
+    private long findSyncChatId(@Nullable JSONObject payload) {
+        return findSyncChatIdAny(payload, 0);
+    }
+
+    private long findSyncChatIdAny(@Nullable Object node, int depth) {
+        if (node == null) return 0L;
+        if (depth > 6) return 0L;
+
+        if (node instanceof JSONObject) {
+            JSONObject object = (JSONObject) node;
+            long direct = extractSyncChatIdFromChatLike(object);
+            if (direct != 0L) return direct;
+
+            Iterator<String> keys = object.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                Object child = object.opt(key);
+                long nested = findSyncChatIdAny(child, depth + 1);
+                if (nested != 0L) return nested;
+            }
+            return 0L;
+        }
+
+        if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            for (int i = 0; i < array.length(); i += 1) {
+                Object child = array.opt(i);
+                long nested = findSyncChatIdAny(child, depth + 1);
+                if (nested != 0L) return nested;
+            }
+        }
+
+        return 0L;
+    }
+
+    private long extractSyncChatIdFromChatLike(@Nullable JSONObject object) {
+        if (object == null) return 0L;
+
+        String title = stringOrDefault(object.optString("title", ""), "");
+        if (title.isEmpty()) return 0L;
+        if (!title.toLowerCase(Locale.ROOT).startsWith("sync-")) return 0L;
+
+        long id = 0L;
+        if (object.has("id")) {
+            id = parseChatId(String.valueOf(object.opt("id")), 0L);
+        }
+        if (id == 0L && object.has("chatId")) {
+            id = parseChatId(String.valueOf(object.opt("chatId")), 0L);
+        }
+        if (id == 0L && object.has("chat_id")) {
+            id = parseChatId(String.valueOf(object.opt("chat_id")), 0L);
+        }
+        return id;
+    }
+
     private long nextNegativeCid() {
-        cidNonce += 1;
-        return -((System.currentTimeMillis() * 1000L) + cidNonce);
+        long nowNegative = -System.currentTimeMillis();
+        if (nowNegative < lastNegativeCid) {
+            lastNegativeCid = nowNegative;
+            return lastNegativeCid;
+        }
+        lastNegativeCid -= 1;
+        return lastNegativeCid;
+    }
+
+    private String extractMessageText(@Nullable JSONObject payload) {
+        if (payload == null) return "";
+
+        JSONObject message = payload.optJSONObject("message");
+        String direct = message == null ? "" : stringOrDefault(message.optString("text", ""), "");
+        if (!direct.isEmpty()) return direct;
+
+        JSONArray messages = payload.optJSONArray("messages");
+        if (messages != null && messages.length() > 0) {
+            JSONObject first = messages.optJSONObject(0);
+            if (first != null) {
+                String text = stringOrDefault(first.optString("text", ""), "");
+                if (!text.isEmpty()) return text;
+            }
+        }
+
+        JSONObject chat = payload.optJSONObject("chat");
+        if (chat != null) {
+            JSONObject chatMessage = chat.optJSONObject("message");
+            String text = chatMessage == null ? "" : stringOrDefault(chatMessage.optString("text", ""), "");
+            if (!text.isEmpty()) return text;
+        }
+
+        JSONObject event = payload.optJSONObject("event");
+        if (event != null) {
+            JSONObject eventMessage = event.optJSONObject("message");
+            String text = eventMessage == null ? "" : stringOrDefault(eventMessage.optString("text", ""), "");
+            if (!text.isEmpty()) return text;
+        }
+
+        JSONArray events = payload.optJSONArray("events");
+        if (events != null && events.length() > 0) {
+            JSONObject firstEvent = events.optJSONObject(0);
+            if (firstEvent != null) {
+                JSONObject eventMessage = firstEvent.optJSONObject("message");
+                String text = eventMessage == null ? "" : stringOrDefault(eventMessage.optString("text", ""), "");
+                if (!text.isEmpty()) return text;
+            }
+        }
+
+        return "";
     }
 
     private static String stringOrDefault(String valueRaw, String fallbackRaw) {
         String value = String.valueOf(valueRaw == null ? "" : valueRaw).trim();
         if (!value.isEmpty()) return value;
         return String.valueOf(fallbackRaw == null ? "" : fallbackRaw).trim();
+    }
+
+    private static long parseChatId(String rawChatId, long fallback) {
+        String value = stringOrDefault(rawChatId, "");
+        if (value.isEmpty()) return fallback;
+        try {
+            return Long.parseLong(value);
+        } catch (Throwable ignored) {
+            return fallback;
+        }
     }
 
     private static String maskToken(String tokenRaw) {
