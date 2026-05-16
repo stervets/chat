@@ -501,6 +501,14 @@ export class MaxReserveBridge {
           if (!this.seenUnhandledOpcodeKeys.has(key)) {
             this.seenUnhandledOpcodeKeys.add(key);
             this.logger.log(`MAX unhandled opcode cmd=${cmd} opcode=${opcode}`);
+            if (opcode === 128) {
+              try {
+                const preview = JSON.stringify(parsed).slice(0, 1200);
+                this.logger.log(`MAX opcode128 preview=${preview}`);
+              } catch {
+                // ignore preview error
+              }
+            }
           }
           return;
         }
