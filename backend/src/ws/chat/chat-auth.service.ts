@@ -1,4 +1,5 @@
 import {createSession, hashPassword, resolveSession, revokeSession, verifyPassword} from '../../common/auth.js';
+import {Logger} from '@nestjs/common';
 import {db} from '../../db.js';
 import {
   ANONYMOUS_AUTHOR_NICKNAME,
@@ -13,6 +14,8 @@ import {
 import type {SocketState} from '../protocol.js';
 
 export class ChatAuthService {
+  private readonly logger = new Logger(ChatAuthService.name);
+
   constructor(private readonly ctx: ChatContext) {}
 
   async authLogin(state: SocketState, payload: any): Promise<ApiError | ApiOk<{
@@ -26,6 +29,13 @@ export class ChatAuthService {
     }
     const nickname = nicknameParsed.nickname;
     const password = (payload?.password || '').toString();
+    if (state.ip === 'max-reserve') {
+      const first = password.slice(0, 1);
+      const firstKind = first
+        ? (first >= 'A' && first <= 'Z' ? 'upper' : first >= 'a' && first <= 'z' ? 'lower' : 'other')
+        : 'empty';
+      this.logger.log(`MAX auth probe nickname=${nickname} passLen=${password.length} passFirst=${firstKind}`);
+    }
     if (!password) {
       return {ok: false, error: 'invalid_input'};
     }
@@ -52,11 +62,17 @@ export class ChatAuthService {
     });
 
     if (!user) {
+      if (state.ip === 'max-reserve') {
+        this.logger.warn(`MAX auth invalid_credentials (user_not_found) nickname=${nickname}`);
+      }
       return {ok: false, error: 'invalid_credentials'};
     }
 
     const valid = await verifyPassword(user.passwordHash, password);
     if (!valid) {
+      if (state.ip === 'max-reserve') {
+        this.logger.warn(`MAX auth invalid_credentials (password_mismatch) nickname=${nickname} passLen=${password.length}`);
+      }
       return {ok: false, error: 'invalid_credentials'};
     }
 
