@@ -20,7 +20,6 @@ import type {
 const WS_LOST_ERROR_PREFIX = 'Соединение потеряно.';
 const WS_RECONNECT_SEND_ERROR = 'Подключение восстанавливается. Сообщение не отправлено.';
 const WS_OFFLINE_SEND_ERROR = 'Оффлайн. Сообщение не отправлено.';
-const RESERVE_WINDOW_REFRESH_COOLDOWN_MS = 10000;
 
 function isTransientConnectionError(errorRaw: unknown) {
   const error = String(errorRaw || '').trim();
@@ -375,9 +374,6 @@ export const chatMethodsSendUploadAndRuntime = {
       this.hapticConfirm();
       this.forceOwnScrollDown = true;
       this.scrollToBottomPinned();
-      if (this.activeDialog.kind === 'direct') {
-        await this.fetchDirectDialogs();
-      }
       return true;
     },
 
@@ -487,6 +483,7 @@ export const chatMethodsSendUploadAndRuntime = {
 
       if (this.messages.some((item: Message) => Number(item.id) === Number(normalized.id))) {
         this.applyMessageUpdate(normalized);
+        this.upsertRoomHistoryCacheMessage(normalized);
         return;
       }
 
@@ -500,7 +497,8 @@ export const chatMethodsSendUploadAndRuntime = {
         if (!ownMessage) {
           this.addNotificationFromMessage(normalized, {showToast: true});
         }
-        await this.fetchDirectDialogs();
+        this.upsertRoomHistoryCacheMessage(normalized);
+        this.syncDirectDialogWithMessage(normalized);
         return;
       }
 
@@ -512,6 +510,7 @@ export const chatMethodsSendUploadAndRuntime = {
       const shouldAutoScroll = this.isNearBottom() || (ownMessage && this.forceOwnScrollDown);
       this.markFreshMessage(normalized.id);
       this.messages.push(normalized);
+      this.upsertRoomHistoryCacheMessage(normalized);
       this.notifyMessagesChanged();
       await nextTick();
       if (shouldAutoScroll) {
@@ -532,7 +531,7 @@ export const chatMethodsSendUploadAndRuntime = {
         this.forceOwnScrollDown = false;
       }
       if (this.activeDialog.kind === 'direct') {
-        await this.fetchDirectDialogs();
+        this.syncDirectDialogWithMessage(normalized);
       }
     },
 
@@ -545,6 +544,7 @@ export const chatMethodsSendUploadAndRuntime = {
       if (Number(this.activePinnedMessage?.id || 0) === Number(message.id || 0)) {
         this.activePinnedMessage = message;
       }
+      this.upsertRoomHistoryCacheMessage(message);
       if (this.activeDialog?.id !== message.roomId) return;
       this.applyMessageUpdate(message);
     },
@@ -561,11 +561,19 @@ export const chatMethodsSendUploadAndRuntime = {
       if (this.activeDialog?.id === roomId) {
         this.applyMessageDelete(roomId, messageId);
       }
+      this.deleteRoomHistoryCacheMessage(roomId, messageId);
       this.emitScriptHostRoomEvent('chat_message_deleted', {
         roomId,
         messageId,
       }, 'room', roomId);
-      await this.fetchDirectDialogs();
+      if (this.activeDialog?.kind === 'direct' && Number(this.activeDialog?.id || 0) === roomId) {
+        const lastMessage = (this.messages || []).at(-1) || null;
+        if (lastMessage) {
+          this.syncDirectDialogWithMessage(lastMessage);
+        } else {
+          this.clearDirectDialogState(roomId);
+        }
+      }
     },
 
     async onRoomMessagesCleared(this: any, payload: any) {
@@ -580,8 +588,7 @@ export const chatMethodsSendUploadAndRuntime = {
       this.updateFaviconBlinkByUnread();
 
       if (Number(this.activeDialog?.id || 0) !== roomId) {
-        await this.fetchDirectDialogs();
-        await this.fetchPinnedDirectUserIds();
+        this.clearDirectDialogState(roomId);
         return;
       }
 
@@ -596,23 +603,22 @@ export const chatMethodsSendUploadAndRuntime = {
       this.resetMessagePreviewCache();
       this.clearFreshMessageMarks();
 
-      await this.fetchDirectDialogs();
-      await this.fetchPinnedDirectUserIds();
+      this.setRoomHistoryCache(roomId, [], false);
+      this.clearDirectDialogState(roomId);
     },
 
     async onDialogDeleted(this: any, payload: any) {
       const roomId = Number(payload?.roomId);
       if (!Number.isFinite(roomId)) return;
 
-      this.directDialogs = this.directDialogs.filter((dialog: DirectDialog) => dialog.roomId !== roomId);
+      this.removeDirectDialogState(roomId);
+      this.removeRoomNavigationDialog(roomId);
       this.notifications = this.notifications.filter((notification: NotificationItem) => notification.roomId !== roomId);
       this.notificationsMenuOpen = false;
       this.updateFaviconBlinkByUnread();
 
       if (this.activeDialog?.id !== roomId) {
-        await this.fetchDirectDialogs();
-        await this.fetchPinnedDirectUserIds();
-        await this.fetchRoomsNavigation();
+        this.clearRoomHistoryCache(roomId);
         return;
       }
 
@@ -624,15 +630,13 @@ export const chatMethodsSendUploadAndRuntime = {
       this.reactionTooltipVisible = false;
       this.resetMessagePreviewCache();
 
-      this.generalDialog = await this.fetchGeneralDialog();
+      this.clearRoomHistoryCache(roomId);
+      this.setGeneralDialogState(this.resolveDefaultGroupDialog());
       const selected = await this.selectDefaultGroupDialog({routeMode: 'replace', closeMenu: false});
       if (!selected) {
         this.activeDialog = null;
         this.setActiveRoomScript(null);
       }
-      await this.fetchDirectDialogs();
-      await this.fetchPinnedDirectUserIds();
-      await this.fetchRoomsNavigation();
     },
 
     consumeAnonymousOwnMessageCandidate(this: any, message: Message) {
@@ -705,12 +709,6 @@ export const chatMethodsSendUploadAndRuntime = {
         await this.joinDialog(activeDialogId);
         await this.catchUpRoomMessages(activeDialogId);
       }
-
-      if (this.activeDialog?.kind === 'direct') {
-        await this.fetchDirectDialogs();
-      }
-      await this.fetchPinnedDirectUserIds();
-      await this.fetchRoomsNavigation();
       this.markVisibleMessageNotificationsRead();
       this.emitScriptHostRoomEvent('system:ws_reconnected', {}, 'system');
     },
@@ -768,7 +766,6 @@ export const chatMethodsSendUploadAndRuntime = {
         this.clearInactiveTabUnread();
         this.markVisibleMessageNotificationsRead();
       }
-      this.refreshReserveWindowData();
     },
 
     onWindowBlur(this: any) {
@@ -780,22 +777,6 @@ export const chatMethodsSendUploadAndRuntime = {
       if (this.documentVisible && this.windowFocused) {
         this.clearInactiveTabUnread();
         this.markVisibleMessageNotificationsRead();
-        this.refreshReserveWindowData();
       }
-    },
-
-    refreshReserveWindowData(this: any) {
-      if (this.wsConnectionState !== 'connected') return;
-
-      if (ws.isReserveActive()) {
-        const now = Date.now();
-        if (now - Number(this.reserveWindowRefreshAt || 0) < RESERVE_WINDOW_REFRESH_COOLDOWN_MS) {
-          return;
-        }
-        this.reserveWindowRefreshAt = now;
-      }
-
-      void this.fetchDirectDialogs();
-      void this.fetchPinnedDirectUserIds();
     },
 };

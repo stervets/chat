@@ -45,6 +45,8 @@ const reserveNavCache = {
   generalDialogPromise: null as Promise<Dialog | null> | null,
 };
 
+const sharedRoomHistoryCache: Record<number, {messages: Message[]; hasMore: boolean}> = {};
+
 function isTemporarilyHiddenRoomTitle(titleRaw: unknown) {
   return String(titleRaw || '').trim().toLowerCase() === TEMP_HIDDEN_ROOM_TITLE;
 }
@@ -224,6 +226,251 @@ export const chatMethodsAuthDialogsAndProfile = {
       });
     },
 
+    setGeneralDialogState(this: any, dialogRaw: Dialog | null) {
+      if (!dialogRaw) {
+        this.generalDialog = null;
+        reserveNavCache.generalDialog = null;
+        return;
+      }
+
+      const dialog: Dialog = {
+        ...dialogRaw,
+        roomSurface: dialogRaw?.roomSurface
+          ? {...dialogRaw.roomSurface, config: {...(dialogRaw.roomSurface.config || {})}}
+          : dialogRaw?.roomSurface,
+      };
+      this.generalDialog = dialog;
+      this.generalDialogFetchedAt = Date.now();
+      reserveNavCache.generalDialog = {
+        ...dialog,
+        roomSurface: dialog?.roomSurface
+          ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}}
+          : dialog?.roomSurface,
+      };
+      reserveNavCache.generalDialogFetchedAt = this.generalDialogFetchedAt;
+    },
+
+    setPinnedDirectUserIdsState(this: any, idsRaw: unknown[]) {
+      const ids = idsRaw
+        .map((value: unknown) => Number(value || 0))
+        .filter((value: number) => Number.isFinite(value) && value > 0);
+      this.pinnedDirectUserIds = [...ids];
+      this.pinnedDirectsFetchedAt = Date.now();
+      reserveNavCache.pinnedDirectUserIds = [...ids];
+      reserveNavCache.pinnedDirectsFetchedAt = this.pinnedDirectsFetchedAt;
+    },
+
+    setDirectDialogsState(this: any, dialogsRaw: DirectDialog[]) {
+      const dialogs = dialogsRaw.map((dialog: DirectDialog) => ({
+        ...dialog,
+        targetUser: dialog?.targetUser ? {...dialog.targetUser} : dialog?.targetUser,
+        roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+      }));
+      this.directDialogs = dialogs;
+      this.directDialogsFetchedAt = Date.now();
+      reserveNavCache.directDialogs = dialogs.map((dialog: DirectDialog) => ({
+        ...dialog,
+        targetUser: dialog?.targetUser ? {...dialog.targetUser} : dialog?.targetUser,
+        roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+      }));
+      reserveNavCache.directDialogsFetchedAt = this.directDialogsFetchedAt;
+    },
+
+    upsertDirectDialogState(this: any, dialogRaw: DirectDialog) {
+      const roomId = Number(dialogRaw?.roomId || 0);
+      if (!Number.isFinite(roomId) || roomId === 0) return;
+
+      const dialog: DirectDialog = {
+        ...dialogRaw,
+        targetUser: dialogRaw?.targetUser ? {...dialogRaw.targetUser} : dialogRaw?.targetUser,
+        roomSurface: dialogRaw?.roomSurface ? {...dialogRaw.roomSurface, config: {...(dialogRaw.roomSurface.config || {})}} : dialogRaw?.roomSurface,
+      };
+      const next = [...(this.directDialogs || [])];
+      const existingIndex = next.findIndex((item: DirectDialog) => Number(item?.roomId || 0) === roomId);
+      if (existingIndex >= 0) {
+        next[existingIndex] = {
+          ...next[existingIndex],
+          ...dialog,
+          targetUser: dialog.targetUser || next[existingIndex].targetUser,
+          roomSurface: dialog.roomSurface || next[existingIndex].roomSurface,
+        };
+      } else {
+        next.push(dialog);
+      }
+      this.setDirectDialogsState(next);
+    },
+
+    removeDirectDialogState(this: any, roomIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      this.setDirectDialogsState(
+        (this.directDialogs || []).filter((dialog: DirectDialog) => Number(dialog?.roomId || 0) !== roomId)
+      );
+    },
+
+    clearDirectDialogState(this: any, roomIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      const next = (this.directDialogs || []).map((dialog: DirectDialog) => {
+        if (Number(dialog?.roomId || 0) !== roomId) return dialog;
+        return {
+          ...dialog,
+          lastMessageAt: '',
+        };
+      });
+      this.setDirectDialogsState(next);
+    },
+
+    syncDirectDialogWithMessage(this: any, messageRaw: Message) {
+      const message = this.normalizeMessage(messageRaw);
+      const roomId = Number(message?.roomId || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+
+      const existing = (this.directDialogs || []).find((dialog: DirectDialog) => Number(dialog?.roomId || 0) === roomId) || null;
+      const activeDirect = this.activeDialog?.kind === 'direct' && Number(this.activeDialog?.id || 0) === roomId
+        ? this.activeDialog
+        : null;
+      const fallbackUser = existing?.targetUser
+        || activeDirect?.targetUser
+        || (Number(message.authorId || 0) > 0 && Number(message.authorId || 0) !== Number(this.me?.id || 0)
+          ? {
+            id: message.authorId,
+            nickname: message.authorNickname,
+            name: message.authorName,
+            avatarUrl: message.authorAvatarUrl || null,
+            nicknameColor: message.authorNicknameColor,
+            donationBadgeUntil: message.authorDonationBadgeUntil || null,
+            isOnline: false,
+            pushDisableAllMentions: false,
+          }
+          : null);
+      if (!fallbackUser) return;
+
+      this.upsertDirectDialogState({
+        roomId,
+        targetUser: fallbackUser,
+        lastMessageAt: String(message.createdAt || existing?.lastMessageAt || ''),
+        pinnedNodeId: Number(activeDirect?.pinnedNodeId || existing?.pinnedNodeId || 0) || null,
+        roomSurface: this.normalizeRoomSurface(activeDirect?.roomSurface || existing?.roomSurface, activeDirect?.pinnedNodeId || existing?.pinnedNodeId),
+      });
+    },
+
+    setRoomsNavigationState(this: any, joinedRaw: Dialog[], publicRaw: Dialog[]) {
+      const cloneDialogs = (dialogs: Dialog[]) => dialogs.map((dialog: Dialog) => ({
+        ...dialog,
+        roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+      }));
+      const joined = cloneDialogs(joinedRaw);
+      const publicRooms = cloneDialogs(publicRaw);
+      this.joinedRooms = joined;
+      this.publicRooms = publicRooms;
+      this.roomsNavigationFetchedAt = Date.now();
+      reserveNavCache.joinedRooms = cloneDialogs(joined);
+      reserveNavCache.publicRooms = cloneDialogs(publicRooms);
+      reserveNavCache.roomsNavigationFetchedAt = this.roomsNavigationFetchedAt;
+    },
+
+    upsertRoomNavigationDialog(this: any, dialogRaw: Dialog) {
+      const roomId = Number(dialogRaw?.id || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      const dialog: Dialog = {
+        ...dialogRaw,
+        roomSurface: dialogRaw?.roomSurface ? {...dialogRaw.roomSurface, config: {...(dialogRaw.roomSurface.config || {})}} : dialogRaw?.roomSurface,
+      };
+      const targetKey = dialog.joined === false ? 'publicRooms' : 'joinedRooms';
+      const otherKey = targetKey === 'joinedRooms' ? 'publicRooms' : 'joinedRooms';
+      const nextTarget = [...(this[targetKey] || [])].filter((item: Dialog) => Number(item?.id || 0) !== roomId);
+      nextTarget.push(dialog);
+      const nextOther = [...(this[otherKey] || [])].filter((item: Dialog) => Number(item?.id || 0) !== roomId);
+      this.setRoomsNavigationState(
+        targetKey === 'joinedRooms' ? nextTarget : nextOther,
+        targetKey === 'joinedRooms' ? nextOther : nextTarget,
+      );
+    },
+
+    removeRoomNavigationDialog(this: any, roomIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      this.setRoomsNavigationState(
+        (this.joinedRooms || []).filter((dialog: Dialog) => Number(dialog?.id || 0) !== roomId),
+        (this.publicRooms || []).filter((dialog: Dialog) => Number(dialog?.id || 0) !== roomId),
+      );
+      if (Number(this.generalDialog?.id || 0) === roomId) {
+        this.setGeneralDialogState(null);
+      }
+    },
+
+    setRoomHistoryCache(this: any, roomIdRaw: unknown, messagesRaw: Message[], hasMoreRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      const messages = (messagesRaw || []).map((message: Message) => ({...message}));
+      this.roomHistoryCache = {
+        ...(this.roomHistoryCache || {}),
+        [roomId]: {
+          messages,
+          hasMore: !!hasMoreRaw,
+        },
+      };
+      sharedRoomHistoryCache[roomId] = {
+        messages: messages.map((message: Message) => ({...message})),
+        hasMore: !!hasMoreRaw,
+      };
+    },
+
+    getRoomHistoryCache(this: any, roomIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return null;
+      return this.roomHistoryCache?.[roomId] || sharedRoomHistoryCache[roomId] || null;
+    },
+
+    clearRoomHistoryCache(this: any, roomIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      const next = {...(this.roomHistoryCache || {})};
+      delete next[roomId];
+      this.roomHistoryCache = next;
+      delete sharedRoomHistoryCache[roomId];
+    },
+
+    upsertRoomHistoryCacheMessage(this: any, messageRaw: Message) {
+      const message = this.normalizeMessage(messageRaw);
+      const roomId = Number(message?.roomId || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      const current = this.getRoomHistoryCache(roomId);
+      if (!current) return;
+
+      const nextMessages = [...(current.messages || [])];
+      const existingIndex = nextMessages.findIndex((item: Message) => Number(item?.id || 0) === Number(message.id || 0));
+      if (existingIndex >= 0) {
+        nextMessages[existingIndex] = message;
+      } else {
+        nextMessages.push(message);
+        nextMessages.sort((left: Message, right: Message) => {
+          const leftTs = Date.parse(String(left.createdAt || ''));
+          const rightTs = Date.parse(String(right.createdAt || ''));
+          const leftTime = Number.isFinite(leftTs) ? leftTs : 0;
+          const rightTime = Number.isFinite(rightTs) ? rightTs : 0;
+          if (leftTime !== rightTime) return leftTime - rightTime;
+          return Number(left.id || 0) - Number(right.id || 0);
+        });
+      }
+      this.setRoomHistoryCache(roomId, nextMessages, current.hasMore);
+    },
+
+    deleteRoomHistoryCacheMessage(this: any, roomIdRaw: unknown, messageIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      const messageId = Number(messageIdRaw || 0);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      if (!Number.isFinite(messageId) || messageId <= 0) return;
+      const current = this.getRoomHistoryCache(roomId);
+      if (!current) return;
+      this.setRoomHistoryCache(
+        roomId,
+        (current.messages || []).filter((message: Message) => Number(message?.id || 0) !== messageId),
+        current.hasMore,
+      );
+    },
+
     async ensureAuth(this: any) {
       const token = String(getSessionToken() || '').trim();
       if (!token) {
@@ -253,20 +500,19 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchUsers(this: any) {
-      const useCooldown = ws.isReserveActive();
       const now = Date.now();
-      if (useCooldown && this.usersFetchPromise) {
+      if (this.usersFetchPromise) {
         return this.usersFetchPromise;
       }
-      if (useCooldown && reserveNavCache.usersPromise) {
+      if (reserveNavCache.usersPromise) {
         return reserveNavCache.usersPromise;
       }
-      if (useCooldown && reserveNavCache.users.length && now - Number(reserveNavCache.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (reserveNavCache.users.length && now - Number(reserveNavCache.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         this.users = reserveNavCache.users.map((user: User) => ({...user}));
         this.usersFetchedAt = reserveNavCache.usersFetchedAt;
         return;
       }
-      if (useCooldown && this.users.length && now - Number(this.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (this.users.length && now - Number(this.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         return;
       }
 
@@ -277,19 +523,15 @@ export const chatMethodsAuthDialogsAndProfile = {
           .filter(Boolean) as User[];
         this.users = users;
         this.usersFetchedAt = Date.now();
-        if (useCooldown) {
-          reserveNavCache.users = users.map((user: User) => ({...user}));
-          reserveNavCache.usersFetchedAt = this.usersFetchedAt;
-        }
+        reserveNavCache.users = users.map((user: User) => ({...user}));
+        reserveNavCache.usersFetchedAt = this.usersFetchedAt;
       })();
 
-      if (useCooldown) {
-        reserveNavCache.usersPromise = task.finally(() => {
-          if (reserveNavCache.usersPromise === task) {
-            reserveNavCache.usersPromise = null;
-          }
-        });
-      }
+      reserveNavCache.usersPromise = task.finally(() => {
+        if (reserveNavCache.usersPromise === task) {
+          reserveNavCache.usersPromise = null;
+        }
+      });
 
       this.usersFetchPromise = task.finally(() => {
         if (this.usersFetchPromise === task) {
@@ -300,15 +542,14 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchDirectDialogs(this: any) {
-      const useCooldown = ws.isReserveActive();
       const now = Date.now();
-      if (useCooldown && this.directDialogsFetchPromise) {
+      if (this.directDialogsFetchPromise) {
         return this.directDialogsFetchPromise;
       }
-      if (useCooldown && reserveNavCache.directDialogsPromise) {
+      if (reserveNavCache.directDialogsPromise) {
         return reserveNavCache.directDialogsPromise;
       }
-      if (useCooldown && reserveNavCache.directDialogs.length && now - Number(reserveNavCache.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (reserveNavCache.directDialogs.length && now - Number(reserveNavCache.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         this.directDialogs = reserveNavCache.directDialogs.map((dialog: any) => ({
           ...dialog,
           targetUser: dialog?.targetUser ? {...dialog.targetUser} : dialog?.targetUser,
@@ -317,7 +558,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.directDialogsFetchedAt = reserveNavCache.directDialogsFetchedAt;
         return;
       }
-      if (useCooldown && this.directDialogs.length && now - Number(this.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (this.directDialogs.length && now - Number(this.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         return;
       }
 
@@ -328,25 +569,14 @@ export const chatMethodsAuthDialogsAndProfile = {
           targetUser: this.normalizeUser(dialogRaw?.targetUser) || dialogRaw?.targetUser,
           roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
         }));
-        this.directDialogs = directDialogs;
-        this.directDialogsFetchedAt = Date.now();
-        if (useCooldown) {
-          reserveNavCache.directDialogs = directDialogs.map((dialog: any) => ({
-            ...dialog,
-            targetUser: dialog?.targetUser ? {...dialog.targetUser} : dialog?.targetUser,
-            roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-          }));
-          reserveNavCache.directDialogsFetchedAt = this.directDialogsFetchedAt;
-        }
+        this.setDirectDialogsState(directDialogs);
       })();
 
-      if (useCooldown) {
-        reserveNavCache.directDialogsPromise = task.finally(() => {
-          if (reserveNavCache.directDialogsPromise === task) {
-            reserveNavCache.directDialogsPromise = null;
-          }
-        });
-      }
+      reserveNavCache.directDialogsPromise = task.finally(() => {
+        if (reserveNavCache.directDialogsPromise === task) {
+          reserveNavCache.directDialogsPromise = null;
+        }
+      });
 
       this.directDialogsFetchPromise = task.finally(() => {
         if (this.directDialogsFetchPromise === task) {
@@ -357,24 +587,22 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchPinnedDirectUserIds(this: any) {
-      const useCooldown = ws.isReserveActive();
       const now = Date.now();
-      if (useCooldown && this.pinnedDirectsFetchPromise) {
+      if (this.pinnedDirectsFetchPromise) {
         return this.pinnedDirectsFetchPromise;
       }
-      if (useCooldown && reserveNavCache.pinnedDirectsPromise) {
+      if (reserveNavCache.pinnedDirectsPromise) {
         return reserveNavCache.pinnedDirectsPromise;
       }
       if (
-        useCooldown
-        && reserveNavCache.pinnedDirectUserIds.length
+        reserveNavCache.pinnedDirectUserIds.length
         && now - Number(reserveNavCache.pinnedDirectsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
       ) {
         this.pinnedDirectUserIds = [...reserveNavCache.pinnedDirectUserIds];
         this.pinnedDirectsFetchedAt = reserveNavCache.pinnedDirectsFetchedAt;
         return;
       }
-      if (useCooldown && this.pinnedDirectUserIds.length && now - Number(this.pinnedDirectsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (this.pinnedDirectUserIds.length && now - Number(this.pinnedDirectsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         return;
       }
 
@@ -383,21 +611,14 @@ export const chatMethodsAuthDialogsAndProfile = {
         const pinnedDirectUserIds = rows
           .map((row: any) => Number(row?.id || 0))
           .filter((id: number) => Number.isFinite(id) && id > 0);
-        this.pinnedDirectUserIds = pinnedDirectUserIds;
-        this.pinnedDirectsFetchedAt = Date.now();
-        if (useCooldown) {
-          reserveNavCache.pinnedDirectUserIds = [...pinnedDirectUserIds];
-          reserveNavCache.pinnedDirectsFetchedAt = this.pinnedDirectsFetchedAt;
-        }
+        this.setPinnedDirectUserIdsState(pinnedDirectUserIds);
       })();
 
-      if (useCooldown) {
-        reserveNavCache.pinnedDirectsPromise = task.finally(() => {
-          if (reserveNavCache.pinnedDirectsPromise === task) {
-            reserveNavCache.pinnedDirectsPromise = null;
-          }
-        });
-      }
+      reserveNavCache.pinnedDirectsPromise = task.finally(() => {
+        if (reserveNavCache.pinnedDirectsPromise === task) {
+          reserveNavCache.pinnedDirectsPromise = null;
+        }
+      });
 
       this.pinnedDirectsFetchPromise = task.finally(() => {
         if (this.pinnedDirectsFetchPromise === task) {
@@ -408,17 +629,15 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchRoomsNavigation(this: any) {
-      const useCooldown = ws.isReserveActive();
       const now = Date.now();
-      if (useCooldown && this.roomsNavigationFetchPromise) {
+      if (this.roomsNavigationFetchPromise) {
         return this.roomsNavigationFetchPromise;
       }
-      if (useCooldown && reserveNavCache.roomsNavigationPromise) {
+      if (reserveNavCache.roomsNavigationPromise) {
         return reserveNavCache.roomsNavigationPromise;
       }
       if (
-        useCooldown
-        && (reserveNavCache.joinedRooms.length || reserveNavCache.publicRooms.length)
+        (reserveNavCache.joinedRooms.length || reserveNavCache.publicRooms.length)
         && now - Number(reserveNavCache.roomsNavigationFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
       ) {
         this.joinedRooms = reserveNavCache.joinedRooms.map((dialog: Dialog) => ({
@@ -433,8 +652,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         return;
       }
       if (
-        useCooldown
-        && (this.joinedRooms.length || this.publicRooms.length)
+        (this.joinedRooms.length || this.publicRooms.length)
         && now - Number(this.roomsNavigationFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
       ) {
         return;
@@ -473,29 +691,14 @@ export const chatMethodsAuthDialogsAndProfile = {
             && !joinedIds.has(Number(dialog.id || 0))
             && !isTemporarilyHiddenRoomTitle(dialog.title)
           ));
-        this.joinedRooms = joinedRooms;
-        this.publicRooms = publicRooms;
-        this.roomsNavigationFetchedAt = Date.now();
-        if (useCooldown) {
-          reserveNavCache.joinedRooms = joinedRooms.map((dialog: Dialog) => ({
-            ...dialog,
-            roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-          }));
-          reserveNavCache.publicRooms = publicRooms.map((dialog: Dialog) => ({
-            ...dialog,
-            roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-          }));
-          reserveNavCache.roomsNavigationFetchedAt = this.roomsNavigationFetchedAt;
-        }
+        this.setRoomsNavigationState(joinedRooms, publicRooms);
       })();
 
-      if (useCooldown) {
-        reserveNavCache.roomsNavigationPromise = task.finally(() => {
-          if (reserveNavCache.roomsNavigationPromise === task) {
-            reserveNavCache.roomsNavigationPromise = null;
-          }
-        });
-      }
+      reserveNavCache.roomsNavigationPromise = task.finally(() => {
+        if (reserveNavCache.roomsNavigationPromise === task) {
+          reserveNavCache.roomsNavigationPromise = null;
+        }
+      });
 
       this.roomsNavigationFetchPromise = task.finally(() => {
         if (this.roomsNavigationFetchPromise === task) {
@@ -507,15 +710,14 @@ export const chatMethodsAuthDialogsAndProfile = {
 
     async fetchGeneralDialog(this: any, optionsRaw?: {allowHidden?: boolean}) {
       const allowHidden = optionsRaw?.allowHidden === true;
-      const useCooldown = ws.isReserveActive();
       const now = Date.now();
-      if (useCooldown && this.generalDialogFetchPromise) {
+      if (this.generalDialogFetchPromise) {
         return this.generalDialogFetchPromise;
       }
-      if (useCooldown && reserveNavCache.generalDialogPromise) {
+      if (reserveNavCache.generalDialogPromise) {
         return reserveNavCache.generalDialogPromise;
       }
-      if (useCooldown && reserveNavCache.generalDialog && now - Number(reserveNavCache.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (reserveNavCache.generalDialog && now - Number(reserveNavCache.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         const generalDialog = reserveNavCache.generalDialog as Dialog;
         if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title)) {
           this.generalDialog = {
@@ -526,7 +728,7 @@ export const chatMethodsAuthDialogsAndProfile = {
           return this.generalDialog;
         }
       }
-      if (useCooldown && this.generalDialog && now - Number(this.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (this.generalDialog && now - Number(this.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         const generalDialog = this.generalDialog as Dialog;
         if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title)) {
           return generalDialog;
@@ -552,25 +754,15 @@ export const chatMethodsAuthDialogsAndProfile = {
           roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
           discussion: null,
         } as Dialog;
-        this.generalDialog = dialog;
-        this.generalDialogFetchedAt = Date.now();
-        if (useCooldown) {
-          reserveNavCache.generalDialog = {
-            ...dialog,
-            roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-          };
-          reserveNavCache.generalDialogFetchedAt = this.generalDialogFetchedAt;
-        }
-        return dialog;
+        this.setGeneralDialogState(dialog);
+        return this.generalDialog;
       })();
 
-      if (useCooldown) {
-        reserveNavCache.generalDialogPromise = task.finally(() => {
-          if (reserveNavCache.generalDialogPromise === task) {
-            reserveNavCache.generalDialogPromise = null;
-          }
-        });
-      }
+      reserveNavCache.generalDialogPromise = task.finally(() => {
+        if (reserveNavCache.generalDialogPromise === task) {
+          reserveNavCache.generalDialogPromise = null;
+        }
+      });
 
       this.generalDialogFetchPromise = task.finally(() => {
         if (this.generalDialogFetchPromise === task) {
@@ -636,7 +828,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       }
       const data = wsObject(result);
       const normalizedTargetUser = this.normalizeUser(data.targetUser) || data.targetUser;
-      return {
+      const dialog = {
         id: data.roomId,
         kind: 'direct',
         joined: true,
@@ -649,6 +841,14 @@ export const chatMethodsAuthDialogsAndProfile = {
         roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
         discussion: null,
       } as Dialog;
+      this.upsertDirectDialogState({
+        roomId: Number(data.roomId || 0),
+        targetUser: normalizedTargetUser,
+        lastMessageAt: '',
+        pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
+        roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
+      });
+      return dialog;
     },
 
     async loadHistory(this: any, roomId: number, seq: number, beforeMessageId: number | null = null) {
@@ -693,6 +893,7 @@ export const chatMethodsAuthDialogsAndProfile = {
 
         if (isInitialLoad) {
           this.messages = nextChunk;
+          this.setRoomHistoryCache(roomId, nextChunk, this.historyHasMore);
           this.notifyMessagesChanged();
           this.syncVirtualWindowFromScroll();
           await nextTick();
@@ -707,6 +908,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         }
 
         this.messages = [...nextChunk, ...this.messages];
+        this.setRoomHistoryCache(roomId, this.messages, this.historyHasMore);
         this.notifyMessagesChanged();
         this.syncVirtualWindowFromScroll();
         await nextTick();
@@ -825,16 +1027,24 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.virtualRangeStart = 0;
       this.virtualRangeEnd = 0;
       try {
-        await this.loadHistory(dialog.id, seq);
+        const historyCache = this.getRoomHistoryCache(dialog.id);
+        if (historyCache) {
+          this.messages = (historyCache.messages || []).map((message: Message) => ({...message}));
+          this.historyHasMore = !!historyCache.hasMore;
+          this.notifyMessagesChanged();
+          this.syncVirtualWindowFromScroll();
+          await nextTick();
+          this.scrollToBottomPinned();
+          this.markVisibleMessageNotificationsRead();
+        } else {
+          await this.loadHistory(dialog.id, seq);
+        }
         if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
         await this.joinDialog(dialog.id);
         if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
         await this.loadActiveRoomScript(dialog.id);
-        if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
-
-        await this.catchUpRoomMessages(dialog.id);
         if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
         await this.syncRouteForDialog(dialog, optionsRaw?.routeMode || 'push');
@@ -950,7 +1160,7 @@ export const chatMethodsAuthDialogsAndProfile = {
             this.error = 'Не удалось закрепить директ.';
             return;
           }
-          await this.fetchPinnedDirectUserIds();
+          this.setPinnedDirectUserIdsState([...(this.pinnedDirectUserIds || []), userId]);
           this.pushToast('Директ', 'Добавлен в контакты');
           return;
         }
@@ -968,7 +1178,21 @@ export const chatMethodsAuthDialogsAndProfile = {
             joined: true,
           };
         }
-        await this.fetchRoomsNavigation();
+        this.upsertRoomNavigationDialog({
+          ...(this.activeDialog || {}),
+          id: roomId,
+          kind: 'group',
+          joined: true,
+          title: String(this.activeDialog?.title || 'Комната'),
+          visibility: this.activeDialog?.visibility === 'private' ? 'private' : 'public',
+          commentsEnabled: this.activeDialog?.commentsEnabled !== undefined ? !!this.activeDialog.commentsEnabled : true,
+          avatarUrl: this.activeDialog?.avatarUrl || null,
+          postOnlyByAdmin: !!this.activeDialog?.postOnlyByAdmin,
+          createdById: Number(this.activeDialog?.createdById || 0) || null,
+          pinnedNodeId: Number(this.activeDialog?.pinnedNodeId || 0) || null,
+          roomSurface: this.normalizeRoomSurface(this.activeDialog?.roomSurface, this.activeDialog?.pinnedNodeId),
+          discussion: null,
+        } as Dialog);
         this.pushToast('Комната', 'Добавлена в навигацию');
       } finally {
         this.navPinPending = false;
@@ -985,9 +1209,6 @@ export const chatMethodsAuthDialogsAndProfile = {
       const dialog = await this.fetchPrivateDialog(user);
       if (!dialog) return;
       await this.selectDialog(dialog, {routeMode: optionsRaw?.routeMode || 'push'});
-      if (optionsRaw?.refreshDirects !== false) {
-        await this.fetchDirectDialogs();
-      }
     },
 
     async selectUser(this: any, user: User) {
@@ -1062,10 +1283,36 @@ export const chatMethodsAuthDialogsAndProfile = {
         discussion,
         targetUser: roomKind === 'direct' ? directTargetUser : this.activeDialog?.targetUser,
       };
+      if (roomKind === 'direct' && directTargetUser) {
+        this.upsertDirectDialogState({
+          roomId,
+          targetUser: directTargetUser,
+          lastMessageAt: String(
+            this.directDialogs.find((dialog: DirectDialog) => Number(dialog?.roomId || 0) === roomId)?.lastMessageAt
+            || ''
+          ),
+          pinnedNodeId,
+          roomSurface: this.normalizeRoomSurface(payloadRaw?.roomSurface, pinnedNodeId),
+        });
+      } else {
+        this.upsertRoomNavigationDialog({
+          id: roomId,
+          kind: roomKind,
+          joined: this.activeDialog?.joined !== false,
+          title: String(this.activeDialog?.title || payloadRaw?.title || 'Комната'),
+          visibility: this.activeDialog?.visibility === 'private' ? 'private' : 'public',
+          commentsEnabled: this.activeDialog?.commentsEnabled !== undefined ? !!this.activeDialog.commentsEnabled : true,
+          avatarUrl: this.activeDialog?.avatarUrl || null,
+          postOnlyByAdmin: !!this.activeDialog?.postOnlyByAdmin,
+          createdById: Number(this.activeDialog?.createdById || 0) || null,
+          pinnedNodeId,
+          roomSurface: this.normalizeRoomSurface(payloadRaw?.roomSurface, pinnedNodeId),
+          discussion: null,
+        } as Dialog);
+      }
       if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'roomRuntime')) {
         this.setActiveRoomScript(payloadRaw?.roomRuntime || null);
       }
-      void this.fetchRoomsNavigation();
     },
 
     async onDeleteActiveRoom(this: any) {
@@ -1112,7 +1359,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.leftNavMode = 'rooms';
         this.rightMenuOpen = false;
         this.notificationsMenuOpen = false;
-        void this.fetchRoomsNavigation();
       }
     },
 
@@ -1175,7 +1421,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.roomCreateTitle = '';
         this.roomCreateVisibility = 'public';
         this.roomCreateCommentsEnabled = true;
-        await this.fetchRoomsNavigation();
+        this.upsertRoomNavigationDialog(dialog);
         await this.selectRoomDialog(dialog);
       } finally {
         this.roomCreating = false;
@@ -1192,7 +1438,10 @@ export const chatMethodsAuthDialogsAndProfile = {
         return;
       }
 
-      await this.fetchRoomsNavigation();
+      this.upsertRoomNavigationDialog({
+        ...dialogRaw,
+        joined: true,
+      } as Dialog);
       await this.selectRoomDialog(dialogRaw);
     },
 
@@ -1201,9 +1450,9 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.roomInviteContacts = rows
         .map((row: any) => this.normalizeUser(row))
         .filter(Boolean) as User[];
-      this.pinnedDirectUserIds = rows
+      this.setPinnedDirectUserIdsState(rows
         .map((row: any) => Number(row?.id || 0))
-        .filter((id: number) => Number.isFinite(id) && id > 0);
+        .filter((id: number) => Number.isFinite(id) && id > 0));
     },
 
     async toggleRoomInvitePanel(this: any) {

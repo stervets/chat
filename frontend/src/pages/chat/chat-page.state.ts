@@ -15,6 +15,7 @@ export function createChatPageState() {
     activeDialog: ref<Dialog | null>(null),
 
     messages: ref<Message[]>([]),
+    roomHistoryCache: ref<Record<number, {messages: Message[]; hasMore: boolean}>>({}),
     activePinnedMessage: ref<Message | null>(null),
     pinnedCollapsed: ref(false),
     pinnedPanelHeightRatio: ref(0.24),
@@ -91,7 +92,6 @@ export function createChatPageState() {
     reserveRequestOverlayPendingCount: ref(0),
     reserveRequestOverlayCom: ref(''),
     reserveRequestOverlayRetryPending: ref(false),
-    reserveWindowRefreshAt: ref(0),
     rightMenuOpen: ref(false),
     isCompactLayout: ref(false),
     leftNavMode: ref<'directs' | 'rooms'>('rooms'),

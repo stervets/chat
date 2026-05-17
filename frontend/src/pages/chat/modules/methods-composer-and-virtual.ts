@@ -749,7 +749,6 @@ export const chatMethodsComposerAndVirtual = {
           } else {
             this.applyMessageCommentRoomId(messageId, commentRoomId);
           }
-          await this.fetchDirectDialogs();
         }
 
         const path = this.buildRoomRoutePath(
@@ -832,6 +831,7 @@ export const chatMethodsComposerAndVirtual = {
 
     applyMessageUpdate(this: any, messageRaw: any) {
       const message = this.normalizeMessage(messageRaw);
+      this.upsertRoomHistoryCacheMessage(message);
       this.messages = this.messages.map((item: Message) => {
         if (item.id !== message.id || item.roomId !== message.roomId) return item;
         return message;
@@ -853,6 +853,7 @@ export const chatMethodsComposerAndVirtual = {
       this.messages = this.messages.filter((message: Message) => {
         return !(message.roomId === roomId && message.id === messageId);
       });
+      this.deleteRoomHistoryCacheMessage(roomId, messageId);
       if (this.scriptMessageViewModels?.[messageId]) {
         const nextViews = {...(this.scriptMessageViewModels || {})};
         delete nextViews[messageId];
@@ -906,7 +907,14 @@ export const chatMethodsComposerAndVirtual = {
 
         const data = wsObject(result);
         this.applyMessageDelete(data.roomId, data.messageId);
-        await this.fetchDirectDialogs();
+        if (this.activeDialog?.kind === 'direct') {
+          const lastMessage = (this.messages || []).at(-1) || null;
+          if (lastMessage) {
+            this.syncDirectDialogWithMessage(lastMessage);
+          } else {
+            this.clearDirectDialogState(this.activeDialog?.id);
+          }
+        }
       } finally {
         this.messageActionPendingId = null;
       }

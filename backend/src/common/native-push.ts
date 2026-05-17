@@ -1,4 +1,5 @@
 import {Injectable, Logger} from '@nestjs/common';
+import {Prisma} from '@prisma/client';
 import {db} from '../db.js';
 import {config} from '../config.js';
 import type {RoomRow} from './rooms.js';
@@ -106,6 +107,7 @@ function isRuStorePushEnabled() {
 export class NativePushService {
   private readonly logger = new Logger(NativePushService.name);
   private readonly enabled: boolean;
+  private missingTableWarned = false;
 
   constructor() {
     this.enabled = isRuStorePushEnabled();
@@ -125,7 +127,7 @@ export class NativePushService {
     if (platform !== ANDROID_PLATFORM) return {ok: false, error: 'invalid_platform'};
 
     const now = new Date();
-    await db.nativePushToken.upsert({
+    const upserted = await this.withMissingTableGuard(() => db.nativePushToken.upsert({
       where: {
         provider_token: {
           provider,
@@ -145,7 +147,8 @@ export class NativePushService {
         token,
         lastSeenAt: now,
       },
-    });
+    }));
+    if (!upserted) return {ok: false, error: 'push_disabled'};
     await this.pruneUserTokens(userId, provider, platform);
 
     this.logger.log(`RuStore token upsert userId=${userId} token=${shortToken(token)}`);
@@ -160,14 +163,15 @@ export class NativePushService {
     if (provider !== RUSTORE_PROVIDER) return {ok: false, error: 'invalid_provider'} as const;
     if (platform !== ANDROID_PLATFORM) return {ok: false, error: 'invalid_platform'} as const;
 
-    const result = await db.nativePushToken.deleteMany({
+    const result = await this.withMissingTableGuard(() => db.nativePushToken.deleteMany({
       where: {
         userId,
         provider,
         platform,
         token,
       },
-    });
+    }));
+    if (!result) return {ok: true, removed: 0} as const;
 
     this.logger.log(`RuStore token remove userId=${userId} token=${shortToken(token)} removed=${result.count}`);
     return {ok: true, removed: result.count} as const;
@@ -274,14 +278,14 @@ export class NativePushService {
 
       const payload = await this.readRuStoreResponse(response);
       if (response.ok) {
-        await db.nativePushToken.update({
+        await this.withMissingTableGuard(() => db.nativePushToken.update({
           where: {
             id: tokenRow.id,
           },
           data: {
             lastSeenAt: new Date(),
           },
-        });
+        }));
         return;
       }
 
@@ -294,11 +298,11 @@ export class NativePushService {
       );
 
       if (invalidToken) {
-        await db.nativePushToken.deleteMany({
+        await this.withMissingTableGuard(() => db.nativePushToken.deleteMany({
           where: {
             id: tokenRow.id,
           },
-        });
+        }));
       }
     } catch (error: any) {
       this.logger.warn(
@@ -321,7 +325,7 @@ export class NativePushService {
   }
 
   private async findTokensByUserIds(userIds: number[]) {
-    const rows: Array<NativePushTokenRow & {updatedAt: Date}> = await db.nativePushToken.findMany({
+    const rows = await this.withMissingTableGuard(() => db.nativePushToken.findMany({
       where: {
         provider: RUSTORE_PROVIDER,
         platform: ANDROID_PLATFORM,
@@ -341,7 +345,8 @@ export class NativePushService {
         {userId: 'asc'},
         {updatedAt: 'desc'},
       ],
-    });
+    })) as Array<NativePushTokenRow & {updatedAt: Date}> | null;
+    if (!rows?.length) return [];
 
     const perUserTokenCounter = new Map<number, number>();
     const filtered: NativePushTokenRow[] = [];
@@ -363,7 +368,7 @@ export class NativePushService {
   }
 
   private async pruneUserTokens(userId: number, provider: string, platform: string) {
-    const rows = await db.nativePushToken.findMany({
+    const rows = await this.withMissingTableGuard(() => db.nativePushToken.findMany({
       where: {
         userId,
         provider,
@@ -375,17 +380,40 @@ export class NativePushService {
       orderBy: {
         updatedAt: 'desc',
       },
-    });
+    }));
+    if (!rows?.length) return;
 
     if (rows.length <= MAX_TOKENS_PER_USER) return;
     const staleRows = rows.slice(MAX_TOKENS_PER_USER);
-    await db.nativePushToken.deleteMany({
+    await this.withMissingTableGuard(() => db.nativePushToken.deleteMany({
       where: {
         id: {
           in: staleRows.map((row) => row.id),
         },
       },
-    });
+    }));
     this.logger.log(`RuStore token prune userId=${userId} removed=${staleRows.length}`);
+  }
+
+  private async withMissingTableGuard<T>(run: () => Promise<T>) {
+    try {
+      return await run();
+    } catch (error: any) {
+      if (this.isMissingNativePushTableError(error)) {
+        if (!this.missingTableWarned) {
+          this.missingTableWarned = true;
+          this.logger.warn('Native push disabled for current DB: table native_push_tokens is missing');
+        }
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private isMissingNativePushTableError(error: any) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+    if (error.code !== 'P2021') return false;
+    const metaTable = String((error.meta as any)?.table || '').toLowerCase();
+    return metaTable.includes('native_push_tokens');
   }
 }

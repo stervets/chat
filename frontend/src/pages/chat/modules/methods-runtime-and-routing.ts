@@ -505,9 +505,7 @@ export const chatMethodsRuntimeAndRouting = {
       const mode = modeRaw || 'push';
       if (mode === 'none') return;
 
-      const targetPath = dialog.kind === 'direct'
-        ? this.buildDirectRoutePath(dialog.targetUser?.nickname)
-        : this.buildRoomRoutePath(dialog.id);
+      const targetPath = this.buildRoomRoutePath(dialog.id);
       const currentFullPath = String(this.route?.fullPath || this.route?.path || '');
       if (currentFullPath === targetPath) {
         persistLastChatPath(targetPath);
@@ -537,11 +535,31 @@ export const chatMethodsRuntimeAndRouting = {
           return;
         }
 
-        await this.selectPrivate(targetUser, {
-          routeMode: 'none',
-          closeMenu: false,
-          refreshDirects: false,
-        });
+        const existingDirect = (this.directDialogs || []).find((dialog: DirectDialog) => {
+          return Number(dialog?.targetUser?.id || 0) === Number(targetUser.id || 0)
+            && Number(dialog?.roomId || 0) > 0;
+        }) || null;
+        if (existingDirect) {
+          await this.selectDialog({
+            id: existingDirect.roomId,
+            kind: 'direct',
+            joined: true,
+            targetUser: existingDirect.targetUser,
+            title: existingDirect.targetUser.name,
+            visibility: 'private',
+            commentsEnabled: false,
+            createdById: null,
+            pinnedNodeId: Number(existingDirect.pinnedNodeId || 0) || null,
+            roomSurface: this.normalizeRoomSurface(existingDirect.roomSurface, existingDirect.pinnedNodeId),
+            discussion: null,
+          }, {routeMode: 'none'});
+        } else {
+          await this.selectPrivate(targetUser, {
+            routeMode: 'none',
+            closeMenu: false,
+            refreshDirects: false,
+          });
+        }
 
         const canonicalPath = this.buildDirectRoutePath(targetUser.nickname);
         if (String(this.route?.path || '') !== canonicalPath) {
@@ -689,6 +707,27 @@ export const chatMethodsRuntimeAndRouting = {
         if (!selected) {
           await this.router.replace('/chat');
         }
+        return;
+      }
+
+      const existingDirect = (this.directDialogs || []).find((dialog: DirectDialog) => {
+        return Number(dialog?.targetUser?.id || 0) === Number(targetUser.id || 0)
+          && Number(dialog?.roomId || 0) > 0;
+      }) || null;
+      if (existingDirect) {
+        await this.selectDialog({
+          id: existingDirect.roomId,
+          kind: 'direct',
+          joined: true,
+          targetUser: existingDirect.targetUser,
+          title: existingDirect.targetUser.name,
+          visibility: 'private',
+          commentsEnabled: false,
+          createdById: null,
+          pinnedNodeId: Number(existingDirect.pinnedNodeId || 0) || null,
+          roomSurface: this.normalizeRoomSurface(existingDirect.roomSurface, existingDirect.pinnedNodeId),
+          discussion: null,
+        }, {routeMode: 'none'});
         return;
       }
 

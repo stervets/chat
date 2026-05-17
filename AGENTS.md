@@ -291,3 +291,7 @@ yarn run frontend:dev
 - добавлен smoke-check `yarn check:max-reserve-chunk` для codec/assembler (`short`, `long`, `out-of-order`, `duplicate`, `legacy`).
 - reserve bootstrap в `/chat` дополнительно зажат module-level cache'ем для `user:list`, `room:list`, `contacts:list`, `room:group:get-default`, чтобы второй mount после route-normalize не повторял те же MAX-запросы;
 - нормальный cold-start reserve trace сейчас такой: один `connect via reserve`, один `auth:session`, затем один `user:list`, один `room:list(kind='direct')`, один `contacts:list`, два `room:list(kind='group', scope='joined|public')`; повторный `room:group:get-default` на старте считается регрессией.
+- обычный chat bootstrap тоже переведён на одноразовое чтение навигации: `user:list`, `contacts:list`, `room:list`, `room:group:get-default` не должны перечитываться при простом переключении между комнатами/директами, возврате фокуса, входящих сообщениях, pin/unpin, delete/edit message и локальном route-sync;
+- история комнаты кешируется по `roomId` прямо на клиенте; повторное открытие уже загруженного room/direct не должно дёргать `message:list`, пока не было явного invalidation/пагинации;
+- in-app переход в direct теперь канонически идёт через `/chat?room=<id>`, а не через `/direct/<nickname>`, чтобы не ремоунтить chat-страницу и не запускать bootstrap второй раз;
+- локальный backend не должен падать, если в dev-БД нет `native_push_tokens`: `NativePushService` в таком случае деградирует в no-op и только один раз логирует warning.
