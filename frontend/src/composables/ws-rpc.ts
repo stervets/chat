@@ -288,13 +288,13 @@ function schedulePrimaryRecoveryProbe() {
 function onReserveRequestStateForPrimaryProbe(payloadRaw: any) {
   if (!hasWindow()) return;
   const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
-  const active = !!payload.active;
   const pendingCount = Number(payload.pendingCount || 0);
 
-  if (!active) {
+  if (!ws.isReserveActive()) {
     clearPrimaryRecoveryTimer();
     return;
   }
+
   if (pendingCount > 0) return;
   if (!shouldRecoverPrimaryChannel()) return;
   clearPrimaryRecoveryTimer();
