@@ -95,7 +95,6 @@ async function sendMessage(page: Page, text: string) {
 test('chat traffic stays minimal across login, switches and direct/group messaging', async ({browser}) => {
   const adminClient = new WsRpcClient(CONFIG.backendWsUrl);
   await adminClient.connect();
-  let createdRoomTitle = `traffic-room-${Date.now()}`;
   let directRoomId = 0;
   try {
     await loginByPassword(adminClient, 'lisov', '123');
@@ -107,12 +106,6 @@ test('chat traffic stays minimal across login, switches and direct/group messagi
     }), 'room:direct:get-or-create marx');
     directRoomId = Number(directRoom.roomId || 0);
     expect(directRoomId).toBeGreaterThan(0);
-    const createdRoom = assertNoApiError(await adminClient.request('room:create', {
-      title: createdRoomTitle,
-      visibility: 'public',
-      commentsEnabled: true,
-    }), 'room:create traffic room');
-    expect(Number(createdRoom.roomId || 0)).toBeGreaterThan(0);
   } finally {
     await adminClient.close();
   }
@@ -172,6 +165,8 @@ test('chat traffic stays minimal across login, switches and direct/group messagi
   await waitForWsIdle(lisovPage);
   const defaultRoomTitle = String(await lisovPage.locator('.title-button').textContent() || '').trim();
   expect(defaultRoomTitle.length).toBeGreaterThan(0);
+  await openLeftDrawer(lisovPage);
+  expect(await lisovPage.locator('.menu-list .menu-item').count()).toBeGreaterThan(0);
 
   expect(await lisovRequests.total('user:list')).toBe(1);
   expect(await lisovRequests.total('contacts:list')).toBe(1);
@@ -209,13 +204,13 @@ test('chat traffic stays minimal across login, switches and direct/group messagi
   expect(await marxRequests.count('message:list', beforeReplyDirect)).toBe(0);
   expect(await marxRequests.count('room:get', beforeReplyDirect)).toBe(0);
 
-  const beforeOpenCreatedRoom = await lisovRequests.snapshot();
-  await openRoomByTitle(lisovPage, createdRoomTitle);
+  const beforeOpenKing = await lisovRequests.snapshot();
+  await openRoomByTitle(lisovPage, 'King');
   await waitForWsIdle(lisovPage);
-  expect(await lisovRequests.count('message:list', beforeOpenCreatedRoom)).toBe(1);
-  expect(await lisovRequests.count('room:get', beforeOpenCreatedRoom)).toBe(1);
-  expect(await lisovRequests.count('room:list', beforeOpenCreatedRoom)).toBe(0);
-  expect(await lisovRequests.count('contacts:list', beforeOpenCreatedRoom)).toBe(0);
+  expect(await lisovRequests.count('message:list', beforeOpenKing)).toBe(1);
+  expect(await lisovRequests.count('room:get', beforeOpenKing)).toBe(1);
+  expect(await lisovRequests.count('room:list', beforeOpenKing)).toBe(0);
+  expect(await lisovRequests.count('contacts:list', beforeOpenKing)).toBe(0);
 
   const beforeSendGroup = await lisovRequests.snapshot();
   await sendMessage(lisovPage, `traffic group ${Date.now()}`);
@@ -233,6 +228,15 @@ test('chat traffic stays minimal across login, switches and direct/group messagi
   await openDirectFromSearch(lisovPage, 'marx');
   await waitForWsIdle(lisovPage);
   expect(await lisovRequests.count('message:list', beforeReturnDirect)).toBe(0);
+
+  const beforeReload = await lisovRequests.snapshot();
+  await lisovPage.reload({waitUntil: 'networkidle'});
+  await waitForWsIdle(lisovPage);
+  await openLeftDrawer(lisovPage);
+  expect(await lisovPage.locator('.menu-list .menu-item').count()).toBeGreaterThan(0);
+  expect(await lisovRequests.count('user:list', beforeReload)).toBeLessThanOrEqual(1);
+  expect(await lisovRequests.count('contacts:list', beforeReload)).toBeLessThanOrEqual(1);
+  expect(await lisovRequests.count('room:list', beforeReload)).toBeLessThanOrEqual(3);
 
   await contextLisov.close();
   await contextMarx.close();

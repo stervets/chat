@@ -168,11 +168,6 @@ export function normalizeRoomVisibility(raw: unknown): 'public' | 'private' {
     : 'public';
 }
 
-export async function ensureUserInGroupRooms(userId: number) {
-  const defaultRoom = await getOrCreateGroupRoom(userId);
-  await ensureRoomMembership(defaultRoom.id, userId);
-}
-
 export async function findMarxNewsRoom() {
   const room = await db.room.findFirst({
     where: {
@@ -425,16 +420,6 @@ export async function getOrCreateDirectRoom(firstUserId: number, secondUserId: n
 
 export async function ensureUserInRoom(roomId: number, userId: number) {
   await ensureRoomMembership(roomId, userId);
-}
-
-export async function createPublicGroupRoom(createdById: number, titleRaw?: unknown): Promise<RoomRow> {
-  return createGroupRoom(createdById, {
-    title: titleRaw,
-    visibility: 'public',
-    commentsEnabled: true,
-    avatarPath: null,
-    postOnlyByAdmin: false,
-  });
 }
 
 export async function createGroupRoom(

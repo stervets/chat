@@ -1,5 +1,4 @@
-import type {User} from '@/composables/types';
-import type {RoomSurface} from '@/composables/types';
+import type {RoomSurface, User} from '@/composables/types';
 
 export type DirectDialog = {
   roomId: number;
@@ -9,7 +8,6 @@ export type DirectDialog = {
   pinnedNodeId?: number | null;
   roomSurface?: RoomSurface | null;
 };
-
 
 
 export type DirectCallPhase = 'idle' | 'incoming' | 'outgoing' | 'connecting' | 'connected' | 'ended';
@@ -92,7 +90,6 @@ export const RESERVE_HISTORY_BATCH_SIZE = 10;
 export const VIRTUAL_MAX_ITEMS = 300;
 export const VIRTUAL_OVERSCAN = 40;
 export const VIRTUAL_ESTIMATED_ITEM_HEIGHT = 132;
-export const COLOR_HEX_FULL_RE = /^#[0-9a-fA-F]{6}$/;
 export const COMPOSER_NAMED_COLORS = [
   {name: 'red', swatch: '#ff5d5d'},
   {name: 'green', swatch: '#79d279'},
@@ -107,5 +104,4 @@ export const COMPOSER_EMOJIS = ['🙂', '😀', '😉', '😎', '🤔', '😴', 
 export const HANDLED_MESSAGE_IDS_SAVE_DELAY_MS = 180;
 export const NOTIFICATION_SOUND_VOLUME = 0.35;
 export const INCOMING_CALL_SOUND_VOLUME = 0.8;
-export const MAX_ACTIVE_BROWSER_NOTIFICATIONS = 6;
 export const DONATION_BADGE_FADE_MS = 5 * 24 * 60 * 60 * 1000;

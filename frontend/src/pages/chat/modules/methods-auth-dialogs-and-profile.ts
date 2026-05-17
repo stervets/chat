@@ -51,6 +51,31 @@ function isTemporarilyHiddenRoomTitle(titleRaw: unknown) {
   return String(titleRaw || '').trim().toLowerCase() === TEMP_HIDDEN_ROOM_TITLE;
 }
 
+function cloneRoomSurface(surface: RoomSurface | null | undefined) {
+  return surface
+    ? {...surface, config: {...(surface.config || {})}}
+    : surface;
+}
+
+function cloneDialog<T extends Dialog>(dialog: T): T {
+  return {
+    ...dialog,
+    roomSurface: cloneRoomSurface(dialog.roomSurface),
+  } as T;
+}
+
+function cloneDirectDialog<T extends DirectDialog>(dialog: T): T {
+  return {
+    ...dialog,
+    targetUser: dialog.targetUser ? {...dialog.targetUser} : dialog.targetUser,
+    roomSurface: cloneRoomSurface(dialog.roomSurface),
+  } as T;
+}
+
+function cloneDialogs<T extends Dialog>(dialogs: T[]): T[] {
+  return dialogs.map((dialog) => cloneDialog(dialog));
+}
+
 export const chatMethodsAuthDialogsAndProfile = {
     applyMe(this: any, me: User) {
       const normalizedMe = this.normalizeUser(me) || me;
@@ -233,20 +258,10 @@ export const chatMethodsAuthDialogsAndProfile = {
         return;
       }
 
-      const dialog: Dialog = {
-        ...dialogRaw,
-        roomSurface: dialogRaw?.roomSurface
-          ? {...dialogRaw.roomSurface, config: {...(dialogRaw.roomSurface.config || {})}}
-          : dialogRaw?.roomSurface,
-      };
+      const dialog = cloneDialog(dialogRaw);
       this.generalDialog = dialog;
       this.generalDialogFetchedAt = Date.now();
-      reserveNavCache.generalDialog = {
-        ...dialog,
-        roomSurface: dialog?.roomSurface
-          ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}}
-          : dialog?.roomSurface,
-      };
+      reserveNavCache.generalDialog = cloneDialog(dialog);
       reserveNavCache.generalDialogFetchedAt = this.generalDialogFetchedAt;
     },
 
@@ -261,18 +276,10 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     setDirectDialogsState(this: any, dialogsRaw: DirectDialog[]) {
-      const dialogs = dialogsRaw.map((dialog: DirectDialog) => ({
-        ...dialog,
-        targetUser: dialog?.targetUser ? {...dialog.targetUser} : dialog?.targetUser,
-        roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-      }));
+      const dialogs = dialogsRaw.map((dialog: DirectDialog) => cloneDirectDialog(dialog));
       this.directDialogs = dialogs;
       this.directDialogsFetchedAt = Date.now();
-      reserveNavCache.directDialogs = dialogs.map((dialog: DirectDialog) => ({
-        ...dialog,
-        targetUser: dialog?.targetUser ? {...dialog.targetUser} : dialog?.targetUser,
-        roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-      }));
+      reserveNavCache.directDialogs = dialogs.map((dialog: DirectDialog) => cloneDirectDialog(dialog));
       reserveNavCache.directDialogsFetchedAt = this.directDialogsFetchedAt;
     },
 
@@ -280,11 +287,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       const roomId = Number(dialogRaw?.roomId || 0);
       if (!Number.isFinite(roomId) || roomId === 0) return;
 
-      const dialog: DirectDialog = {
-        ...dialogRaw,
-        targetUser: dialogRaw?.targetUser ? {...dialogRaw.targetUser} : dialogRaw?.targetUser,
-        roomSurface: dialogRaw?.roomSurface ? {...dialogRaw.roomSurface, config: {...(dialogRaw.roomSurface.config || {})}} : dialogRaw?.roomSurface,
-      };
+      const dialog = cloneDirectDialog(dialogRaw);
       const next = [...(this.directDialogs || [])];
       const existingIndex = next.findIndex((item: DirectDialog) => Number(item?.roomId || 0) === roomId);
       if (existingIndex >= 0) {
@@ -356,10 +359,6 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     setRoomsNavigationState(this: any, joinedRaw: Dialog[], publicRaw: Dialog[]) {
-      const cloneDialogs = (dialogs: Dialog[]) => dialogs.map((dialog: Dialog) => ({
-        ...dialog,
-        roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-      }));
       const joined = cloneDialogs(joinedRaw);
       const publicRooms = cloneDialogs(publicRaw);
       this.joinedRooms = joined;
@@ -373,10 +372,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     upsertRoomNavigationDialog(this: any, dialogRaw: Dialog) {
       const roomId = Number(dialogRaw?.id || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return;
-      const dialog: Dialog = {
-        ...dialogRaw,
-        roomSurface: dialogRaw?.roomSurface ? {...dialogRaw.roomSurface, config: {...(dialogRaw.roomSurface.config || {})}} : dialogRaw?.roomSurface,
-      };
+      const dialog = cloneDialog(dialogRaw);
       const targetKey = dialog.joined === false ? 'publicRooms' : 'joinedRooms';
       const otherKey = targetKey === 'joinedRooms' ? 'publicRooms' : 'joinedRooms';
       const nextTarget = [...(this[targetKey] || [])].filter((item: Dialog) => Number(item?.id || 0) !== roomId);
@@ -550,11 +546,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         return reserveNavCache.directDialogsPromise;
       }
       if (reserveNavCache.directDialogs.length && now - Number(reserveNavCache.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
-        this.directDialogs = reserveNavCache.directDialogs.map((dialog: any) => ({
-          ...dialog,
-          targetUser: dialog?.targetUser ? {...dialog.targetUser} : dialog?.targetUser,
-          roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-        }));
+        this.directDialogs = reserveNavCache.directDialogs.map((dialog: DirectDialog) => cloneDirectDialog(dialog));
         this.directDialogsFetchedAt = reserveNavCache.directDialogsFetchedAt;
         return;
       }
@@ -640,14 +632,8 @@ export const chatMethodsAuthDialogsAndProfile = {
         (reserveNavCache.joinedRooms.length || reserveNavCache.publicRooms.length)
         && now - Number(reserveNavCache.roomsNavigationFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
       ) {
-        this.joinedRooms = reserveNavCache.joinedRooms.map((dialog: Dialog) => ({
-          ...dialog,
-          roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-        }));
-        this.publicRooms = reserveNavCache.publicRooms.map((dialog: Dialog) => ({
-          ...dialog,
-          roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
-        }));
+        this.joinedRooms = cloneDialogs(reserveNavCache.joinedRooms);
+        this.publicRooms = cloneDialogs(reserveNavCache.publicRooms);
         this.roomsNavigationFetchedAt = reserveNavCache.roomsNavigationFetchedAt;
         return;
       }
@@ -720,10 +706,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (reserveNavCache.generalDialog && now - Number(reserveNavCache.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         const generalDialog = reserveNavCache.generalDialog as Dialog;
         if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title)) {
-          this.generalDialog = {
-            ...generalDialog,
-            roomSurface: generalDialog?.roomSurface ? {...generalDialog.roomSurface, config: {...(generalDialog.roomSurface.config || {})}} : generalDialog?.roomSurface,
-          };
+          this.generalDialog = cloneDialog(generalDialog);
           this.generalDialogFetchedAt = reserveNavCache.generalDialogFetchedAt;
           return this.generalDialog;
         }

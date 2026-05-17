@@ -84,9 +84,3 @@ export function bindKingBotCast(
   return profiles;
 }
 
-export function getBotProfileByUserId(
-  botCast: KingRuntimeBotProfile[],
-  userId: number,
-): KingRuntimeBotProfile | null {
-  return botCast.find((entry) => entry.userId === userId) || null;
-}

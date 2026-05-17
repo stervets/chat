@@ -7,6 +7,16 @@ export type WsResult<T = any> =
 
 type MarxPacket = [string, Record<string, any> | any[], string, string, string?];
 const REQUEST_TIMEOUT_MS = 12000;
+const RESERVE_DEDUPE_COMMANDS = new Set([
+  'auth:session',
+  'user:list',
+  'contacts:list',
+  'room:list',
+  'room:get',
+  'room:group:get-default',
+  'message:list',
+  'push:native:register',
+]);
 
 type ReserveConfig = {
   wsUrl: string;
@@ -44,17 +54,39 @@ export class WsClient {
     () => this.onReserveDisconnected(),
   );
 
+  private closeSocket(socket: WebSocket | null) {
+    if (!socket) return;
+    try {
+      socket.close();
+    } catch {
+      // ignore close failure
+    }
+  }
+
+  private getSenderId() {
+    return this.reserveActive
+      ? (this.reserveTransport.getSenderId() || this.reserveTransport.getClientId() || 'frontend')
+      : 'frontend';
+  }
+
+  private getRecipientId() {
+    return this.reserveActive ? '0' : 'backend';
+  }
+
+  private buildPacket(com: string, args: Record<string, any>, requestId?: string): MarxPacket {
+    const packet: MarxPacket = [com, args, this.getSenderId(), this.getRecipientId()];
+    if (requestId) packet.push(requestId);
+    return packet;
+  }
+
+  private sendTransportPacket(packet: MarxPacket) {
+    if (this.reserveActive) return this.reserveTransport.sendPacket(packet);
+    this.socket!.send(JSON.stringify(packet));
+    return Promise.resolve();
+  }
+
   private shouldDedupeReserveRequest(com: string) {
-    return [
-      'auth:session',
-      'user:list',
-      'contacts:list',
-      'room:list',
-      'room:get',
-      'room:group:get-default',
-      'message:list',
-      'push:native:register',
-    ].includes(String(com || '').trim());
+    return RESERVE_DEDUPE_COMMANDS.has(String(com || '').trim());
   }
 
   private buildReserveRequestKey(com: string, args: Record<string, any>) {
@@ -156,10 +188,6 @@ export class WsClient {
     this.reserveTransport.setConfig(config);
   }
 
-  hasReserveConfig() {
-    return this.reserveTransport.isConfigured();
-  }
-
   setReserveActive(active: boolean) {
     const next = !!active;
     if (this.reserveActive === next) return;
@@ -176,13 +204,7 @@ export class WsClient {
       this.connectPromise = null;
       const socket = this.socket;
       this.socket = null;
-      if (socket) {
-        try {
-          socket.close();
-        } catch {
-          // ignore
-        }
-      }
+      this.closeSocket(socket);
       return;
     }
 
@@ -232,11 +254,7 @@ export class WsClient {
         settled = true;
         this.connectPromise = null;
         this.socket = null;
-        try {
-          socket.close();
-        } catch {
-          // ignore close failure on timed out socket
-        }
+        this.closeSocket(socket);
         reject(new Error('ws_connect_timeout'));
       }, 8000);
 
@@ -246,11 +264,7 @@ export class WsClient {
 
       socket.onopen = () => {
         if (this.socket !== socket || connectionId !== this.connectionSeq) {
-          try {
-            socket.close();
-          } catch {
-            // ignore stale socket close
-          }
+          this.closeSocket(socket);
           return;
         }
         if (settled) return;
@@ -302,13 +316,7 @@ export class WsClient {
 
     this.reserveTransport.disconnect();
 
-    if (socket) {
-      try {
-        socket.close();
-      } catch {
-        // ignore close failure
-      }
-    }
+    this.closeSocket(socket);
 
     this.resolveAllPendingAsDisconnected();
   }
@@ -354,18 +362,9 @@ export class WsClient {
     }
 
     const requestId = this.genId();
-    const senderId = this.reserveActive
-      ? (this.reserveTransport.getSenderId() || this.reserveTransport.getClientId() || 'frontend')
-      : 'frontend';
-    const recipientId = this.reserveActive ? '0' : 'backend';
-
-    const packet: MarxPacket = [
-      com,
-      args,
-      senderId,
-      recipientId,
-      requestId,
-    ];
+    const senderId = this.getSenderId();
+    const recipientId = this.getRecipientId();
+    const packet = this.buildPacket(com, args, requestId);
 
     if (com === 'auth:login' || this.reserveActive) {
       console.info(`[ws-route] request com=${com} via=${this.reserveActive ? 'max' : 'ws'} sender=${senderId} recipient=${recipientId} requestId=${requestId}`);
@@ -404,11 +403,7 @@ export class WsClient {
       };
 
       try {
-        if (this.reserveActive) {
-          void this.reserveTransport.sendPacket(packet).catch(fail);
-          return;
-        }
-        this.socket!.send(JSON.stringify(packet));
+        void this.sendTransportPacket(packet).catch(fail);
       } catch (error: any) {
         fail(error);
       }
@@ -426,19 +421,7 @@ export class WsClient {
   send(com: string, args: Record<string, any> = {}) {
     if (!this.isConnected()) return;
 
-    const senderId = this.reserveActive
-      ? (this.reserveTransport.getSenderId() || this.reserveTransport.getClientId() || 'frontend')
-      : 'frontend';
-    const recipientId = this.reserveActive ? '0' : 'backend';
-
-    const packet: MarxPacket = [com, args, senderId, recipientId];
-
-    if (this.reserveActive) {
-      void this.reserveTransport.sendPacket(packet);
-      return;
-    }
-
-    this.socket!.send(JSON.stringify(packet));
+    void this.sendTransportPacket(this.buildPacket(com, args));
   }
 }
 

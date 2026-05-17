@@ -11,18 +11,6 @@ export type NodeRuntimeSnapshot = {
 };
 
 export type NodeDataRecord = Record<string, any>;
-export type NodeSnapshot = {
-  id: number;
-  parentId: number | null;
-  type: NodeType;
-  component: string | null;
-  clientScript: string | null;
-  serverScript: string | null;
-  data: NodeDataRecord;
-  createdById: number | null;
-  createdAt: Date;
-};
-
 type DbClient = Prisma.TransactionClient | PrismaClient | typeof db;
 
 function asRecord(raw: unknown): NodeDataRecord {
@@ -52,20 +40,6 @@ export function normalizeRoomSurfaceType(raw: unknown): RoomSurfaceType | null {
   return null;
 }
 
-export function normalizeNodeSnapshot(raw: any): NodeSnapshot {
-  return {
-    id: Number(raw?.id || 0),
-    parentId: Number(raw?.parentId || 0) || null,
-    type: String(raw?.type || '').trim().toLowerCase() === 'message' ? 'message' : 'room',
-    component: raw?.component ? String(raw.component) : null,
-    clientScript: raw?.clientScript ? String(raw.clientScript) : null,
-    serverScript: raw?.serverScript ? String(raw.serverScript) : null,
-    data: asRecord(raw?.data),
-    createdById: Number(raw?.createdById || 0) || null,
-    createdAt: raw?.createdAt instanceof Date ? raw.createdAt : new Date(raw?.createdAt || Date.now()),
-  };
-}
-
 export function readNodeRuntime(nodeRaw: {clientScript?: unknown; serverScript?: unknown; data?: unknown}): NodeRuntimeSnapshot {
   return {
     clientScript: nodeRaw?.clientScript ? String(nodeRaw.clientScript) : null,
@@ -74,17 +48,6 @@ export function readNodeRuntime(nodeRaw: {clientScript?: unknown; serverScript?:
   };
 }
 
-export function hasNodeClientRuntime(nodeRaw: {clientScript?: unknown}) {
-  return !!String(nodeRaw?.clientScript || '').trim();
-}
-
-export function hasNodeServerRuntime(nodeRaw: {serverScript?: unknown}) {
-  return !!String(nodeRaw?.serverScript || '').trim();
-}
-
-export function hasNodeRuntime(nodeRaw: {clientScript?: unknown; serverScript?: unknown}) {
-  return hasNodeClientRuntime(nodeRaw) || hasNodeServerRuntime(nodeRaw);
-}
 
 export function readRoomSurface(nodeRaw: {data?: unknown}) {
   const roomSurface = asRecord(asRecord(nodeRaw.data).roomSurface);

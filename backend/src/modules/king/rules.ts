@@ -45,10 +45,6 @@ export function cardEquals(left: KingCard, right: KingCard) {
   return left.suit === right.suit && left.rank === right.rank;
 }
 
-export function cardCode(card: KingCard) {
-  return `${card.rank}${card.suit[0]}`;
-}
-
 export function sortHand(hand: KingCard[]) {
   const suitWeight: Record<KingSuit, number> = {
     clubs: 0,

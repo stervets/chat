@@ -158,7 +158,6 @@ const maxReservePrivateKeyFromPath = (() => {
 const maxReserveUserAgentSource = fileConfig.maxReserve?.userAgent || {};
 
 export const config = {
-  env: 'development',
   host: fileConfig.host || '0.0.0.0',
   port: fileConfig.port || 8816,
   wsPath: fileConfig.wsPath || WS_PATH,

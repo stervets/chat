@@ -1,7 +1,6 @@
 export const HANDLED_MESSAGE_IDS_STORAGE_PREFIX = 'chat:handled-message-notification-ids:v1';
 export const HANDLED_MESSAGE_IDS_LIMIT = 8000;
 export const SOUND_ENABLED_STORAGE_KEY = 'chat:notifications-sound-enabled:v1';
-export const SOUND_OVERLAY_SKIP_ONCE_KEY = 'chat:sound-overlay-skip-once:v1';
 export const BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY = 'chat:browser-notifications-enabled:v1';
 export const VIBRATION_ENABLED_STORAGE_KEY = 'chat:vibration-enabled:v1';
 export const PINNED_PANEL_HEIGHT_RATIO_STORAGE_KEY = 'chat:pinned-panel-height-ratio:v1';
@@ -113,12 +112,4 @@ export function persistNumberSetting(storageKey: string, valueRaw: unknown, min:
   if (!Number.isFinite(value)) return;
   const clamped = Math.min(max, Math.max(min, value));
   window.localStorage.setItem(storageKey, String(clamped));
-}
-
-export function consumeSessionFlagOnce(storageKey: string, expectedValue = '1') {
-  if (!hasWindow()) return false;
-  const raw = window.sessionStorage.getItem(storageKey);
-  if (raw !== expectedValue) return false;
-  window.sessionStorage.removeItem(storageKey);
-  return true;
 }

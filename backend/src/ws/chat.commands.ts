@@ -182,6 +182,59 @@ function positiveNumber(value: unknown) {
   return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
+function isFailureResult(resultRaw: unknown) {
+  return !!resultRaw && typeof resultRaw === 'object' && (resultRaw as WsResponse<unknown>).ok === false;
+}
+
+function withoutOkFlag(resultRaw: unknown) {
+  const payload = resultRaw && typeof resultRaw === 'object'
+    ? {...(resultRaw as Record<string, unknown>)}
+    : {};
+  if (payload.ok === true) delete payload.ok;
+  return payload;
+}
+
+function onlineUserIds(host: ChatCommandHost) {
+  return new Set(host.getOnlineUserIds());
+}
+
+function withOnlineUser(userRaw: unknown, ids: Set<number>) {
+  if (!userRaw || typeof userRaw !== 'object') return userRaw;
+  const user = userRaw as Record<string, unknown>;
+  return {
+    ...user,
+    isOnline: ids.has(positiveNumber(user.id)),
+  };
+}
+
+function broadcastViaRoom(host: ChatCommandHost, room: RoomRow | null, roomId: number, com: string, payload: unknown) {
+  if (room) {
+    host.broadcastToRoomMembers(room, com, payload);
+    return;
+  }
+  host.broadcast(roomId, com, payload);
+}
+
+async function broadcastByRoomId(host: ChatCommandHost, roomIdRaw: unknown, com: string, payload: unknown) {
+  const roomId = positiveNumber(roomIdRaw);
+  const room = roomId ? await getRoomById(roomId) : null;
+  broadcastViaRoom(host, room, roomId, com, payload);
+}
+
+function broadcastGameMessages(host: ChatCommandHost, roomId: number, messagesRaw: unknown) {
+  const messages = Array.isArray(messagesRaw) ? messagesRaw : [];
+  for (const message of messages) {
+    host.broadcast(roomId, 'message:created', message);
+  }
+}
+
+function broadcastGameEvents(host: ChatCommandHost, roomId: number, sessionId: unknown, eventsRaw: unknown) {
+  const events = Array.isArray(eventsRaw) ? eventsRaw : [];
+  for (const event of events) {
+    host.broadcast(roomId, 'game:event', {sessionId, event});
+  }
+}
+
 function getRoomListHandler(host: ChatCommandHost, kindRaw: unknown) {
   const kind = String(kindRaw || '').trim().toLowerCase();
   const handlers: Record<string, (ctx: ChatCommandContext) => Promise<unknown> | unknown> = {
@@ -310,46 +363,27 @@ function createAuthCommands(host: ChatCommandHost): ChatCommandMap {
 }
 
 function createUserCommands(host: ChatCommandHost): ChatCommandMap {
-  const withOnlineUser = (userRaw: unknown, onlineUserIds: Set<number>) => {
-    if (!userRaw || typeof userRaw !== 'object') return userRaw;
-    const user = userRaw as Record<string, unknown>;
-    const userId = positiveNumber(user.id);
-    return {
-      ...user,
-      isOnline: onlineUserIds.has(userId),
-    };
-  };
-  const isFailure = (resultRaw: unknown) => {
-    return !!resultRaw && typeof resultRaw === 'object' && (resultRaw as any).ok === false;
-  };
-
   return {
     'user:list': command(async ({client}) => {
       const result = await host.chat.users.usersList(client.state);
       if (!Array.isArray(result)) return result;
-      const onlineUserIds = new Set(host.getOnlineUserIds());
-      return result.map((user) => withOnlineUser(user, onlineUserIds));
+      const ids = onlineUserIds(host);
+      return result.map((user) => withOnlineUser(user, ids));
     }),
     'user:get': command(async ({client, args}) => {
       const result = await host.chat.users.userGet(client.state, normalizeUserGetArgs(args));
-      if (isFailure(result)) return result;
-      const payload = result && typeof result === 'object'
-        ? {...(result as Record<string, unknown>)}
-        : {};
-      if ((payload as any).ok === true) {
-        delete (payload as any).ok;
-      }
-      const onlineUserIds = new Set(host.getOnlineUserIds());
+      if (isFailureResult(result)) return result;
+      const payload = withoutOkFlag(result);
       return {
         ...payload,
-        user: withOnlineUser((payload as any).user, onlineUserIds),
+        user: withOnlineUser(payload.user, onlineUserIds(host)),
       };
     }),
     'contacts:list': command(async ({client}) => {
       const result = await host.chat.users.contactsList(client.state);
       if (!Array.isArray(result)) return result;
-      const onlineUserIds = new Set(host.getOnlineUserIds());
-      return result.map((user) => withOnlineUser(user, onlineUserIds));
+      const ids = onlineUserIds(host);
+      return result.map((user) => withOnlineUser(user, ids));
     }),
     'contacts:add': command(({client, args}) => host.chat.users.contactsAdd(client.state, normalizeContactArgs(args))),
     'contacts:remove': command(({client, args}) => host.chat.users.contactsRemove(client.state, normalizeContactArgs(args))),
@@ -397,20 +431,9 @@ function createGameCommands(host: ChatCommandHost): ChatCommandMap {
       const room = await getRoomById(roomId);
       if (!room) return;
 
-      const messages = Array.isArray(data.messages) ? data.messages : [];
-      for (const message of messages) {
-        host.broadcast(roomId, 'message:created', message);
-      }
-
+      broadcastGameMessages(host, roomId, data.messages);
       host.broadcast(roomId, 'game:session:updated', data.session);
-
-      const events = Array.isArray(data.events) ? data.events : [];
-      for (const event of events) {
-        host.broadcast(roomId, 'game:event', {
-          sessionId: data.sessionId,
-          event,
-        });
-      }
+      broadcastGameEvents(host, roomId, data.sessionId, data.events);
     }),
 
     'game:session:get': command(({client, args}) => {
@@ -433,18 +456,8 @@ function createGameCommands(host: ChatCommandHost): ChatCommandMap {
       const room = roomId ? await getRoomById(roomId) : null;
       if (!room) return;
 
-      const messages = Array.isArray(data.messages) ? data.messages : [];
-      for (const message of messages) {
-        host.broadcast(roomId, 'message:created', message);
-      }
-
-      const events = Array.isArray(data.events) ? data.events : [];
-      for (const event of events) {
-        host.broadcast(roomId, 'game:event', {
-          sessionId: data.sessionId,
-          event,
-        });
-      }
+      broadcastGameMessages(host, roomId, data.messages);
+      broadcastGameEvents(host, roomId, data.sessionId, data.events);
 
       host.broadcast(roomId, 'game:state:updated', {
         sessionId: data.sessionId,
@@ -551,34 +564,15 @@ function createCallCommands(host: ChatCommandHost): ChatCommandMap {
 }
 
 function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
-  const withOnlineUser = (userRaw: unknown, onlineUserIds: Set<number>) => {
-    if (!userRaw || typeof userRaw !== 'object') return userRaw;
-    const user = userRaw as Record<string, unknown>;
-    const userId = positiveNumber(user.id);
-    return {
-      ...user,
-      isOnline: onlineUserIds.has(userId),
-    };
-  };
-  const isFailure = (resultRaw: unknown) => {
-    return !!resultRaw && typeof resultRaw === 'object' && (resultRaw as any).ok === false;
-  };
-
   return {
     'room:get': command(async ({client, args}) => {
       const result = await host.chat.rooms.roomGet(client.state, positiveInt((args as RoomGetPayload).roomId));
-      if (isFailure(result)) return result;
-      const payload = result && typeof result === 'object'
-        ? {...(result as Record<string, unknown>)}
-        : {};
-      if ((payload as any).ok === true) {
-        delete (payload as any).ok;
-      }
-      if (String((payload as any)?.kind || '') !== 'direct') return payload;
-      const onlineUserIds = new Set(host.getOnlineUserIds());
+      if (isFailureResult(result)) return result;
+      const payload = withoutOkFlag(result);
+      if (String(payload.kind || '') !== 'direct') return payload;
       return {
         ...payload,
-        targetUser: withOnlineUser((payload as any).targetUser, onlineUserIds),
+        targetUser: withOnlineUser(payload.targetUser, onlineUserIds(host)),
       };
     }, ({client, args}, result) => {
       if (!okResult<RoomGetData>(result)) return;
@@ -593,13 +587,13 @@ function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
       const result = handler ? await handler(ctx) : host.fail('invalid_room_kind');
       const kind = String((ctx.args as RoomListPayload).kind || '').trim().toLowerCase();
       if (kind !== 'direct' || !Array.isArray(result)) return result;
-      const onlineUserIds = new Set(host.getOnlineUserIds());
+      const ids = onlineUserIds(host);
       return result.map((row) => {
         if (!row || typeof row !== 'object') return row;
         const current = row as Record<string, unknown>;
         return {
           ...current,
-          targetUser: withOnlineUser(current.targetUser, onlineUserIds),
+          targetUser: withOnlineUser(current.targetUser, ids),
         };
       });
     }),
@@ -644,17 +638,11 @@ function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
     'room:group:get-default': command(({client}) => host.chat.rooms.roomGetDefaultGroup(client.state)),
     'room:direct:get-or-create': command(async ({client, args}) => {
       const result = await host.chat.rooms.roomDirectGetOrCreate(client.state, positiveInt(args.userId));
-      if (isFailure(result)) return result;
-      const payload = result && typeof result === 'object'
-        ? {...(result as Record<string, unknown>)}
-        : {};
-      if ((payload as any).ok === true) {
-        delete (payload as any).ok;
-      }
-      const onlineUserIds = new Set(host.getOnlineUserIds());
+      if (isFailureResult(result)) return result;
+      const payload = withoutOkFlag(result);
       return {
         ...payload,
-        targetUser: withOnlineUser((payload as any).targetUser, onlineUserIds),
+        targetUser: withOnlineUser(payload.targetUser, onlineUserIds(host)),
       };
     }),
     'room:join': command(({client, args}) => host.chat.rooms.roomJoin(client.state, positiveInt((args as RoomJoinPayload).roomId))),
@@ -680,11 +668,8 @@ function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
       const result = await host.chat.rooms.roomMembersList(client.state, positiveInt((args as RoomMembersListPayload).roomId));
       if (!Array.isArray(result)) return result;
 
-      const onlineUserIds = new Set(host.getOnlineUserIds());
-      return result.map((user) => ({
-        ...user,
-        isOnline: onlineUserIds.has(positiveNumber((user as any)?.id)),
-      }));
+      const ids = onlineUserIds(host);
+      return result.map((user) => withOnlineUser(user, ids));
     }),
 
     'room:members:add': command(({client, args}) => host.chat.rooms.roomMembersAdd(client.state, {roomId: positiveInt((args as RoomMembersAddPayload).roomId), userIds: positiveIntList((args as RoomMembersAddPayload).userIds)})),
@@ -717,15 +702,7 @@ function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
     }, async (_ctx, result) => {
       if (!okResult<Record<string, unknown>>(result)) return;
       const data = result.data;
-
-      const room = await getRoomById(positiveNumber(data.roomId));
-      const payload = roomUpdatedPayload(data);
-
-      if (room) {
-        host.broadcastToRoomMembers(room, 'room:updated', payload);
-      } else {
-        host.broadcast(positiveNumber(data.roomId), 'room:updated', payload);
-      }
+      await broadcastByRoomId(host, data.roomId, 'room:updated', roomUpdatedPayload(data));
     }),
 
     'room:surface:set': command(({client, args}) => host.chat.scriptable.roomSurfaceSet(client.state, positiveInt(args.roomId), args)),
@@ -736,15 +713,7 @@ function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
     }, async (_ctx, result) => {
       if (!okResult<Record<string, unknown>>(result) || !result.data.changed) return;
       const data = result.data;
-
-      const room = await getRoomById(positiveNumber(data.roomId));
-      const payload = pinUpdatedPayload(data);
-
-      if (room) {
-        host.broadcastToRoomMembers(room, 'room:pin:updated', payload);
-      } else {
-        host.broadcast(positiveNumber(data.roomId), 'room:pin:updated', payload);
-      }
+      await broadcastByRoomId(host, data.roomId, 'room:pin:updated', pinUpdatedPayload(data));
     }),
 
     'room:pin:clear': command(({client, args}) => {
@@ -752,15 +721,7 @@ function createRoomCommands(host: ChatCommandHost): ChatCommandMap {
     }, async (_ctx, result) => {
       if (!okResult<Record<string, unknown>>(result) || !result.data.changed) return;
       const data = result.data;
-
-      const room = await getRoomById(positiveNumber(data.roomId));
-      const payload = pinUpdatedPayload(data, true);
-
-      if (room) {
-        host.broadcastToRoomMembers(room, 'room:pin:updated', payload);
-      } else {
-        host.broadcast(positiveNumber(data.roomId), 'room:pin:updated', payload);
-      }
+      await broadcastByRoomId(host, data.roomId, 'room:pin:updated', pinUpdatedPayload(data, true));
     }),
   };
 }
@@ -829,12 +790,7 @@ function createMessageCommands(host: ChatCommandHost): ChatCommandMap {
     }, async (_ctx, result) => {
       if (!okResult<MessageUpdateData>(result) || !result.data.changed || !result.data.message) return;
 
-      const room = await getRoomById(result.data.message.roomId);
-      if (room) {
-        host.broadcastToRoomMembers(room, 'message:updated', result.data.message);
-      } else {
-        host.broadcast(result.data.message.roomId, 'message:updated', result.data.message);
-      }
+      await broadcastByRoomId(host, result.data.message.roomId, 'message:updated', result.data.message);
     }),
 
     'message:delete': command(({client, args}) => {
@@ -855,16 +811,9 @@ function createMessageCommands(host: ChatCommandHost): ChatCommandMap {
         pinnedMessage: null,
       };
 
-      if (room) {
-        host.broadcastToRoomMembers(room, 'message:deleted', payload);
-        if (result.data.pinnedCleared) {
-          host.broadcastToRoomMembers(room, 'room:pin:updated', pinPayload);
-        }
-      } else {
-        host.broadcast(result.data.roomId, 'message:deleted', payload);
-        if (result.data.pinnedCleared) {
-          host.broadcast(result.data.roomId, 'room:pin:updated', pinPayload);
-        }
+      broadcastViaRoom(host, room, result.data.roomId, 'message:deleted', payload);
+      if (result.data.pinnedCleared) {
+        broadcastViaRoom(host, room, result.data.roomId, 'room:pin:updated', pinPayload);
       }
     }),
 
@@ -892,11 +841,7 @@ function createMessageCommands(host: ChatCommandHost): ChatCommandMap {
         reactions: result.data.reactions,
       };
 
-      if (room) {
-        host.broadcastToRoomMembers(room, 'message:reactions:updated', payload);
-      } else {
-        host.broadcast(result.data.roomId, 'message:reactions:updated', payload);
-      }
+      broadcastViaRoom(host, room, result.data.roomId, 'message:reactions:updated', payload);
 
       if (result.data.notify) {
         host.sendToUser(result.data.notify.userId, 'message:reaction:notify', result.data.notify);
@@ -914,11 +859,8 @@ function createMessageCommands(host: ChatCommandHost): ChatCommandMap {
       const data = result.data;
 
       const sourceRoomId = positiveNumber(data.sourceRoomId);
-      const room = sourceRoomId ? await getRoomById(sourceRoomId) : null;
-      if (room) {
-        host.broadcastToRoomMembers(room, 'message:updated', data.message);
-      } else if (sourceRoomId) {
-        host.broadcast(sourceRoomId, 'message:updated', data.message);
+      if (sourceRoomId) {
+        await broadcastByRoomId(host, sourceRoomId, 'message:updated', data.message);
       }
     }),
 

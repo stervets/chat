@@ -93,7 +93,6 @@ export function pickBotCard(input: {
   seat: number;
   behavior: KingBotBehavior;
 }): KingCard {
-  const player = getSeatPlayer(input.state, input.seat);
   const legalCards = listLegalCards(input.state, input.seat);
   if (!legalCards.length) {
     throw new Error('bot_no_legal_cards');
@@ -185,10 +184,4 @@ export function pickBotCard(input: {
   if (fallback) return fallback;
 
   return legalCards[0];
-}
-
-export function botHasCard(state: KingGameState, userId: number, card: KingCard) {
-  const player = state.players.find((entry) => entry.userId === userId);
-  if (!player) return false;
-  return player.hand.some((entry) => entry.suit === card.suit && entry.rank === card.rank);
 }

@@ -12,16 +12,6 @@ export type User = {
   pushDisableAllMentions?: boolean;
 };
 
-export type Invite = {
-  id: Id;
-  code: string;
-  createdAt: string;
-  rooms?: Array<{
-    roomId: number;
-    title: string;
-    visibility: 'public' | 'private';
-  }>;
-};
 
 export type DialogKind = 'group' | 'direct' | 'game' | 'comment';
 export type RoomSurfaceType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
@@ -114,14 +104,4 @@ export type MessageReaction = {
   users: MessageReactionUser[];
 };
 
-export type Session = {
-  id: string;
-  userId: Id;
-  expiresAt: string;
-};
 
-export type WsEnvelope<T = unknown> = {
-  type: string;
-  payload?: T;
-  requestId?: string;
-};

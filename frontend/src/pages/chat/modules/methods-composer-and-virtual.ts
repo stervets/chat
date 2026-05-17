@@ -6,7 +6,7 @@ import {
   VIRTUAL_MAX_ITEMS,
   VIRTUAL_OVERSCAN,
   VIRTUAL_ESTIMATED_ITEM_HEIGHT,
-  COLOR_HEX_FULL_RE,
+  COLOR_HEX_RE,
   COMPOSER_NAMED_COLORS,
   COMPOSER_EMOJIS,
   DONATION_BADGE_FADE_MS,
@@ -502,7 +502,7 @@ export const chatMethodsComposerAndVirtual = {
     applyCustomColorWrapper(this: any) {
       this.hapticTap();
       const color = String(this.composerColorPicker || '').trim();
-      if (!COLOR_HEX_FULL_RE.test(color)) {
+      if (!COLOR_HEX_RE.test(color)) {
         this.closeComposerTools();
         return;
       }

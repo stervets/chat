@@ -16,10 +16,6 @@ export function isNativeRuntime() {
   }
 }
 
-export function getNativePlatform() {
-  return platformName();
-}
-
 export function isNativeAndroidApp() {
   return isNativeRuntime() && platformName() === 'android';
 }

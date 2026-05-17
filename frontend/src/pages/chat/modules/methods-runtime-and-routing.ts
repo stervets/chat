@@ -12,15 +12,11 @@ import {
   HANDLED_MESSAGE_IDS_SAVE_DELAY_MS,
   INCOMING_CALL_SOUND_VOLUME,
   NOTIFICATION_SOUND_VOLUME,
-  MAX_ACTIVE_BROWSER_NOTIFICATIONS,
-  getApiBase,
-  getSessionToken,
 } from './shared';
 import type {
   Dialog,
   User,
   DirectDialog,
-  NotificationItem,
   RouteMode,
   SoundRuntimeState,
 } from './shared';
@@ -157,7 +153,7 @@ export const chatMethodsRuntimeAndRouting = {
       runtime.overlayHandled = true;
     },
 
-    async playNotificationSound(this: any) {
+    async playSoundEffect(this: any, soundName: string, volume: number, loop = false) {
       if (!this.soundEnabled || !this.soundReady) return;
 
       const soundPlayer = this.ensureNotificationSoundPlayer();
@@ -167,26 +163,22 @@ export const chatMethodsRuntimeAndRouting = {
         if (!soundPlayer.isReady) {
           await soundPlayer.preloadPromise;
         }
-        await soundPlayer.play('notification', NOTIFICATION_SOUND_VOLUME);
+        if (loop) {
+          await soundPlayer.playLoop(soundName, volume);
+        } else {
+          await soundPlayer.play(soundName, volume);
+        }
       } catch {
         this.notificationSoundPlayer = null;
       }
     },
 
-    async playIncomingCallSound(this: any) {
-      if (!this.soundEnabled || !this.soundReady) return;
+    playNotificationSound(this: any) {
+      return this.playSoundEffect('notification', NOTIFICATION_SOUND_VOLUME);
+    },
 
-      const soundPlayer = this.ensureNotificationSoundPlayer();
-      if (!soundPlayer) return;
-
-      try {
-        if (!soundPlayer.isReady) {
-          await soundPlayer.preloadPromise;
-        }
-        await soundPlayer.playLoop('incomingCall', INCOMING_CALL_SOUND_VOLUME);
-      } catch {
-        this.notificationSoundPlayer = null;
-      }
+    playIncomingCallSound(this: any) {
+      return this.playSoundEffect('incomingCall', INCOMING_CALL_SOUND_VOLUME, true);
     },
 
     stopIncomingCallSound(this: any) {
@@ -195,36 +187,12 @@ export const chatMethodsRuntimeAndRouting = {
       soundPlayer.stopLoop('incomingCall');
     },
 
-    async playCallOnSound(this: any) {
-      if (!this.soundEnabled || !this.soundReady) return;
-
-      const soundPlayer = this.ensureNotificationSoundPlayer();
-      if (!soundPlayer) return;
-
-      try {
-        if (!soundPlayer.isReady) {
-          await soundPlayer.preloadPromise;
-        }
-        await soundPlayer.play('callOn', NOTIFICATION_SOUND_VOLUME);
-      } catch {
-        this.notificationSoundPlayer = null;
-      }
+    playCallOnSound(this: any) {
+      return this.playSoundEffect('callOn', NOTIFICATION_SOUND_VOLUME);
     },
 
-    async playCallOffSound(this: any) {
-      if (!this.soundEnabled || !this.soundReady) return;
-
-      const soundPlayer = this.ensureNotificationSoundPlayer();
-      if (!soundPlayer) return;
-
-      try {
-        if (!soundPlayer.isReady) {
-          await soundPlayer.preloadPromise;
-        }
-        await soundPlayer.play('callOff', NOTIFICATION_SOUND_VOLUME);
-      } catch {
-        this.notificationSoundPlayer = null;
-      }
+    playCallOffSound(this: any) {
+      return this.playSoundEffect('callOff', NOTIFICATION_SOUND_VOLUME);
     },
 
     async playOutgoingCallMusic(this: any) {

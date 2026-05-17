@@ -43,6 +43,19 @@ const hasWindow = () => typeof window !== 'undefined';
 
 type WsConnectionState = 'disconnected' | 'connecting' | 'connected';
 
+function emptyReserveRuntimeConfig(userAgent: ReserveRuntimeConfig['userAgent']): ReserveRuntimeConfig {
+  return {
+    available: false,
+    wsUrl: '',
+    token: '',
+    deviceId: '',
+    chatId: 0,
+    chunkTextLimit: 3000,
+    backendPublicKeyPem: '',
+    userAgent,
+  };
+}
+
 export function wsData<T>(result: any, fallback: T): T {
   return result && result.ok === true && Object.prototype.hasOwnProperty.call(result, 'data')
     ? result.data as T
@@ -146,16 +159,7 @@ function getReserveRuntimeConfig(): ReserveRuntimeConfig {
 
   try {
     if (!isNativeAndroidApp()) {
-      return {
-        available: false,
-        wsUrl: '',
-        token: '',
-        deviceId: '',
-        chatId: 0,
-        chunkTextLimit: 3000,
-        backendPublicKeyPem: '',
-        userAgent: defaults,
-      };
+      return emptyReserveRuntimeConfig(defaults);
     }
 
     const runtimeConfig = useRuntimeConfig();
@@ -193,16 +197,7 @@ function getReserveRuntimeConfig(): ReserveRuntimeConfig {
       },
     };
   } catch {
-    return {
-      available: false,
-      wsUrl: '',
-      token: '',
-      deviceId: '',
-      chatId: 0,
-      chunkTextLimit: 3000,
-      backendPublicKeyPem: '',
-      userAgent: defaults,
-    };
+    return emptyReserveRuntimeConfig(defaults);
   }
 }
 
@@ -254,11 +249,10 @@ function setReserveChannelNoPrompt(valueRaw: boolean) {
 }
 
 function canPromptReserveChannel() {
-  if (!hasWindow()) return false;
-  if (reservePromptInFlight) return false;
-  if (getReserveChannelNoPrompt()) return false;
-  if (Date.now() - reservePromptLastAt < RESERVE_PROMPT_COOLDOWN_MS) return false;
-  return true;
+  return hasWindow()
+    && !reservePromptInFlight
+    && !getReserveChannelNoPrompt()
+    && Date.now() - reservePromptLastAt >= RESERVE_PROMPT_COOLDOWN_MS;
 }
 
 function reservePromptId() {
@@ -294,15 +288,7 @@ export function resolveReservePromptAction(idRaw: string, actionRaw: string) {
   reservePromptResolvers.delete(id);
 
   const normalized = String(actionRaw || '').trim().toLowerCase();
-  if (normalized === 'yes') {
-    resolver('yes');
-    return;
-  }
-  if (normalized === 'never') {
-    resolver('never');
-    return;
-  }
-  resolver('no');
+  resolver(normalized === 'yes' || normalized === 'never' ? normalized : 'no');
 }
 
 async function tryEnableReserveByPrompt() {
@@ -324,6 +310,17 @@ async function tryEnableReserveByPrompt() {
   return false;
 }
 
+async function tryConnectReserve() {
+  ws.setReserveActive(true);
+  try {
+    await ws.connectReserve();
+    return {ok: true};
+  } catch (err: any) {
+    ws.setReserveActive(false);
+    return {ok: false, error: String(err?.message || err || 'reserve_connect_error')};
+  }
+}
+
 async function connectToAnyWsUrl() {
   const reserveConfig = syncReserveTransportConfig();
 
@@ -332,14 +329,7 @@ async function connectToAnyWsUrl() {
   const wsUrls = getWsUrlCandidates();
   if (!wsUrls.length) {
     if (reserveConfig.available && getReserveChannelEnabled()) {
-      ws.setReserveActive(true);
-      try {
-        await ws.connectReserve();
-        return {ok: true};
-      } catch (err: any) {
-        ws.setReserveActive(false);
-        return {ok: false, error: String(err?.message || err || 'reserve_connect_error')};
-      }
+      return tryConnectReserve();
     }
     return {ok: false, error: 'ws_url_empty'};
   }
@@ -355,15 +345,10 @@ async function connectToAnyWsUrl() {
   }
 
   if (reserveConfig.available && getReserveChannelEnabled()) {
-    ws.setReserveActive(true);
-    try {
-      console.info('[ws-route] connect via reserve');
-      await ws.connectReserve();
-      return {ok: true};
-    } catch (err: any) {
-      ws.setReserveActive(false);
-      lastError = String(err?.message || err || 'reserve_connect_error');
-    }
+    console.info('[ws-route] connect via reserve');
+    const reserveResult = await tryConnectReserve();
+    if (reserveResult.ok) return reserveResult;
+    lastError = reserveResult.error;
   }
 
   return {ok: false, error: lastError || 'ws_connect_error'};
@@ -536,13 +521,6 @@ export function isReserveChannelAvailable() {
   return reserveConfig.available;
 }
 
-export function isReserveChannelNoPrompt() {
-  return getReserveChannelNoPrompt();
-}
-
-export function setReserveChannelNoPromptByUser(valueRaw: boolean) {
-  setReserveChannelNoPrompt(valueRaw);
-}
 
 export async function forceWsReconnect(reason = 'manual') {
   initReconnectRuntime();
@@ -763,16 +741,3 @@ export async function wsRegisterNativePushToken(tokenRaw: string, providerRaw = 
   return ws.request('push:native:register', {provider, token, platform});
 }
 
-export async function wsUnregisterNativePushToken(tokenRaw: string, providerRaw = 'rustore', platformRaw = 'android') {
-  const session = await restoreSession();
-  if (!(session as any)?.ok) return session;
-
-  const token = String(tokenRaw || '').trim();
-  const provider = String(providerRaw || 'rustore').trim().toLowerCase() || 'rustore';
-  const platform = String(platformRaw || 'android').trim().toLowerCase() || 'android';
-  if (!token) {
-    return {ok: false, error: 'invalid_token'} as const;
-  }
-
-  return ws.request('push:native:unregister', {provider, token, platform});
-}

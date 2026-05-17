@@ -13,7 +13,6 @@ import {
 } from './shared';
 import type {
   Message,
-  DirectDialog,
   NotificationItem,
 } from './shared';
 

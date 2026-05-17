@@ -65,11 +65,6 @@ export const getApiBase = () => {
   }
 };
 
-export const getWsUrl = () => {
-  const candidates = getWsUrlCandidates();
-  return candidates[0] || '';
-};
-
 export const getWsUrlCandidates = () => {
   const config = useRuntimeConfig();
   const wsPath = config.public.wsPath || '/ws';

@@ -120,10 +120,6 @@ export function buildMaxReserveTextFrames(recipientIdRaw: string, payloadRaw: st
   return result;
 }
 
-export function buildMaxReserveTexts(recipientIdRaw: string, payloadRaw: string, limitRaw = MAX_RESERVE_CHUNK_TEXT_LIMIT_DEFAULT) {
-  return buildMaxReserveTextFrames(recipientIdRaw, payloadRaw, limitRaw).map((item) => item.text);
-}
-
 export function parseMaxReserveData(dataRaw: string): ParsedMaxReserveData | null {
   const data = String(dataRaw || '').trim();
   if (!data) return null;
