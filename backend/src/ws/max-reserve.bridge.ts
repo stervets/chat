@@ -3,6 +3,11 @@ import {constants, createCipheriv, createDecipheriv, privateDecrypt, randomBytes
 import {WebSocket} from 'ws';
 import {db} from '../db.js';
 import {RESULT_COMMAND, type Packet} from './protocol.js';
+import {
+  buildMaxReserveTextFrames,
+  MaxChunkAssembler,
+  parseMaxReserveData,
+} from './max-reserve-chunk-codec.js';
 
 type MaxReserveUserAgentConfig = {
   deviceType: string;
@@ -21,6 +26,10 @@ type MaxReserveBridgeConfig = {
   wsUrl: string;
   token: string;
   chatId: number;
+  chunkTextLimit: number;
+  channelRotationEnabled: boolean;
+  channelRotationMinutes: number;
+  channelSwitchOverlapMs: number;
   deviceId: string;
   privateKeyPem: string;
   userAgent: MaxReserveUserAgentConfig;
@@ -65,6 +74,8 @@ type MaxReserveBridgeStatus = {
   connected: boolean;
   reconnectAttempt: number;
   hasReconnectTimer: boolean;
+  currentTransportChatId: number;
+  previousTransportChatIds: number[];
   lastConnectedAtMs: number;
   lastInboundAtMs: number;
   lastOutboundAtMs: number;
@@ -73,6 +84,8 @@ type MaxReserveBridgeStatus = {
 
 const BACKEND_RECIPIENT_ID = '0';
 const MAX_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_CHUNK_SEND_DELAY_MS = 120;
+const MAX_PREVIOUS_CHAT_IDS_LIMIT = 8;
 
 function toBase64Url(value: Buffer) {
   return value.toString('base64')
@@ -89,6 +102,12 @@ function fromBase64Url(valueRaw: string) {
     .replace(/_/g, '/')
     .padEnd(Math.ceil(normalized.length / 4) * 4, '=');
   return Buffer.from(padded, 'base64');
+}
+
+function waitMs(msRaw: number) {
+  const ms = Number(msRaw || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return Promise.resolve();
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function parsePacket(raw: string): Packet | null {
@@ -123,6 +142,81 @@ function parseMaxText(rawText: string) {
   if (!recipientId || !data) return null;
 
   return {recipientId, data};
+}
+
+function extractMaxMessageText(parsed: any) {
+  const payload = parsed?.payload;
+  if (!payload || typeof payload !== 'object') return '';
+  const variants = [
+    payload?.message?.text,
+    payload?.messages?.[0]?.text,
+    payload?.chat?.message?.text,
+    payload?.event?.message?.text,
+    payload?.events?.[0]?.message?.text,
+  ];
+  for (const variant of variants) {
+    const text = String(variant || '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function extractMaxChatId(parsed: any) {
+  const payload = parsed?.payload;
+  if (!payload || typeof payload !== 'object') return 0;
+  const candidates = [
+    payload?.chatId,
+    payload?.chat?.id,
+    payload?.message?.chatId,
+    payload?.messages?.[0]?.chatId,
+    payload?.messages?.[0]?.chat?.id,
+    payload?.event?.chat?.id,
+    payload?.events?.[0]?.chat?.id,
+  ];
+  for (const candidate of candidates) {
+    const chatId = Number(candidate || 0);
+    if (Number.isFinite(chatId) && chatId !== 0) return chatId;
+  }
+  return 0;
+}
+
+function isSyncChannelTitle(titleRaw: unknown) {
+  const title = String(titleRaw || '').trim().toLowerCase();
+  return title.startsWith('sync-');
+}
+
+function extractSyncChatIdFromNode(node: any, depth = 0): number {
+  if (!node || depth > 8) return 0;
+
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const chatId = extractSyncChatIdFromNode(item, depth + 1);
+      if (chatId) return chatId;
+    }
+    return 0;
+  }
+
+  if (typeof node !== 'object') return 0;
+
+  const title = String((node as any)?.title || '').trim();
+  if (title && isSyncChannelTitle(title)) {
+    const idCandidates = [
+      (node as any)?.id,
+      (node as any)?.chatId,
+      (node as any)?.chat_id,
+    ];
+    for (const candidate of idCandidates) {
+      const chatId = Number(candidate || 0);
+      if (Number.isFinite(chatId) && chatId !== 0) return chatId;
+    }
+  }
+
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    const chatId = extractSyncChatIdFromNode(value, depth + 1);
+    if (chatId) return chatId;
+  }
+
+  return 0;
 }
 
 function decryptAesCompact(key: Buffer, compactRaw: string) {
@@ -231,7 +325,14 @@ export class MaxReserveBridge {
   private reconnectAttempt = 0;
   private pending = new Map<string, PendingOpcodeRequest>();
   private seq = 2;
-  private cidNonce = 0;
+  private lastNegativeCid = 0;
+  private currentTransportChatId = 0;
+  private hasResolvedTransportChat = false;
+  private previousTransportChatIds: number[] = [];
+  private readonly previousTransportChatIdUntilMs = new Map<number, number>();
+  private channelRotationTimer: NodeJS.Timeout | null = null;
+  private channelRotationInFlight = false;
+  private lastForcedRotationAtMs = 0;
   private connected = false;
   private lastConnectedAtMs = 0;
   private lastInboundAtMs = 0;
@@ -242,17 +343,26 @@ export class MaxReserveBridge {
   private readonly clientIdByUserId = new Map<number, string>();
   private readonly maxSessionCacheByUserId = new Map<number, UserSessionKey>();
   private readonly seenUnhandledOpcodeKeys = new Set<string>();
+  private readonly chunkAssembler = new MaxChunkAssembler();
 
   constructor(config: MaxReserveBridgeConfig, handlers: MaxReserveBridgeHandlers) {
     this.config = config;
     this.handlers = handlers;
+    this.currentTransportChatId = Number(config.chatId || 0);
+    this.hasResolvedTransportChat = this.currentTransportChatId !== 0;
 
     if (this.config.enabled) {
+      this.scheduleChannelRotation();
       void this.connect();
     }
   }
 
   dispose() {
+    if (this.channelRotationTimer) {
+      clearInterval(this.channelRotationTimer);
+      this.channelRotationTimer = null;
+    }
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -287,12 +397,27 @@ export class MaxReserveBridge {
     this.clientIdByUserId.set(userId, clientId);
   }
 
+  private scheduleChannelRotation() {
+    if (!this.config.channelRotationEnabled) return;
+    if (this.channelRotationTimer) return;
+    const minutes = Math.max(1, Number(this.config.channelRotationMinutes || 60));
+    const intervalMs = minutes * 60 * 1000;
+    this.logger.log(`MAX channel rotation scheduled interval=${minutes}m`);
+    this.channelRotationTimer = setInterval(() => {
+      void this.rotateTransportChannel('scheduled');
+    }, intervalMs);
+    this.channelRotationTimer.unref?.();
+  }
+
   getStatus(): MaxReserveBridgeStatus {
+    this.cleanupExpiredPreviousTransportChatIds();
     return {
       enabled: this.config.enabled,
       connected: this.connected && this.socket?.readyState === WebSocket.OPEN,
       reconnectAttempt: this.reconnectAttempt,
       hasReconnectTimer: !!this.reconnectTimer,
+      currentTransportChatId: this.currentTransportChatId,
+      previousTransportChatIds: [...this.previousTransportChatIds],
       lastConnectedAtMs: this.lastConnectedAtMs,
       lastInboundAtMs: this.lastInboundAtMs,
       lastOutboundAtMs: this.lastOutboundAtMs,
@@ -301,14 +426,60 @@ export class MaxReserveBridge {
   }
 
   private nextCid() {
-    this.cidNonce += 1;
-    return -(Date.now() * 1000 + this.cidNonce);
+    const nowNegative = -Date.now();
+    if (nowNegative < this.lastNegativeCid) {
+      this.lastNegativeCid = nowNegative;
+      return this.lastNegativeCid;
+    }
+    this.lastNegativeCid -= 1;
+    return this.lastNegativeCid;
   }
 
   private nextSeq() {
     const seq = this.seq;
     this.seq += 1;
     return seq;
+  }
+
+  private cleanupExpiredPreviousTransportChatIds() {
+    if (!this.previousTransportChatIds.length) return;
+    const now = Date.now();
+    const next: number[] = [];
+    for (const chatId of this.previousTransportChatIds) {
+      const untilMs = Number(this.previousTransportChatIdUntilMs.get(chatId) || 0);
+      if (untilMs > now) {
+        next.push(chatId);
+        continue;
+      }
+      this.previousTransportChatIdUntilMs.delete(chatId);
+    }
+    this.previousTransportChatIds = next.slice(-MAX_PREVIOUS_CHAT_IDS_LIMIT);
+  }
+
+  private rememberPreviousTransportChatId(chatIdRaw: number) {
+    const chatId = Number(chatIdRaw || 0);
+    if (!Number.isFinite(chatId) || chatId === 0) return;
+    const untilMs = Date.now() + Math.max(30_000, Number(this.config.channelSwitchOverlapMs || 120_000));
+    this.previousTransportChatIdUntilMs.set(chatId, untilMs);
+    this.previousTransportChatIds = [
+      ...this.previousTransportChatIds.filter((item) => item !== chatId),
+      chatId,
+    ].slice(-MAX_PREVIOUS_CHAT_IDS_LIMIT);
+    this.cleanupExpiredPreviousTransportChatIds();
+  }
+
+  private isAcceptedInboundChatId(chatIdRaw: number) {
+    const chatId = Number(chatIdRaw || 0);
+    if (!Number.isFinite(chatId) || chatId === 0) return false;
+    if (chatId === this.currentTransportChatId) return true;
+    this.cleanupExpiredPreviousTransportChatIds();
+    return this.previousTransportChatIds.includes(chatId);
+  }
+
+  private getOutboundChatId() {
+    const currentChatId = Number(this.currentTransportChatId || 0);
+    if (Number.isFinite(currentChatId) && currentChatId !== 0) return currentChatId;
+    return 0;
   }
 
   private clearPending(reason: string) {
@@ -423,8 +594,158 @@ export class MaxReserveBridge {
       },
     }));
 
-    await wait;
+    const response: any = await wait;
+    const syncChatId = extractSyncChatIdFromNode(response?.payload || null);
+    if (syncChatId) {
+      this.currentTransportChatId = syncChatId;
+      this.hasResolvedTransportChat = true;
+      this.logger.log(`MAX sync chat selected chatId=${syncChatId}`);
+    }
     this.logger.log('MAX opcode 19 ok');
+  }
+
+  private async ensureTransportChatReady() {
+    const current = Number(this.currentTransportChatId || 0);
+    if (this.hasResolvedTransportChat && Number.isFinite(current) && current !== 0) return true;
+    try {
+      const chatId = await this.createTransportChannel();
+      this.currentTransportChatId = chatId;
+      this.hasResolvedTransportChat = true;
+      this.logger.log(`MAX sync chat bootstrap created chatId=${chatId}`);
+      return true;
+    } catch (error: any) {
+      this.logger.warn(`MAX sync chat bootstrap failed ${String(error?.message || error || 'unknown')}`);
+      return false;
+    }
+  }
+
+  private async createTransportChannel() {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      throw new Error('reserve_not_connected');
+    }
+
+    this.logger.log('MAX channel create start');
+    const seq = this.nextSeq();
+    const wait = this.expectOpcode(64, seq, 10000);
+    const title = `sync-${Date.now()}`;
+
+    this.socket.send(JSON.stringify({
+      ver: 11,
+      cmd: 0,
+      seq,
+      opcode: 64,
+      payload: {
+        message: {
+          text: '',
+          cid: this.nextCid(),
+          elements: [],
+          attaches: [
+            {
+              _type: 'CONTROL',
+              event: 'new',
+              chatType: 'CHANNEL',
+              access: 'PRIVATE',
+              title,
+              userIds: [],
+            },
+          ],
+        },
+        notify: false,
+      },
+    }));
+
+    const response: any = await wait;
+    const chatId = Number(response?.payload?.chat?.id || 0);
+    if (!Number.isFinite(chatId) || chatId === 0) {
+      throw new Error('reserve_channel_create_invalid_chat_id');
+    }
+    this.logger.log(`MAX channel create ok chatId=${chatId}`);
+    return chatId;
+  }
+
+  private async cleanupTransportChannel(chatIdRaw: number) {
+    const chatId = Number(chatIdRaw || 0);
+    if (!Number.isFinite(chatId) || chatId === 0) return;
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+
+    this.logger.log(`MAX channel cleanup old=${chatId}`);
+    try {
+      this.socket.send(JSON.stringify({
+        ver: 11,
+        cmd: 0,
+        seq: this.nextSeq(),
+        opcode: 54,
+        payload: {
+          chatId,
+          forAll: false,
+          lastEventTime: Date.now(),
+        },
+      }));
+
+      this.socket.send(JSON.stringify({
+        ver: 11,
+        cmd: 0,
+        seq: this.nextSeq(),
+        opcode: 48,
+        payload: {
+          chatIds: [chatId],
+        },
+      }));
+    } catch (error: any) {
+      this.logger.warn(`MAX channel cleanup error old=${chatId} ${String(error?.message || error || 'unknown')}`);
+    }
+  }
+
+  private triggerRotationOnSendLimit() {
+    const now = Date.now();
+    const minGapMs = 30_000;
+    if (this.channelRotationInFlight) return;
+    if (now - this.lastForcedRotationAtMs < minGapMs) return;
+    this.lastForcedRotationAtMs = now;
+    void this.rotateTransportChannel('send-limit');
+  }
+
+  private async sendChannelSwitchEventViaOldChat(oldChatId: number, newChatId: number) {
+    const userIds = Array.from(this.clientIdByUserId.keys())
+      .map((value) => Number(value || 0))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (!userIds.length) return;
+
+    const packets = userIds.map((userId) => this.sendPacket(
+      ['max:channel-switch', {chatId: newChatId}, 'backend', String(userId), undefined],
+      oldChatId,
+    ));
+
+    await Promise.allSettled(packets);
+    this.logger.log(`MAX channel switch event sent to users count=${userIds.length}`);
+  }
+
+  async rotateTransportChannel(reason = 'manual') {
+    if (!this.config.enabled) return;
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+    if (this.channelRotationInFlight) return;
+    this.channelRotationInFlight = true;
+
+    const oldChatId = this.getOutboundChatId();
+    try {
+      const newChatId = await this.createTransportChannel();
+      if (newChatId === oldChatId) return;
+
+      this.currentTransportChatId = newChatId;
+      this.hasResolvedTransportChat = true;
+      this.rememberPreviousTransportChatId(oldChatId);
+      this.logger.log(`MAX channel switch old=${oldChatId} new=${newChatId} reason=${reason}`);
+      await this.sendChannelSwitchEventViaOldChat(oldChatId, newChatId);
+
+      const cleanupDelayMs = Math.max(30_000, Number(this.config.channelSwitchOverlapMs || 120_000));
+      setTimeout(() => {
+        void this.cleanupTransportChannel(oldChatId);
+      }, cleanupDelayMs).unref?.();
+    } catch (error: any) {
+      this.logger.warn(`MAX channel rotation error reason=${reason} ${String(error?.message || error || 'unknown')}`);
+    } finally {
+      this.channelRotationInFlight = false;
+    }
   }
 
   async connect() {
@@ -459,9 +780,13 @@ export class MaxReserveBridge {
       socket.on('open', async () => {
         try {
           this.seq = 2;
-          this.cidNonce = 0;
+          this.lastNegativeCid = 0;
           await this.sendOpcode6();
           await this.sendOpcode19();
+          const chatReady = await this.ensureTransportChatReady();
+          if (!chatReady) {
+            throw new Error('reserve_sync_chat_not_ready');
+          }
           this.reconnectAttempt = 0;
           this.connected = true;
           this.lastConnectedAtMs = Date.now();
@@ -496,6 +821,15 @@ export class MaxReserveBridge {
 
         const opcode = Number(parsed?.opcode || 0);
         const cmd = Number(parsed?.cmd || 0);
+        if (cmd === 3 && opcode === 64) {
+          const payload = parsed?.payload && typeof parsed.payload === 'object' ? parsed.payload : {};
+          const message = String(payload?.message || payload?.error || 'reserve_opcode64_error').trim() || 'reserve_opcode64_error';
+          this.logger.warn(`MAX opcode 64 error: ${message}`);
+          if (message.includes('errors.send-message.too-many-total-messages-to-user')) {
+            this.triggerRotationOnSendLimit();
+          }
+          return;
+        }
         if (opcode !== 64 && opcode !== 128) {
           const key = `${cmd}:${opcode}`;
           if (!this.seenUnhandledOpcodeKeys.has(key)) {
@@ -505,10 +839,10 @@ export class MaxReserveBridge {
           return;
         }
 
-        const messageText = String(parsed?.payload?.message?.text || '').trim();
+        const messageText = extractMaxMessageText(parsed);
         if (!messageText) return;
-
-        void this.onMaxText(messageText);
+        const inboundChatId = extractMaxChatId(parsed);
+        void this.onMaxText(messageText, inboundChatId);
       });
 
       socket.on('error', (error) => {
@@ -749,9 +1083,14 @@ export class MaxReserveBridge {
     throw new Error('reserve_unknown_sender_key');
   }
 
-  private async onMaxText(text: string) {
+  private async onMaxText(text: string, chatIdRaw = 0) {
     const parsed = parseMaxText(text);
     if (!parsed) return;
+
+    const chatId = Number(chatIdRaw || 0);
+    if (!this.isAcceptedInboundChatId(chatId)) {
+      return;
+    }
 
     this.logger.log('MAX received text');
 
@@ -760,9 +1099,23 @@ export class MaxReserveBridge {
       return;
     }
 
+    const parsedData = parseMaxReserveData(parsed.data);
+    if (!parsedData) return;
+
+    let payload = '';
+    if (parsedData.kind === 'chunk') {
+      this.logger.log(`MAX chunk received chunkId=${parsedData.chunkId} index=${parsedData.index} total=${parsedData.total} recipient=${recipientId}`);
+      const assembled = this.chunkAssembler.push(recipientId, parsedData);
+      if (!assembled) return;
+      payload = assembled;
+      this.logger.log(`MAX chunk assembled chunkId=${parsedData.chunkId} total=${parsedData.total} recipient=${recipientId}`);
+    } else {
+      payload = parsedData.payload;
+    }
+
     try {
-      if (parsed.data.includes(':') || !parsed.data.includes('.')) {
-        const handshake = this.decryptHandshake(parsed.data);
+      if (payload.includes(':') || !payload.includes('.')) {
+        const handshake = this.decryptHandshake(payload);
         this.loginSessionsByClientId.set(handshake.clientId, {
           clientId: handshake.clientId,
           tmpSessionKey: handshake.tmpSessionKey,
@@ -779,7 +1132,7 @@ export class MaxReserveBridge {
         return;
       }
 
-      const decoded = await this.decodeInboundAes(parsed.data);
+      const decoded = await this.decodeInboundAes(payload);
       const clientId = this.clientIdByUserId.get(decoded.userId) || `_${decoded.userId}`;
 
       this.logger.log(`MAX decoded recipientId=${recipientId} sender=${decoded.userId}`);
@@ -795,7 +1148,7 @@ export class MaxReserveBridge {
     }
   }
 
-  async sendPacket(packetRaw: Packet) {
+  async sendPacket(packetRaw: Packet, forceChatIdRaw?: number) {
     try {
       if (!this.config.enabled) return;
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
@@ -846,28 +1199,48 @@ export class MaxReserveBridge {
         return;
       }
 
+      const transportChatId = (() => {
+        const forced = Number(forceChatIdRaw || 0);
+        if (Number.isFinite(forced) && forced !== 0) return forced;
+        return this.getOutboundChatId();
+      })();
+      if (!Number.isFinite(transportChatId) || transportChatId === 0) {
+        this.logger.warn('MAX send skipped: invalid transport chatId');
+        return;
+      }
+
       const encryptedPacket = encryptAesCompact(encryptKey, JSON.stringify(packet));
-      const textPayload = `${recipientId} ${encryptedPacket}`;
-
-      const seq = this.nextSeq();
-
-      this.socket.send(JSON.stringify({
-        ver: 11,
-        cmd: 0,
-        seq,
-        opcode: 64,
-        payload: {
-          chatId: this.config.chatId,
-          message: {
-            text: textPayload,
-            cid: this.nextCid(),
-            elements: [],
-            attaches: [],
+      const frames = buildMaxReserveTextFrames(recipientId, encryptedPacket, this.config.chunkTextLimit);
+      for (let index = 0; index < frames.length; index += 1) {
+        const frame = frames[index];
+        const seq = this.nextSeq();
+        this.socket.send(JSON.stringify({
+          ver: 11,
+          cmd: 0,
+          seq,
+          opcode: 64,
+          payload: {
+            chatId: transportChatId,
+            message: {
+              text: frame.text,
+              cid: this.nextCid(),
+              elements: [],
+              attaches: [],
+            },
+            notify: true,
           },
-          notify: true,
-        },
-      }));
-      this.lastOutboundAtMs = Date.now();
+        }));
+        this.lastOutboundAtMs = Date.now();
+
+        if (frame.kind === 'chunk') {
+          this.logger.log(`MAX chunk send chunkId=${frame.chunkId} index=${frame.index} total=${frame.total} recipient=${recipientId}`);
+        }
+
+        const hasMoreFrames = index < frames.length - 1;
+        if (hasMoreFrames && frames.length > 1) {
+          await waitMs(MAX_CHUNK_SEND_DELAY_MS);
+        }
+      }
 
       this.logger.log(`MAX send text recipient=${recipientId}`);
       this.logger.log('MAX response sent');

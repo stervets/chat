@@ -50,6 +50,7 @@
     "wsUrl": "wss://ws-api.oneme.ru/websocket",
     "token": "CHANGE_ME",
     "chatId": 0,
+    "chunkTextLimit": 3000,
     "deviceId": "CHANGE_ME",
     "privateKeyPath": "./secrets/max-reserve-private.pem",
     "publicKeyId": "reserve-key-v1",

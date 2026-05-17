@@ -55,6 +55,10 @@ type ConfigFile = {
     wsUrl?: string;
     token?: string;
     chatId?: number;
+    chunkTextLimit?: number;
+    channelRotationEnabled?: boolean;
+    channelRotationMinutes?: number;
+    channelSwitchOverlapMs?: number;
     deviceId?: string;
     privateKey?: string;
     privateKeyPath?: string;
@@ -79,6 +83,12 @@ function normalizePositiveNumber(valueRaw: unknown, fallback: number, min: numbe
   const value = Number(valueRaw || 0);
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function normalizeChunkLimit(valueRaw: unknown, fallback: number) {
+  const value = Number(valueRaw || 0);
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.max(512, Math.min(12000, Math.floor(value)));
 }
 
 function normalizeIceServers(raw: unknown): IceServerConfig[] {
@@ -190,6 +200,10 @@ export const config = {
     wsUrl: String(fileConfig.maxReserve?.wsUrl || 'wss://ws-api.oneme.ru/websocket').trim(),
     token: String(fileConfig.maxReserve?.token || '').trim(),
     chatId: Math.max(0, Number(fileConfig.maxReserve?.chatId || 0)),
+    chunkTextLimit: normalizeChunkLimit(fileConfig.maxReserve?.chunkTextLimit, 3000),
+    channelRotationEnabled: fileConfig.maxReserve?.channelRotationEnabled !== false,
+    channelRotationMinutes: normalizePositiveNumber(fileConfig.maxReserve?.channelRotationMinutes, 60, 1, 24 * 60),
+    channelSwitchOverlapMs: normalizePositiveNumber(fileConfig.maxReserve?.channelSwitchOverlapMs, 120_000, 30_000, 10 * 60_000),
     deviceId: String(fileConfig.maxReserve?.deviceId || '').trim(),
     privateKey: String(fileConfig.maxReserve?.privateKey || '').trim() || maxReservePrivateKeyFromPath,
     publicKeyId: String(fileConfig.maxReserve?.publicKeyId || '').trim(),
