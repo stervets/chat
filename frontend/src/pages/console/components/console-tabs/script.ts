@@ -1,8 +1,9 @@
-import {MessagesSquare, Ticket, UserRound} from 'lucide-vue-next';
+import {MessagesSquare, ShieldCheck, Ticket, UserRound} from 'lucide-vue-next';
 
 export default {
   components: {
     MessagesSquare,
+    ShieldCheck,
     Ticket,
     UserRound,
   },
@@ -10,6 +11,7 @@ export default {
   props: {
     activeTab: {type: String, default: 'user'},
     consoleUserTabLabel: {type: String, default: 'Профиль'},
+    showVpnTab: {type: Boolean, default: false},
   },
 
   emits: [

@@ -12,6 +12,15 @@
           <Ticket :size="16" />
           <span>Инвайты</span>
         </button>
+        <button
+          v-if="showVpnTab"
+          class="console-tab"
+          :class="{active: activeTab === 'vpn'}"
+          @click="setActiveTab('vpn')"
+        >
+          <ShieldCheck :size="16" />
+          <span>VPN</span>
+        </button>
       </div>
 </template>
 

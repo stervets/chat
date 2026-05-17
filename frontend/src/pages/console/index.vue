@@ -5,6 +5,7 @@
       <ConsoleTabs
         :active-tab="activeTab"
         :console-user-tab-label="consoleUserTabLabel"
+        :show-vpn-tab="showProjectSupportSection"
         @set-active-tab="setActiveTab"
       />
 
@@ -124,6 +125,30 @@
           @update:room-post-only-by-admin="roomPostOnlyByAdmin = $event"
           @update:room-title="roomTitle = $event"
           @update:room-visibility="roomVisibility = $event"
+        />
+
+        <VpnTab
+          v-else-if="activeTab === 'vpn' && showProjectSupportSection"
+          :amnezia-file-android="amneziaFileAndroid"
+          :amnezia-file-linux="amneziaFileLinux"
+          :amnezia-file-mac-os="amneziaFileMacOs"
+          :amnezia-file-windows="amneziaFileWindows"
+          :copied-vpn-link="copiedVpnLink"
+          :copy-vpn-error="copyVpnError"
+          :download-href-android="downloadHrefAndroid"
+          :download-href-linux="downloadHrefLinux"
+          :download-href-mac-os="downloadHrefMacOs"
+          :download-href-windows="downloadHrefWindows"
+          :mt-proxy-deep-link="mtProxyDeepLink"
+          :mt-proxy-web-link="mtProxyWebLink"
+          :vpn-provision-error="vpnProvisionError"
+          :vpn-provision-link="vpnProvisionLink"
+          :vpn-provision-qr-data-url="vpnProvisionQrDataUrl"
+          :vpn-provision-qr-error="vpnProvisionQrError"
+          :vpn-provision-state="vpnProvisionState"
+          @copy-vpn-link="copyVpnLink"
+          @download-click="onDownloadClick"
+          @request-vpn-provision="requestVpnProvision"
         />
 
         <InvitesTab

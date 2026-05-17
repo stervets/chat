@@ -10,6 +10,7 @@ import DonationCard from './components/donation-card/index.vue';
 import InvitesTab from './components/invites-tab/index.vue';
 import ProfileTab from './components/profile-tab/index.vue';
 import RoomsTab from './components/rooms-tab/index.vue';
+import VpnTab from './components/vpn-tab/index.vue';
 import {resolveMediaUrl} from '@/composables/media-url';
 import {emit} from '@/composables/event-bus';
 import {loadLastChatPath} from '@/composables/last-chat';
@@ -46,8 +47,9 @@ const AVATAR_CROP_VISIBLE_SIZE = 232;
 const AVATAR_CROP_EXPORT_SIZE = 1024;
 const AVATAR_CROP_SCALE_MAX_MULTIPLIER = 6;
 const TEMP_HIDDEN_ROOM_TITLE = 'новости marx';
+const PROJECT_SUPPORT_HIDDEN_NICKNAME = 'user54';
 
-type ConsoleTab = 'user' | 'rooms' | 'invites';
+type ConsoleTab = 'user' | 'rooms' | 'invites' | 'vpn';
 type VpnProvisionState = 'idle' | 'loading' | 'success' | 'error';
 type AvatarCropTarget = 'profile' | 'room' | 'roomCreate';
 
@@ -72,6 +74,7 @@ export default {
     InvitesTab,
     ProfileTab,
     RoomsTab,
+    VpnTab,
   },
 
   async setup() {
@@ -295,6 +298,10 @@ export default {
       return this.roomMembers.some((member: any) => Number(member?.id || 0) === meId);
     },
 
+    isProjectSupportHiddenForCurrentUser(this: any) {
+      return String(this.me?.nickname || '').trim().toLowerCase() === PROJECT_SUPPORT_HIDDEN_NICKNAME;
+    },
+
     sortedRoomMembers(this: any) {
       const list = Array.isArray(this.roomMembers) ? [...this.roomMembers] : [];
       list.sort((left: any, right: any) => {
@@ -395,10 +402,11 @@ export default {
 
     normalizeTab(this: any, raw: unknown): ConsoleTab {
       const value = String(raw || '').trim().toLowerCase();
-      return value === 'rooms' || value === 'invites' ? value : 'user';
+      return value === 'rooms' || value === 'invites' || value === 'vpn' ? value : 'user';
     },
 
     isTemporarilyHiddenRoomTitle(this: any, titleRaw: unknown) {
+      if (!this.isProjectSupportHiddenForCurrentUser) return false;
       return String(titleRaw || '').trim().toLowerCase() === TEMP_HIDDEN_ROOM_TITLE;
     },
 
@@ -964,6 +972,10 @@ export default {
       }
       this.browserNotificationsEnabled = loadBooleanSetting(BROWSER_NOTIFICATIONS_ENABLED_STORAGE_KEY, true);
       this.syncBrowserNotificationPermission();
+    },
+
+    applyProjectSupportVisibility(this: any) {
+      this.showProjectSupportSection = !this.isProjectSupportHiddenForCurrentUser;
     },
 
     onSoundEnabledChange(this: any) {
@@ -1577,6 +1589,10 @@ export default {
     async syncFromRoute(this: any) {
       if (!this.isAuthed || !this.me?.id) return;
       this.activeTab = this.normalizeTab(Array.isArray(this.route?.query?.tab) ? this.route.query.tab[0] : this.route?.query?.tab);
+      if (this.activeTab === 'vpn' && this.isProjectSupportHiddenForCurrentUser) {
+        this.activeTab = 'user';
+        await this.updateRoute({tab: 'user'});
+      }
       await this.fetchProfile();
       if (!this.isOwnProfile) {
         this.roomCreateFormOpen = false;
@@ -1602,6 +1618,7 @@ export default {
 
     const ok = await this.ensureAuth();
     if (!ok) return;
+    this.applyProjectSupportVisibility();
     this.loadLocalSettings();
     await this.fetchVpnInfo();
     this.loading = false;
