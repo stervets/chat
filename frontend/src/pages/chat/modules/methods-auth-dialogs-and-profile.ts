@@ -24,6 +24,7 @@ import type {
 import {resolveMediaUrl} from '@/composables/media-url';
 
 const TEMP_HIDDEN_ROOM_TITLE = 'новости marx';
+const TEMP_HIDDEN_ROOM_NICKNAME = 'user54';
 const RESERVE_NAV_FETCH_COOLDOWN_MS = 15000;
 
 const reserveNavCache = {
@@ -42,7 +43,9 @@ const reserveNavCache = {
 
 const sharedRoomHistoryCache: Record<number, {messages: Message[]; hasMore: boolean}> = {};
 
-function isTemporarilyHiddenRoomTitle(titleRaw: unknown) {
+function isTemporarilyHiddenRoomTitle(titleRaw: unknown, nicknameRaw?: unknown) {
+  const nickname = String(nicknameRaw || '').trim().toLowerCase();
+  if (nickname !== TEMP_HIDDEN_ROOM_NICKNAME) return false;
   return String(titleRaw || '').trim().toLowerCase() === TEMP_HIDDEN_ROOM_TITLE;
 }
 
@@ -670,7 +673,7 @@ export const chatMethodsAuthDialogsAndProfile = {
 
         const joinedRooms = wsData<any[]>(joinedResult, [])
           .map((row: any) => normalizeRoomDialog(row))
-          .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !isTemporarilyHiddenRoomTitle(dialog.title));
+          .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !isTemporarilyHiddenRoomTitle(dialog.title, this.me?.nickname));
 
         const joinedIds = new Set(joinedRooms.map((dialog: Dialog) => Number(dialog.id || 0)));
         const publicRooms = wsData<any[]>(publicResult, [])
@@ -678,7 +681,7 @@ export const chatMethodsAuthDialogsAndProfile = {
           .filter((dialog: Dialog) => (
             Number(dialog.id || 0) > 0
             && !joinedIds.has(Number(dialog.id || 0))
-            && !isTemporarilyHiddenRoomTitle(dialog.title)
+            && !isTemporarilyHiddenRoomTitle(dialog.title, this.me?.nickname)
           ));
         this.setRoomsNavigationState(joinedRooms, publicRooms);
       })();
@@ -700,7 +703,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       }
       if (!force && reserveNavCache.generalDialog && now - Number(reserveNavCache.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         const generalDialog = reserveNavCache.generalDialog as Dialog;
-        if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title)) {
+        if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title, this.me?.nickname)) {
           this.generalDialog = cloneDialog(generalDialog);
           this.generalDialogFetchedAt = reserveNavCache.generalDialogFetchedAt;
           return this.generalDialog;
@@ -708,7 +711,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       }
       if (!force && this.generalDialog && now - Number(this.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         const generalDialog = this.generalDialog as Dialog;
-        if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title)) {
+        if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title, this.me?.nickname)) {
           return generalDialog;
         }
       }
@@ -717,7 +720,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         const result = await ws.request('room:group:get-default');
         if ((result as any)?.error || (result as any)?.ok === false) return null;
         const data = wsObject(result);
-        if (isTemporarilyHiddenRoomTitle(data.title) && !allowHidden) return null;
+        if (isTemporarilyHiddenRoomTitle(data.title, this.me?.nickname) && !allowHidden) return null;
         const dialog = {
           id: data.roomId,
           kind: 'group',

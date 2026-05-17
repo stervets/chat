@@ -664,7 +664,38 @@ async function runReconnect() {
 
     const prompted = await tryEnableReserveByPrompt();
     if (prompted) {
-      void runReconnect();
+      const retried = await connectToAnyWsUrl({preferReserve: true});
+      if ((retried as any)?.ok) {
+        const token = getSessionToken();
+        if (!token) {
+          reconnectInFlight = false;
+          resetReconnectAttempts();
+          setWsState('connected');
+          return;
+        }
+
+        const session = await authSessionByToken(token);
+        if ((session as any)?.ok) {
+          const roomId = await joinActiveRoomAfterReconnect();
+          reconnectInFlight = false;
+          resetReconnectAttempts();
+          setWsState('connected');
+          emit('ws:reconnected', {roomId});
+          return;
+        }
+
+        reconnectInFlight = false;
+        setWsState('disconnected');
+        if ((session as any)?.error === 'unauthorized') {
+          emit('ws:session-expired');
+          return;
+        }
+        scheduleReconnect();
+        return;
+      }
+      reconnectInFlight = false;
+      setWsState('disconnected');
+      scheduleReconnect();
       return;
     }
 
@@ -844,7 +875,7 @@ export async function ensureWsConnected() {
 
     const prompted = await tryEnableReserveByPrompt();
     if (prompted) {
-      const retried = await connectToAnyWsUrl();
+      const retried = await connectToAnyWsUrl({preferReserve: true});
       if ((retried as any)?.ok) {
         setWsState('connected');
         return retried;

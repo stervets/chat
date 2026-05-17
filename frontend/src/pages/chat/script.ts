@@ -556,6 +556,24 @@ export default {
     }
 
     await this.syncDialogFromRoute({replaceInvalid: true});
+    const activeRoomId = Number(this.activeDialog?.id || 0);
+    const activeKind = String(this.activeDialog?.kind || '');
+    const activeInNavigation = activeKind === 'direct'
+      ? !!this.findDirectDialogByRoomId(activeRoomId)
+      : (
+        Number(this.generalDialog?.id || 0) === activeRoomId
+        || (this.joinedRooms || []).some((dialog: any) => Number(dialog?.id || 0) === activeRoomId)
+        || (this.publicRooms || []).some((dialog: any) => Number(dialog?.id || 0) === activeRoomId)
+      );
+    if (!this.activeDialog || !activeInNavigation) {
+      await Promise.all([
+        this.fetchDirectDialogs({force: true}),
+        this.fetchPinnedDirectUserIds({force: true}),
+        this.fetchRoomsNavigation({force: true}),
+        this.fetchGeneralDialog({allowHidden: true, force: true}).catch(() => null),
+      ]);
+      await this.selectDefaultGroupDialog({routeMode: 'replace', closeMenu: false});
+    }
     this.routeSyncReady = true;
     await this.handleCallRouteIntent();
     this.scheduleVirtualSync();

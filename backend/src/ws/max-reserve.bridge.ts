@@ -663,33 +663,24 @@ export class MaxReserveBridge {
 
     try {
       const seq = this.nextSeq();
-      const wait = this.expectOpcode(64, seq, 7000);
+      const wait = this.expectOpcode(52, seq, 7000);
+      const lastEventTime = Date.now();
       this.socket.send(JSON.stringify({
         ver: 11,
         cmd: 0,
         seq,
-        opcode: 64,
+        opcode: 52,
         payload: {
-          message: {
-            text: '',
-            cid: this.nextCid(),
-            elements: [],
-            attaches: [
-              {
-                _type: 'CONTROL',
-                event: 'delete',
-                chatId,
-              },
-            ],
-          },
-          notify: false,
+          chatId,
+          lastEventTime,
+          forAll: true,
         },
       }));
       await wait;
-      this.logger.log(`MAX channel delete ok chatId=${chatId}`);
+      this.logger.log(`MAX channel delete ok chatId=${chatId} opcode=52`);
       return true;
     } catch (error: any) {
-      this.logger.warn(`MAX channel delete error chatId=${chatId} ${String(error?.message || error || 'unknown')}`);
+      this.logger.warn(`MAX channel delete error chatId=${chatId} opcode=52 ${String(error?.message || error || 'unknown')}`);
       return false;
     }
   }
