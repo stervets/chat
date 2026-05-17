@@ -656,6 +656,44 @@ export class MaxReserveBridge {
     return chatId;
   }
 
+  private async deleteTransportChannel(chatIdRaw: number) {
+    const chatId = Number(chatIdRaw || 0);
+    if (!Number.isFinite(chatId) || chatId === 0) return false;
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
+
+    try {
+      const seq = this.nextSeq();
+      const wait = this.expectOpcode(64, seq, 7000);
+      this.socket.send(JSON.stringify({
+        ver: 11,
+        cmd: 0,
+        seq,
+        opcode: 64,
+        payload: {
+          message: {
+            text: '',
+            cid: this.nextCid(),
+            elements: [],
+            attaches: [
+              {
+                _type: 'CONTROL',
+                event: 'delete',
+                chatId,
+              },
+            ],
+          },
+          notify: false,
+        },
+      }));
+      await wait;
+      this.logger.log(`MAX channel delete ok chatId=${chatId}`);
+      return true;
+    } catch (error: any) {
+      this.logger.warn(`MAX channel delete error chatId=${chatId} ${String(error?.message || error || 'unknown')}`);
+      return false;
+    }
+  }
+
   private async cleanupTransportChannel(chatIdRaw: number) {
     const chatId = Number(chatIdRaw || 0);
     if (!Number.isFinite(chatId) || chatId === 0) return;
@@ -663,6 +701,13 @@ export class MaxReserveBridge {
 
     this.logger.log(`MAX channel cleanup old=${chatId}`);
     try {
+      const deleted = await this.deleteTransportChannel(chatId);
+      if (deleted) {
+        this.previousTransportChatIdUntilMs.delete(chatId);
+        this.previousTransportChatIds = this.previousTransportChatIds.filter((item) => item !== chatId);
+        return;
+      }
+
       this.socket.send(JSON.stringify({
         ver: 11,
         cmd: 0,

@@ -461,13 +461,23 @@ export default {
 
     onReserveRequestState(this: any, payloadRaw: any) {
       const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
-      this.reserveRequestOverlayVisible = !!payload.active;
+      const active = !!payload.active;
+      if (!active) {
+        this.reserveRequestOverlayDismissed = false;
+      }
+      this.reserveRequestOverlayVisible = active && !this.reserveRequestOverlayDismissed;
       this.reserveRequestOverlayPendingCount = Number(payload.pendingCount || 0);
       this.reserveRequestOverlayCom = String(payload.com || '').trim();
       console.info(`[reserve-overlay] ${this.reserveRequestOverlayVisible ? 'active' : 'idle'} pending=${this.reserveRequestOverlayPendingCount} com=${this.reserveRequestOverlayCom || '-'}`);
       if (!this.reserveRequestOverlayVisible) {
         this.reserveRequestOverlayRetryPending = false;
       }
+    },
+
+    closeReserveRequestOverlay(this: any) {
+      this.reserveRequestOverlayDismissed = true;
+      this.reserveRequestOverlayVisible = false;
+      this.reserveRequestOverlayRetryPending = false;
     },
 
     async retryReserveOverlayRequest(this: any) {

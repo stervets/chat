@@ -89,6 +89,7 @@ export function createChatPageState() {
 
     leftMenuOpen: ref(false),
     reserveRequestOverlayVisible: ref(false),
+    reserveRequestOverlayDismissed: ref(false),
     reserveRequestOverlayPendingCount: ref(0),
     reserveRequestOverlayCom: ref(''),
     reserveRequestOverlayRetryPending: ref(false),

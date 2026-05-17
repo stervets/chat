@@ -198,13 +198,22 @@
               <span v-if="reserveRequestOverlayCom">{{ reserveRequestOverlayCom }}</span>
               <span v-if="reserveRequestOverlayPendingCount > 1"> · {{ reserveRequestOverlayPendingCount }} запросов</span>
             </div>
-            <button
-              class="reserve-request-retry"
-              :disabled="reserveRequestOverlayRetryPending"
-              @click="retryReserveOverlayRequest"
-            >
-              {{ reserveRequestOverlayRetryPending ? 'Повторяем...' : 'Повторить запрос' }}
-            </button>
+            <div class="reserve-request-actions">
+              <button
+                class="reserve-request-retry"
+                :disabled="reserveRequestOverlayRetryPending"
+                @click="retryReserveOverlayRequest"
+              >
+                {{ reserveRequestOverlayRetryPending ? 'Повторяем...' : 'Повторить запрос' }}
+              </button>
+              <button
+                class="reserve-request-close"
+                type="button"
+                @click="closeReserveRequestOverlay"
+              >
+                Закрыть
+              </button>
+            </div>
           </div>
         </div>
         <div v-if="timeTooltipVisible" class="time-tooltip" :style="getTimeTooltipStyle()">

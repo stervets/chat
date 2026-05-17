@@ -8,15 +8,22 @@ import {isNativeAndroidApp} from '@/composables/native-runtime';
 const SESSION_TOKEN_KEY = 'marx_session_token';
 const RESERVE_CHANNEL_ENABLED_KEY = 'marx_reserve_channel_enabled';
 const RESERVE_CHANNEL_NO_PROMPT_KEY = 'marx_reserve_channel_no_prompt';
+const PRIMARY_CHANNEL_NO_PROMPT_KEY = 'marx_primary_channel_no_prompt';
 const RECONNECT_BASE_DELAY_MS = 500;
 const RECONNECT_MAX_DELAY_MS = 12000;
 const RESERVE_PROMPT_COOLDOWN_MS = 120000;
-const PRIMARY_RECOVERY_CHECK_MS = 10000;
+const PRIMARY_PROMPT_COOLDOWN_MS = 120000;
+const PRIMARY_RECOVERY_CHECK_MS = 3000;
 const PRIMARY_RECOVERY_PROBE_TIMEOUT_MS = 3500;
 
 type ReservePromptAction = 'yes' | 'no' | 'never';
+type PrimaryPromptAction = 'yes' | 'no' | 'never';
 
 type ReservePromptPayload = {
+  id: string;
+};
+
+type PrimaryPromptPayload = {
   id: string;
 };
 
@@ -104,6 +111,9 @@ let suppressNextDisconnectReconnect = false;
 let reservePromptInFlight = false;
 let reservePromptLastAt = 0;
 const reservePromptResolvers = new Map<string, (action: ReservePromptAction) => void>();
+let primaryPromptInFlight = false;
+let primaryPromptLastAt = 0;
+const primaryPromptResolvers = new Map<string, (action: PrimaryPromptAction) => void>();
 
 function setWsState(nextState: WsConnectionState) {
   wsConnectionState.value = nextState;
@@ -213,6 +223,16 @@ async function tryRecoverPrimaryChannel() {
       return false;
     }
 
+    const decision = await showPrimaryPrompt();
+    if (decision === 'never') {
+      setPrimaryChannelNoPrompt(true);
+      return false;
+    }
+    if (decision !== 'yes') {
+      return false;
+    }
+    setPrimaryChannelNoPrompt(false);
+
     console.info('[ws-route] primary recovered, switching from reserve');
     suppressNextDisconnectReconnect = true;
     clearReconnectTimer();
@@ -263,6 +283,28 @@ function schedulePrimaryRecoveryProbe() {
       schedulePrimaryRecoveryProbe();
     }
   }, PRIMARY_RECOVERY_CHECK_MS);
+}
+
+function onReserveRequestStateForPrimaryProbe(payloadRaw: any) {
+  if (!hasWindow()) return;
+  const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
+  const active = !!payload.active;
+  const pendingCount = Number(payload.pendingCount || 0);
+
+  if (!active) {
+    clearPrimaryRecoveryTimer();
+    return;
+  }
+  if (pendingCount > 0) return;
+  if (!shouldRecoverPrimaryChannel()) return;
+  clearPrimaryRecoveryTimer();
+  primaryRecoveryTimer = window.setTimeout(async () => {
+    primaryRecoveryTimer = null;
+    const recovered = await tryRecoverPrimaryChannel();
+    if (!recovered) {
+      schedulePrimaryRecoveryProbe();
+    }
+  }, 350);
 }
 
 async function joinActiveRoomAfterReconnect() {
@@ -377,9 +419,19 @@ function getReserveChannelNoPrompt() {
   return localStorage.getItem(RESERVE_CHANNEL_NO_PROMPT_KEY) === '1';
 }
 
+function getPrimaryChannelNoPrompt() {
+  if (!hasWindow()) return false;
+  return localStorage.getItem(PRIMARY_CHANNEL_NO_PROMPT_KEY) === '1';
+}
+
 function setReserveChannelNoPrompt(valueRaw: boolean) {
   if (!hasWindow()) return;
   localStorage.setItem(RESERVE_CHANNEL_NO_PROMPT_KEY, valueRaw ? '1' : '0');
+}
+
+function setPrimaryChannelNoPrompt(valueRaw: boolean) {
+  if (!hasWindow()) return;
+  localStorage.setItem(PRIMARY_CHANNEL_NO_PROMPT_KEY, valueRaw ? '1' : '0');
 }
 
 function canPromptReserveChannel() {
@@ -391,6 +443,17 @@ function canPromptReserveChannel() {
 
 function reservePromptId() {
   return `reserve-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function canPromptPrimaryChannel() {
+  return hasWindow()
+    && !primaryPromptInFlight
+    && !getPrimaryChannelNoPrompt()
+    && Date.now() - primaryPromptLastAt >= PRIMARY_PROMPT_COOLDOWN_MS;
+}
+
+function primaryPromptId() {
+  return `primary-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 async function showReservePrompt() {
@@ -414,12 +477,44 @@ async function showReservePrompt() {
   return result;
 }
 
+async function showPrimaryPrompt() {
+  if (!canPromptPrimaryChannel()) return 'no' as PrimaryPromptAction;
+  primaryPromptInFlight = true;
+  primaryPromptLastAt = Date.now();
+
+  const id = primaryPromptId();
+  const result = await new Promise<PrimaryPromptAction>((resolve) => {
+    primaryPromptResolvers.set(id, resolve);
+    emit('primary:prompt:show', {id} satisfies PrimaryPromptPayload);
+    window.setTimeout(() => {
+      const resolver = primaryPromptResolvers.get(id);
+      if (!resolver) return;
+      primaryPromptResolvers.delete(id);
+      resolver('no');
+    }, 60000);
+  });
+
+  primaryPromptInFlight = false;
+  return result;
+}
+
 export function resolveReservePromptAction(idRaw: string, actionRaw: string) {
   const id = String(idRaw || '').trim();
   if (!id) return;
   const resolver = reservePromptResolvers.get(id);
   if (!resolver) return;
   reservePromptResolvers.delete(id);
+
+  const normalized = String(actionRaw || '').trim().toLowerCase();
+  resolver(normalized === 'yes' || normalized === 'never' ? normalized : 'no');
+}
+
+export function resolvePrimaryPromptAction(idRaw: string, actionRaw: string) {
+  const id = String(idRaw || '').trim();
+  if (!id) return;
+  const resolver = primaryPromptResolvers.get(id);
+  if (!resolver) return;
+  primaryPromptResolvers.delete(id);
 
   const normalized = String(actionRaw || '').trim().toLowerCase();
   resolver(normalized === 'yes' || normalized === 'never' ? normalized : 'no');
@@ -455,8 +550,18 @@ async function tryConnectReserve() {
   }
 }
 
-async function connectToAnyWsUrl() {
+async function connectToAnyWsUrl(options: {preferReserve?: boolean} = {}) {
+  const preferReserve = !!options.preferReserve;
   const reserveConfig = syncReserveTransportConfig();
+
+  if (preferReserve && reserveConfig.available && getReserveChannelEnabled()) {
+    console.info('[ws-route] connect via reserve (preferred)');
+    const reserveResult = await tryConnectReserve();
+    if (reserveResult.ok) {
+      schedulePrimaryRecoveryProbe();
+      return reserveResult;
+    }
+  }
 
   ws.setReserveActive(false);
 
@@ -623,6 +728,7 @@ function initReconnectRuntime() {
   reconnectHooksReady = true;
   on('ws:connected', onWsConnected);
   on('ws:disconnected', onWsDisconnected);
+  on('reserve:request-state', onReserveRequestStateForPrimaryProbe);
 
   if (ws.isConnected()) {
     setWsState('connected');
@@ -658,8 +764,12 @@ export function setReserveChannelEnabledByUser(enabledRaw: boolean) {
     setReserveChannelEnabled(false);
     return false;
   }
-  setReserveChannelEnabled(enabledRaw);
-  return !!enabledRaw;
+  const enabled = !!enabledRaw;
+  setReserveChannelEnabled(enabled);
+  void forceWsReconnect(enabled ? 'reserve_toggle_on' : 'reserve_toggle_off', {
+    preferReserve: enabled,
+  });
+  return enabled;
 }
 
 export function isReserveChannelAvailable() {
@@ -668,11 +778,12 @@ export function isReserveChannelAvailable() {
 }
 
 
-export async function forceWsReconnect(reason = 'manual') {
+export async function forceWsReconnect(reason = 'manual', options: {preferReserve?: boolean} = {}) {
   initReconnectRuntime();
   clearReconnectTimer();
   reconnectInFlight = false;
   resetReconnectAttempts();
+  suppressNextDisconnectReconnect = true;
   ws.disconnect();
 
   if (!getSessionToken()) {
@@ -681,7 +792,33 @@ export async function forceWsReconnect(reason = 'manual') {
   }
 
   setWsState('connecting');
-  void runReconnect();
+  const connected = await connectToAnyWsUrl({preferReserve: !!options.preferReserve});
+  if (!(connected as any)?.ok) {
+    setWsState('disconnected');
+    scheduleReconnect();
+    return {ok: false, error: (connected as any)?.error || 'ws_connect_error', reason};
+  }
+
+  const token = getSessionToken();
+  if (!token) {
+    setWsState('connected');
+    return {ok: true, reason};
+  }
+
+  const session = await authSessionByToken(token);
+  if (!(session as any)?.ok) {
+    setWsState('disconnected');
+    if ((session as any)?.error === 'unauthorized') {
+      emit('ws:session-expired');
+      return {ok: false, error: 'unauthorized', reason};
+    }
+    scheduleReconnect();
+    return {ok: false, error: (session as any)?.error || 'auth_session_error', reason};
+  }
+
+  const roomId = await joinActiveRoomAfterReconnect();
+  setWsState('connected');
+  emit('ws:reconnected', {roomId});
   return {ok: true, reason};
 }
 

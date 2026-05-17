@@ -169,37 +169,37 @@ button:not(:disabled):active,
   gap: 8px;
 }
 
-.reserve-prompt .btn,
-.reserve-prompt .ghost-btn {
+.reserve-prompt-btn {
   appearance: none;
+  flex: 0 0 auto;
   border-radius: 8px;
   border: 1px solid transparent;
-  padding: 5px 10px;
+  padding: 4px 10px;
   line-height: 1.2;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  min-height: 30px;
+  min-height: 28px;
   cursor: pointer;
 }
 
-.reserve-prompt .btn {
+.reserve-prompt-btn-primary {
   background: var(--accent-strong);
   border-color: var(--accent-strong);
   color: #fff;
 }
 
-.reserve-prompt .btn:hover {
+.reserve-prompt-btn-primary:hover {
   background: var(--accent);
   border-color: var(--accent);
 }
 
-.reserve-prompt .ghost-btn {
+.reserve-prompt-btn-ghost {
   background: rgba(255, 255, 255, 0.04);
   border-color: var(--border);
   color: var(--text);
 }
 
-.reserve-prompt .ghost-btn:hover {
+.reserve-prompt-btn-ghost:hover {
   background: rgba(255, 255, 255, 0.09);
   border-color: #5a6272;
 }
