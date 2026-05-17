@@ -60,7 +60,6 @@ const MaxNativeTransport = registerPlugin<MaxNativeTransportPlugin>('MaxNativeTr
 const DEFAULT_CHAT_ID = 0;
 const RESERVED_BACKEND_RECIPIENT = '0';
 const MAX_SESSION_STORAGE_KEY = 'marx_max_reserve_session_v1';
-const MAX_CHUNK_SEND_DELAY_MS = 120;
 
 function toBase64(bytes: Uint8Array) {
   let raw = '';
@@ -219,12 +218,6 @@ async function aesDecryptFromCompact(rawKey: Uint8Array, compactRaw: string) {
 
 function hasWindow() {
   return typeof window !== 'undefined';
-}
-
-function waitMs(msRaw: number) {
-  const ms = Number(msRaw || 0);
-  if (!Number.isFinite(ms) || ms <= 0) return Promise.resolve();
-  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
 export class MaxReserveTransport {
@@ -551,10 +544,6 @@ export class MaxReserveTransport {
       await this.sendMaxText(frame.text);
       if (frame.kind === 'chunk') {
         console.info(`[max-reserve] chunk send chunkId=${frame.chunkId} index=${frame.index} total=${frame.total} recipient=${recipientId}`);
-      }
-      const hasMoreFrames = index < frames.length - 1;
-      if (hasMoreFrames && frames.length > 1) {
-        await waitMs(MAX_CHUNK_SEND_DELAY_MS);
       }
     }
   }

@@ -11,6 +11,8 @@ const RESERVE_CHANNEL_NO_PROMPT_KEY = 'marx_reserve_channel_no_prompt';
 const RECONNECT_BASE_DELAY_MS = 500;
 const RECONNECT_MAX_DELAY_MS = 12000;
 const RESERVE_PROMPT_COOLDOWN_MS = 120000;
+const PRIMARY_RECOVERY_CHECK_MS = 10000;
+const PRIMARY_RECOVERY_PROBE_TIMEOUT_MS = 3500;
 
 type ReservePromptAction = 'yes' | 'no' | 'never';
 
@@ -95,6 +97,9 @@ let restoreSessionCacheToken = '';
 let restoreSessionCacheResult: any = null;
 let restoreSessionCacheAt = 0;
 const RESTORE_SESSION_CACHE_MS = 10000;
+let primaryRecoveryTimer: number | null = null;
+let primaryRecoveryInFlight = false;
+let suppressNextDisconnectReconnect = false;
 
 let reservePromptInFlight = false;
 let reservePromptLastAt = 0;
@@ -115,8 +120,16 @@ function clearReconnectTimer() {
   reconnectTimer = null;
 }
 
+function clearPrimaryRecoveryTimer() {
+  if (!hasWindow()) return;
+  if (primaryRecoveryTimer === null) return;
+  window.clearTimeout(primaryRecoveryTimer);
+  primaryRecoveryTimer = null;
+}
+
 function stopReconnectLoop() {
   clearReconnectTimer();
+  clearPrimaryRecoveryTimer();
   reconnectInFlight = false;
   resetReconnectAttempts();
 }
@@ -129,6 +142,123 @@ function parseReconnectRoomId() {
   const roomId = Number(reconnectRoomResolver?.() || 0);
   if (!Number.isFinite(roomId) || roomId <= 0) return null;
   return roomId;
+}
+
+function getPrimaryWsUrls() {
+  return getWsUrlCandidates();
+}
+
+function shouldRecoverPrimaryChannel() {
+  return hasWindow()
+    && !!getSessionToken()
+    && ws.isReserveActive()
+    && getPrimaryWsUrls().length > 0;
+}
+
+async function probePrimaryWs(urlRaw: string) {
+  if (!hasWindow()) return false;
+  const url = String(urlRaw || '').trim();
+  if (!url) return false;
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    let socket: WebSocket | null = null;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (socket) {
+        try {
+          socket.close();
+        } catch {
+          // ignore
+        }
+      }
+      resolve(ok);
+    };
+
+    const timerId = window.setTimeout(() => finish(false), PRIMARY_RECOVERY_PROBE_TIMEOUT_MS);
+    try {
+      socket = new WebSocket(url);
+      socket.onopen = () => {
+        window.clearTimeout(timerId);
+        finish(true);
+      };
+      socket.onerror = () => {
+        window.clearTimeout(timerId);
+        finish(false);
+      };
+      socket.onclose = () => {
+        window.clearTimeout(timerId);
+        finish(false);
+      };
+    } catch {
+      window.clearTimeout(timerId);
+      finish(false);
+    }
+  });
+}
+
+async function tryRecoverPrimaryChannel() {
+  if (primaryRecoveryInFlight) return false;
+  if (!shouldRecoverPrimaryChannel()) return false;
+  const [primaryWsUrl] = getPrimaryWsUrls();
+  if (!primaryWsUrl) return false;
+
+  primaryRecoveryInFlight = true;
+  try {
+    const primaryAvailable = await probePrimaryWs(primaryWsUrl);
+    if (!primaryAvailable) return false;
+
+    console.info('[ws-route] primary recovered, switching from reserve');
+    suppressNextDisconnectReconnect = true;
+    clearReconnectTimer();
+    ws.disconnect();
+    ws.setReserveActive(false);
+    setWsState('connecting');
+
+    const connected = await connectToAnyWsUrl();
+    if (!(connected as any)?.ok || ws.isReserveActive()) {
+      return false;
+    }
+
+    const token = getSessionToken();
+    if (!token) {
+      setWsState('connected');
+      return true;
+    }
+
+    const session = await authSessionByToken(token);
+    if (!(session as any)?.ok) {
+      if ((session as any)?.error === 'unauthorized') {
+        emit('ws:session-expired');
+        return false;
+      }
+      return false;
+    }
+
+    const roomId = await joinActiveRoomAfterReconnect();
+    setWsState('connected');
+    emit('ws:reconnected', {roomId});
+    return true;
+  } finally {
+    primaryRecoveryInFlight = false;
+  }
+}
+
+function schedulePrimaryRecoveryProbe() {
+  if (!hasWindow()) return;
+  if (!shouldRecoverPrimaryChannel()) {
+    clearPrimaryRecoveryTimer();
+    return;
+  }
+  if (primaryRecoveryTimer !== null || primaryRecoveryInFlight) return;
+  primaryRecoveryTimer = window.setTimeout(async () => {
+    primaryRecoveryTimer = null;
+    const recovered = await tryRecoverPrimaryChannel();
+    if (!recovered) {
+      schedulePrimaryRecoveryProbe();
+    }
+  }, PRIMARY_RECOVERY_CHECK_MS);
 }
 
 async function joinActiveRoomAfterReconnect() {
@@ -347,7 +477,10 @@ async function connectToAnyWsUrl() {
   if (reserveConfig.available && getReserveChannelEnabled()) {
     console.info('[ws-route] connect via reserve');
     const reserveResult = await tryConnectReserve();
-    if (reserveResult.ok) return reserveResult;
+    if (reserveResult.ok) {
+      schedulePrimaryRecoveryProbe();
+      return reserveResult;
+    }
     lastError = reserveResult.error;
   }
 
@@ -463,9 +596,18 @@ function onWsConnected() {
   clearReconnectTimer();
   resetReconnectAttempts();
   setWsState('connected');
+  if (ws.isReserveActive()) {
+    schedulePrimaryRecoveryProbe();
+    return;
+  }
+  clearPrimaryRecoveryTimer();
 }
 
 function onWsDisconnected() {
+  if (suppressNextDisconnectReconnect) {
+    suppressNextDisconnectReconnect = false;
+    return;
+  }
   setWsState('disconnected');
   scheduleReconnect();
 }
@@ -740,4 +882,3 @@ export async function wsRegisterNativePushToken(tokenRaw: string, providerRaw = 
 
   return ws.request('push:native:register', {provider, token, platform});
 }
-

@@ -84,7 +84,6 @@ type MaxReserveBridgeStatus = {
 
 const BACKEND_RECIPIENT_ID = '0';
 const MAX_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_CHUNK_SEND_DELAY_MS = 120;
 const MAX_PREVIOUS_CHAT_IDS_LIMIT = 8;
 
 function toBase64Url(value: Buffer) {
@@ -102,12 +101,6 @@ function fromBase64Url(valueRaw: string) {
     .replace(/_/g, '/')
     .padEnd(Math.ceil(normalized.length / 4) * 4, '=');
   return Buffer.from(padded, 'base64');
-}
-
-function waitMs(msRaw: number) {
-  const ms = Number(msRaw || 0);
-  if (!Number.isFinite(ms) || ms <= 0) return Promise.resolve();
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function parsePacket(raw: string): Packet | null {
@@ -1236,10 +1229,6 @@ export class MaxReserveBridge {
           this.logger.log(`MAX chunk send chunkId=${frame.chunkId} index=${frame.index} total=${frame.total} recipient=${recipientId}`);
         }
 
-        const hasMoreFrames = index < frames.length - 1;
-        if (hasMoreFrames && frames.length > 1) {
-          await waitMs(MAX_CHUNK_SEND_DELAY_MS);
-        }
       }
 
       this.logger.log(`MAX send text recipient=${recipientId}`);

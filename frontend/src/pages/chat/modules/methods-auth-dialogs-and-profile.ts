@@ -29,20 +29,15 @@ const RESERVE_NAV_FETCH_COOLDOWN_MS = 15000;
 const reserveNavCache = {
   users: [] as User[],
   usersFetchedAt: 0,
-  usersPromise: null as Promise<void> | null,
   directDialogs: [] as any[],
   directDialogsFetchedAt: 0,
-  directDialogsPromise: null as Promise<void> | null,
   pinnedDirectUserIds: [] as number[],
   pinnedDirectsFetchedAt: 0,
-  pinnedDirectsPromise: null as Promise<void> | null,
   joinedRooms: [] as Dialog[],
   publicRooms: [] as Dialog[],
   roomsNavigationFetchedAt: 0,
-  roomsNavigationPromise: null as Promise<void> | null,
   generalDialog: null as Dialog | null,
   generalDialogFetchedAt: 0,
-  generalDialogPromise: null as Promise<Dialog | null> | null,
 };
 
 const sharedRoomHistoryCache: Record<number, {messages: Message[]; hasMore: boolean}> = {};
@@ -495,20 +490,18 @@ export const chatMethodsAuthDialogsAndProfile = {
       return false;
     },
 
-    async fetchUsers(this: any) {
+    async fetchUsers(this: any, optionsRaw?: {force?: boolean}) {
+      const force = optionsRaw?.force === true;
       const now = Date.now();
       if (this.usersFetchPromise) {
         return this.usersFetchPromise;
       }
-      if (reserveNavCache.usersPromise) {
-        return reserveNavCache.usersPromise;
-      }
-      if (reserveNavCache.users.length && now - Number(reserveNavCache.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (!force && reserveNavCache.users.length && now - Number(reserveNavCache.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         this.users = reserveNavCache.users.map((user: User) => ({...user}));
         this.usersFetchedAt = reserveNavCache.usersFetchedAt;
         return;
       }
-      if (this.users.length && now - Number(this.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (!force && this.users.length && now - Number(this.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         return;
       }
 
@@ -523,12 +516,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         reserveNavCache.usersFetchedAt = this.usersFetchedAt;
       })();
 
-      reserveNavCache.usersPromise = task.finally(() => {
-        if (reserveNavCache.usersPromise === task) {
-          reserveNavCache.usersPromise = null;
-        }
-      });
-
       this.usersFetchPromise = task.finally(() => {
         if (this.usersFetchPromise === task) {
           this.usersFetchPromise = null;
@@ -537,20 +524,18 @@ export const chatMethodsAuthDialogsAndProfile = {
       return this.usersFetchPromise;
     },
 
-    async fetchDirectDialogs(this: any) {
+    async fetchDirectDialogs(this: any, optionsRaw?: {force?: boolean}) {
+      const force = optionsRaw?.force === true;
       const now = Date.now();
       if (this.directDialogsFetchPromise) {
         return this.directDialogsFetchPromise;
       }
-      if (reserveNavCache.directDialogsPromise) {
-        return reserveNavCache.directDialogsPromise;
-      }
-      if (reserveNavCache.directDialogs.length && now - Number(reserveNavCache.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (!force && reserveNavCache.directDialogs.length && now - Number(reserveNavCache.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         this.directDialogs = reserveNavCache.directDialogs.map((dialog: DirectDialog) => cloneDirectDialog(dialog));
         this.directDialogsFetchedAt = reserveNavCache.directDialogsFetchedAt;
         return;
       }
-      if (this.directDialogs.length && now - Number(this.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (!force && this.directDialogs.length && now - Number(this.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         return;
       }
 
@@ -564,12 +549,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.setDirectDialogsState(directDialogs);
       })();
 
-      reserveNavCache.directDialogsPromise = task.finally(() => {
-        if (reserveNavCache.directDialogsPromise === task) {
-          reserveNavCache.directDialogsPromise = null;
-        }
-      });
-
       this.directDialogsFetchPromise = task.finally(() => {
         if (this.directDialogsFetchPromise === task) {
           this.directDialogsFetchPromise = null;
@@ -578,15 +557,15 @@ export const chatMethodsAuthDialogsAndProfile = {
       return this.directDialogsFetchPromise;
     },
 
-    async fetchPinnedDirectUserIds(this: any) {
+    async fetchPinnedDirectUserIds(this: any, optionsRaw?: {force?: boolean}) {
+      const force = optionsRaw?.force === true;
       const now = Date.now();
       if (this.pinnedDirectsFetchPromise) {
         return this.pinnedDirectsFetchPromise;
       }
-      if (reserveNavCache.pinnedDirectsPromise) {
-        return reserveNavCache.pinnedDirectsPromise;
-      }
       if (
+        !force
+        &&
         reserveNavCache.pinnedDirectUserIds.length
         && now - Number(reserveNavCache.pinnedDirectsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
       ) {
@@ -594,7 +573,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.pinnedDirectsFetchedAt = reserveNavCache.pinnedDirectsFetchedAt;
         return;
       }
-      if (this.pinnedDirectUserIds.length && now - Number(this.pinnedDirectsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (!force && this.pinnedDirectUserIds.length && now - Number(this.pinnedDirectsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         return;
       }
 
@@ -606,12 +585,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.setPinnedDirectUserIdsState(pinnedDirectUserIds);
       })();
 
-      reserveNavCache.pinnedDirectsPromise = task.finally(() => {
-        if (reserveNavCache.pinnedDirectsPromise === task) {
-          reserveNavCache.pinnedDirectsPromise = null;
-        }
-      });
-
       this.pinnedDirectsFetchPromise = task.finally(() => {
         if (this.pinnedDirectsFetchPromise === task) {
           this.pinnedDirectsFetchPromise = null;
@@ -620,15 +593,15 @@ export const chatMethodsAuthDialogsAndProfile = {
       return this.pinnedDirectsFetchPromise;
     },
 
-    async fetchRoomsNavigation(this: any) {
+    async fetchRoomsNavigation(this: any, optionsRaw?: {force?: boolean}) {
+      const force = optionsRaw?.force === true;
       const now = Date.now();
       if (this.roomsNavigationFetchPromise) {
         return this.roomsNavigationFetchPromise;
       }
-      if (reserveNavCache.roomsNavigationPromise) {
-        return reserveNavCache.roomsNavigationPromise;
-      }
       if (
+        !force
+        &&
         (reserveNavCache.joinedRooms.length || reserveNavCache.publicRooms.length)
         && now - Number(reserveNavCache.roomsNavigationFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
       ) {
@@ -638,6 +611,8 @@ export const chatMethodsAuthDialogsAndProfile = {
         return;
       }
       if (
+        !force
+        &&
         (this.joinedRooms.length || this.publicRooms.length)
         && now - Number(this.roomsNavigationFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
       ) {
@@ -680,12 +655,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.setRoomsNavigationState(joinedRooms, publicRooms);
       })();
 
-      reserveNavCache.roomsNavigationPromise = task.finally(() => {
-        if (reserveNavCache.roomsNavigationPromise === task) {
-          reserveNavCache.roomsNavigationPromise = null;
-        }
-      });
-
       this.roomsNavigationFetchPromise = task.finally(() => {
         if (this.roomsNavigationFetchPromise === task) {
           this.roomsNavigationFetchPromise = null;
@@ -694,16 +663,14 @@ export const chatMethodsAuthDialogsAndProfile = {
       return this.roomsNavigationFetchPromise;
     },
 
-    async fetchGeneralDialog(this: any, optionsRaw?: {allowHidden?: boolean}) {
+    async fetchGeneralDialog(this: any, optionsRaw?: {allowHidden?: boolean; force?: boolean}) {
       const allowHidden = optionsRaw?.allowHidden === true;
+      const force = optionsRaw?.force === true;
       const now = Date.now();
       if (this.generalDialogFetchPromise) {
         return this.generalDialogFetchPromise;
       }
-      if (reserveNavCache.generalDialogPromise) {
-        return reserveNavCache.generalDialogPromise;
-      }
-      if (reserveNavCache.generalDialog && now - Number(reserveNavCache.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (!force && reserveNavCache.generalDialog && now - Number(reserveNavCache.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         const generalDialog = reserveNavCache.generalDialog as Dialog;
         if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title)) {
           this.generalDialog = cloneDialog(generalDialog);
@@ -711,7 +678,7 @@ export const chatMethodsAuthDialogsAndProfile = {
           return this.generalDialog;
         }
       }
-      if (this.generalDialog && now - Number(this.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+      if (!force && this.generalDialog && now - Number(this.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
         const generalDialog = this.generalDialog as Dialog;
         if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title)) {
           return generalDialog;
@@ -740,12 +707,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         this.setGeneralDialogState(dialog);
         return this.generalDialog;
       })();
-
-      reserveNavCache.generalDialogPromise = task.finally(() => {
-        if (reserveNavCache.generalDialogPromise === task) {
-          reserveNavCache.generalDialogPromise = null;
-        }
-      });
 
       this.generalDialogFetchPromise = task.finally(() => {
         if (this.generalDialogFetchPromise === task) {
@@ -867,9 +828,7 @@ export const chatMethodsAuthDialogsAndProfile = {
         }
 
         const nextChunk = rows.map((message: any) => this.normalizeMessage(message));
-        this.historyHasMore = ws.isReserveActive()
-          ? false
-          : nextChunk.length >= historyBatchSize;
+        this.historyHasMore = nextChunk.length >= historyBatchSize;
         if (isInitialLoad) {
           this.seedNotificationsFromMessages(nextChunk);
         }

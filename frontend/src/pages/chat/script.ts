@@ -183,6 +183,11 @@ export default {
       return '';
     },
 
+    showReserveReload(this: any) {
+      void this.wsConnectionState;
+      return ws.isReserveActive();
+    },
+
     unreadDirectDialogIds(this: any) {
       const ids: Record<number, true> = {};
       this.notifications.forEach((notification: NotificationItem) => {
@@ -475,6 +480,24 @@ export default {
       }
     },
 
+    async reloadReserveData(this: any) {
+      if (!ws.isReserveActive()) return;
+      const activeDialogId = Number(this.activeDialog?.id || 0);
+      await Promise.all([
+        this.fetchUsers({force: true}),
+        this.fetchDirectDialogs({force: true}),
+        this.fetchPinnedDirectUserIds({force: true}),
+        this.fetchRoomsNavigation({force: true}),
+        this.fetchGeneralDialog({force: true}).catch(() => null),
+      ]);
+
+      if (!activeDialogId) return;
+      const nextDialog = this.buildDialogFromRoomRoute(activeDialogId) || this.activeDialog;
+      if (!nextDialog) return;
+      this.clearRoomHistoryCache(activeDialogId);
+      await this.selectDialog(nextDialog, {routeMode: 'none'});
+    },
+
     ...chatMethodsRuntimeAndRouting,
     ...chatMethodsComposerAndVirtual,
     ...chatMethodsNotifications,
@@ -512,6 +535,11 @@ export default {
     await this.fetchDirectDialogs();
     await this.fetchPinnedDirectUserIds();
     await this.fetchRoomsNavigation();
+    if (!this.directDialogs.length && !this.joinedRooms.length && !this.publicRooms.length) {
+      await this.fetchDirectDialogs({force: true});
+      await this.fetchPinnedDirectUserIds({force: true});
+      await this.fetchRoomsNavigation({force: true});
+    }
     if (!this.generalDialog) {
       this.generalDialog = this.resolveDefaultGroupDialog();
     }

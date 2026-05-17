@@ -52,7 +52,7 @@
     "chatId": 0,
     "chunkTextLimit": 3000,
     "channelRotationEnabled": true,
-    "channelRotationMinutes": 60,
+    "channelRotationMinutes": 30,
     "channelSwitchOverlapMs": 120000,
     "deviceId": "CHANGE_ME",
     "privateKeyPath": "./secrets/max-reserve-private.pem",

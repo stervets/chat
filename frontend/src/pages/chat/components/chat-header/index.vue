@@ -55,6 +55,15 @@
 
 
     <button
+        v-if="showReserveReload"
+        class="reserve-reload-btn"
+        type="button"
+        @click="$emit('reload-reserve-data')"
+    >
+      reload
+    </button>
+
+    <button
         v-if="canStartCall"
         class="icon-btn call-btn"
         :disabled="callButtonDisabled"

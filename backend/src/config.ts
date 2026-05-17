@@ -201,7 +201,7 @@ export const config = {
     chatId: Math.max(0, Number(fileConfig.maxReserve?.chatId || 0)),
     chunkTextLimit: normalizeChunkLimit(fileConfig.maxReserve?.chunkTextLimit, 3000),
     channelRotationEnabled: fileConfig.maxReserve?.channelRotationEnabled !== false,
-    channelRotationMinutes: normalizePositiveNumber(fileConfig.maxReserve?.channelRotationMinutes, 60, 1, 24 * 60),
+    channelRotationMinutes: normalizePositiveNumber(fileConfig.maxReserve?.channelRotationMinutes, 30, 1, 24 * 60),
     channelSwitchOverlapMs: normalizePositiveNumber(fileConfig.maxReserve?.channelSwitchOverlapMs, 120_000, 30_000, 10 * 60_000),
     deviceId: String(fileConfig.maxReserve?.deviceId || '').trim(),
     privateKey: String(fileConfig.maxReserve?.privateKey || '').trim() || maxReservePrivateKeyFromPath,
