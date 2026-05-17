@@ -152,6 +152,7 @@ function shouldRecoverPrimaryChannel() {
   return hasWindow()
     && !!getSessionToken()
     && ws.isReserveActive()
+    && ws.getReservePendingCount() === 0
     && getPrimaryWsUrls().length > 0;
 }
 
@@ -208,6 +209,9 @@ async function tryRecoverPrimaryChannel() {
   try {
     const primaryAvailable = await probePrimaryWs(primaryWsUrl);
     if (!primaryAvailable) return false;
+    if (!ws.isReserveActive() || ws.getReservePendingCount() > 0) {
+      return false;
+    }
 
     console.info('[ws-route] primary recovered, switching from reserve');
     suppressNextDisconnectReconnect = true;

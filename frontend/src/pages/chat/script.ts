@@ -524,6 +524,7 @@ export default {
 
     this.initLayout();
     this.loadPinnedPanelLayoutState();
+    this.hydrateNavigationStateFromCache();
     this.windowFocused = typeof document !== 'undefined' ? document.hasFocus() : true;
     this.documentVisible = typeof document !== 'undefined' ? !document.hidden : true;
     this.badgeNowTs = Date.now();

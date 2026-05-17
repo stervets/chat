@@ -215,6 +215,10 @@ export class WsClient {
     return this.reserveActive;
   }
 
+  getReservePendingCount() {
+    return this.reservePendingCount;
+  }
+
   isConnected() {
     if (this.reserveActive) {
       return this.reserveTransport.isConnected();

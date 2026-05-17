@@ -72,6 +72,34 @@ function cloneDialogs<T extends Dialog>(dialogs: T[]): T[] {
 }
 
 export const chatMethodsAuthDialogsAndProfile = {
+    hydrateNavigationStateFromCache(this: any) {
+      if (!this.users.length && reserveNavCache.users.length) {
+        this.users = reserveNavCache.users.map((user: User) => ({...user}));
+        this.usersFetchedAt = Number(reserveNavCache.usersFetchedAt || 0);
+      }
+
+      if (!this.directDialogs.length && reserveNavCache.directDialogs.length) {
+        this.directDialogs = reserveNavCache.directDialogs.map((dialog: DirectDialog) => cloneDirectDialog(dialog));
+        this.directDialogsFetchedAt = Number(reserveNavCache.directDialogsFetchedAt || 0);
+      }
+
+      if (!this.pinnedDirectUserIds.length && reserveNavCache.pinnedDirectUserIds.length) {
+        this.pinnedDirectUserIds = [...reserveNavCache.pinnedDirectUserIds];
+        this.pinnedDirectsFetchedAt = Number(reserveNavCache.pinnedDirectsFetchedAt || 0);
+      }
+
+      if (!this.joinedRooms.length && !this.publicRooms.length && (reserveNavCache.joinedRooms.length || reserveNavCache.publicRooms.length)) {
+        this.joinedRooms = cloneDialogs(reserveNavCache.joinedRooms);
+        this.publicRooms = cloneDialogs(reserveNavCache.publicRooms);
+        this.roomsNavigationFetchedAt = Number(reserveNavCache.roomsNavigationFetchedAt || 0);
+      }
+
+      if (!this.generalDialog && reserveNavCache.generalDialog) {
+        this.generalDialog = cloneDialog(reserveNavCache.generalDialog);
+        this.generalDialogFetchedAt = Number(reserveNavCache.generalDialogFetchedAt || 0);
+      }
+    },
+
     applyMe(this: any, me: User) {
       const normalizedMe = this.normalizeUser(me) || me;
       this.me = normalizedMe;

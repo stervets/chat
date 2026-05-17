@@ -703,7 +703,18 @@ export const chatMethodsSendUploadAndRuntime = {
         this.error = '';
       }
 
-      const activeDialogId = Number(this.activeDialog?.id || 0);
+      let activeDialogId = Number(this.activeDialog?.id || 0);
+      if ((!Number.isFinite(activeDialogId) || activeDialogId <= 0) && this.routeSyncReady) {
+        const hasNavigation = !!this.directDialogs.length || !!this.joinedRooms.length || !!this.publicRooms.length;
+        if (!hasNavigation) {
+          await this.fetchDirectDialogs({force: true});
+          await this.fetchPinnedDirectUserIds({force: true});
+          await this.fetchRoomsNavigation({force: true});
+        }
+        await this.syncDialogFromRoute({replaceInvalid: true});
+        activeDialogId = Number(this.activeDialog?.id || 0);
+      }
+
       if (Number.isFinite(activeDialogId) && activeDialogId > 0) {
         await this.joinDialog(activeDialogId);
         await this.catchUpRoomMessages(activeDialogId);
