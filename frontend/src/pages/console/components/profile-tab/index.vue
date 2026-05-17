@@ -83,9 +83,12 @@
               <input v-model="localVibrationEnabled" type="checkbox" @change="onVibrationEnabledChange" />
               <span>Вибрация</span>
             </label>
-            <label v-if="reserveChannelAvailable" class="toggle-row">
-              <input v-model="localReserveChannelEnabled" type="checkbox" @change="onReserveChannelEnabledChange" />
+            <label v-if="reserveChannelAvailable" class="toggle-row toggle-row-switch">
               <span>Резервный канал</span>
+              <span class="toggle-switch-box">
+                <input v-model="localReserveChannelEnabled" type="checkbox" @change="onReserveChannelEnabledChange" />
+                <span class="toggle-switch-slider"/>
+              </span>
             </label>
             <template v-if="showBrowserPushControls">
               <label class="toggle-row">

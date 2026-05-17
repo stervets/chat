@@ -172,10 +172,12 @@ export default {
     },
 
     wsOffline(this: any) {
+      if (ws.isReserveActive()) return false;
       return this.wsConnectionState !== 'connected';
     },
 
     wsStatusText(this: any) {
+      if (ws.isReserveActive()) return '';
       if (this.wsConnectionState === 'connecting') return 'connecting...';
       if (this.wsConnectionState === 'disconnected') return 'offline';
       return '';
