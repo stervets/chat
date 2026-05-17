@@ -24,6 +24,7 @@ type ReserveRuntimeConfig = {
   token: string;
   deviceId: string;
   chatId: number;
+  chunkTextLimit: number;
   backendPublicKeyPem: string;
   userAgent: {
     deviceType: string;
@@ -69,6 +70,18 @@ let reconnectAttempt = 0;
 let reconnectTimer: number | null = null;
 let reconnectInFlight = false;
 let reconnectRoomResolver: (() => number | null) | null = null;
+let ensureWsConnectedPromise: Promise<WsResult> | null = null;
+let authSessionPromise: Promise<WsResult> | null = null;
+let authSessionToken = '';
+let authSessionCacheToken = '';
+let authSessionCacheResult: WsResult | null = null;
+let authSessionCacheAt = 0;
+const AUTH_SESSION_CACHE_MS = 10000;
+let restoreSessionPromise: Promise<any> | null = null;
+let restoreSessionCacheToken = '';
+let restoreSessionCacheResult: any = null;
+let restoreSessionCacheAt = 0;
+const RESTORE_SESSION_CACHE_MS = 10000;
 
 let reservePromptInFlight = false;
 let reservePromptLastAt = 0;
@@ -139,6 +152,7 @@ function getReserveRuntimeConfig(): ReserveRuntimeConfig {
         token: '',
         deviceId: '',
         chatId: 0,
+        chunkTextLimit: 3000,
         backendPublicKeyPem: '',
         userAgent: defaults,
       };
@@ -153,6 +167,7 @@ function getReserveRuntimeConfig(): ReserveRuntimeConfig {
     const deviceId = String(source.deviceId || '').trim();
     const backendPublicKeyPem = String(source.backendPublicKeyPem || '').trim();
     const chatId = Number(source.chatId || 0);
+    const chunkTextLimit = Number(source.chunkTextLimit || 3000);
 
     const availableByConfig = source.enabled === true || source.available === true;
     const requiredFilled = !!wsUrl && !!token && !!deviceId && !!backendPublicKeyPem;
@@ -163,6 +178,7 @@ function getReserveRuntimeConfig(): ReserveRuntimeConfig {
       token,
       deviceId,
       chatId: Number.isFinite(chatId) ? chatId : 0,
+      chunkTextLimit: Number.isFinite(chunkTextLimit) && chunkTextLimit > 0 ? chunkTextLimit : 3000,
       backendPublicKeyPem,
       userAgent: {
         deviceType: String(rawUserAgent.deviceType || defaults.deviceType).trim() || defaults.deviceType,
@@ -183,6 +199,7 @@ function getReserveRuntimeConfig(): ReserveRuntimeConfig {
       token: '',
       deviceId: '',
       chatId: 0,
+      chunkTextLimit: 3000,
       backendPublicKeyPem: '',
       userAgent: defaults,
     };
@@ -202,6 +219,7 @@ function syncReserveTransportConfig() {
     token: reserveConfig.token,
     deviceId: reserveConfig.deviceId,
     chatId: reserveConfig.chatId,
+    chunkTextLimit: reserveConfig.chunkTextLimit,
     backendPublicKeyPem: reserveConfig.backendPublicKeyPem,
     userAgent: reserveConfig.userAgent,
   });
@@ -352,8 +370,36 @@ async function connectToAnyWsUrl() {
 }
 
 async function authSessionByToken(token: string) {
-  const result = await ws.request('auth:session', {token});
-  if ((result as any)?.ok) return result;
+  const tokenValue = String(token || '').trim();
+  if (
+    !authSessionPromise
+    && authSessionCacheToken === tokenValue
+    && authSessionCacheResult
+    && Date.now() - authSessionCacheAt < AUTH_SESSION_CACHE_MS
+  ) {
+    return authSessionCacheResult;
+  }
+
+  if (authSessionPromise && authSessionToken === tokenValue) {
+    return authSessionPromise;
+  }
+
+  authSessionToken = tokenValue;
+  authSessionPromise = ws.request('auth:session', {token: tokenValue});
+  const result = await authSessionPromise;
+  authSessionPromise = null;
+  authSessionToken = '';
+
+  if ((result as any)?.ok) {
+    authSessionCacheToken = tokenValue;
+    authSessionCacheResult = result;
+    authSessionCacheAt = Date.now();
+    return result;
+  }
+
+  authSessionCacheToken = '';
+  authSessionCacheResult = null;
+  authSessionCacheAt = 0;
   if ((result as any)?.error === 'unauthorized') {
     clearSessionToken();
   }
@@ -518,41 +564,89 @@ export async function forceWsReconnect(reason = 'manual') {
 export async function ensureWsConnected() {
   initReconnectRuntime();
 
+  if (ensureWsConnectedPromise) {
+    return ensureWsConnectedPromise;
+  }
+
   if (ws.isConnected()) {
     setWsState('connected');
     return {ok: true};
   }
 
-  setWsState('connecting');
-  const connected = await connectToAnyWsUrl();
-  if ((connected as any)?.ok) {
-    setWsState('connected');
-    return connected;
-  }
-
-  const prompted = await tryEnableReserveByPrompt();
-  if (prompted) {
-    const retried = await connectToAnyWsUrl();
-    if ((retried as any)?.ok) {
+  ensureWsConnectedPromise = (async () => {
+    setWsState('connecting');
+    const connected = await connectToAnyWsUrl();
+    if ((connected as any)?.ok) {
       setWsState('connected');
-      return retried;
+      return connected;
     }
-  }
 
-  setWsState('disconnected');
-  return connected;
+    const prompted = await tryEnableReserveByPrompt();
+    if (prompted) {
+      const retried = await connectToAnyWsUrl();
+      if ((retried as any)?.ok) {
+        setWsState('connected');
+        return retried;
+      }
+    }
+
+    setWsState('disconnected');
+    return connected;
+  })();
+
+  try {
+    return await ensureWsConnectedPromise;
+  } finally {
+    ensureWsConnectedPromise = null;
+  }
 }
 
 export async function restoreSession() {
-  const connected = await ensureWsConnected();
-  if (!(connected as any).ok) return connected;
-
   const token = getSessionToken();
   if (!token) {
     return {ok: false, error: 'unauthorized'};
   }
 
-  return authSessionByToken(token);
+  if (
+    !restoreSessionPromise
+    && restoreSessionCacheToken === token
+    && restoreSessionCacheResult
+    && Date.now() - restoreSessionCacheAt < RESTORE_SESSION_CACHE_MS
+  ) {
+    return restoreSessionCacheResult;
+  }
+
+  if (restoreSessionPromise) {
+    return restoreSessionPromise;
+  }
+
+  restoreSessionPromise = (async () => {
+    const connected = await ensureWsConnected();
+    if (!(connected as any).ok) {
+      restoreSessionCacheToken = '';
+      restoreSessionCacheResult = null;
+      restoreSessionCacheAt = 0;
+      return connected;
+    }
+
+    const session = await authSessionByToken(token);
+    if ((session as any)?.ok) {
+      restoreSessionCacheToken = token;
+      restoreSessionCacheResult = session;
+      restoreSessionCacheAt = Date.now();
+    } else {
+      restoreSessionCacheToken = '';
+      restoreSessionCacheResult = null;
+      restoreSessionCacheAt = 0;
+    }
+    return session;
+  })();
+
+  try {
+    return await restoreSessionPromise;
+  } finally {
+    restoreSessionPromise = null;
+  }
 }
 
 export async function wsLogin(nickname: string, password: string) {

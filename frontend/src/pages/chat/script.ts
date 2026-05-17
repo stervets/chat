@@ -1,6 +1,7 @@
 import type {Message, User} from '@/composables/types';
 import {on, off} from '@/composables/event-bus';
 import {setWsReconnectDialogResolver} from '@/composables/ws-rpc';
+import {ws} from '@/composables/classes/ws';
 import ChatHeader from './components/chat-header/index.vue';
 import ChatLeftDrawer from './components/chat-left-drawer/index.vue';
 import ChatToasts from './components/chat-toasts/index.vue';
@@ -420,6 +421,27 @@ export default {
       this.onCallWsDisconnected();
     },
 
+    onReserveRequestState(this: any, payloadRaw: any) {
+      const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
+      this.reserveRequestOverlayVisible = !!payload.active;
+      this.reserveRequestOverlayPendingCount = Number(payload.pendingCount || 0);
+      this.reserveRequestOverlayCom = String(payload.com || '').trim();
+      console.info(`[reserve-overlay] ${this.reserveRequestOverlayVisible ? 'active' : 'idle'} pending=${this.reserveRequestOverlayPendingCount} com=${this.reserveRequestOverlayCom || '-'}`);
+      if (!this.reserveRequestOverlayVisible) {
+        this.reserveRequestOverlayRetryPending = false;
+      }
+    },
+
+    async retryReserveOverlayRequest(this: any) {
+      if (this.reserveRequestOverlayRetryPending) return;
+      this.reserveRequestOverlayRetryPending = true;
+      try {
+        await ws.retryLastReserveRequest();
+      } finally {
+        this.reserveRequestOverlayRetryPending = false;
+      }
+    },
+
     ...chatMethodsRuntimeAndRouting,
     ...chatMethodsComposerAndVirtual,
     ...chatMethodsNotifications,
@@ -459,6 +481,7 @@ export default {
     on('ws:disconnected', this.onWsDisconnectedWithCall);
     on('ws:reconnected', this.onWsReconnected);
     on('ws:session-expired', this.onWsSessionExpired);
+    on('reserve:request-state', this.onReserveRequestState);
 
     window.addEventListener('keydown', this.onWindowKeydown);
     window.addEventListener('resize', this.onWindowResize);
@@ -476,15 +499,16 @@ export default {
       this.badgeNowTs = Date.now();
     }, 60 * 1000);
     this.stopFaviconBlink();
-    this.generalDialog = await this.fetchGeneralDialog();
     await this.fetchUsers();
     await this.fetchDirectDialogs();
     await this.fetchPinnedDirectUserIds();
     await this.fetchRoomsNavigation();
+    if (!this.generalDialog) {
+      this.generalDialog = this.resolveDefaultGroupDialog();
+    }
 
     await this.syncDialogFromRoute({replaceInvalid: true});
     this.routeSyncReady = true;
-    await this.onRouteChanged();
     await this.handleCallRouteIntent();
     this.scheduleVirtualSync();
   },
@@ -509,6 +533,7 @@ export default {
     off('ws:disconnected', this.onWsDisconnectedWithCall);
     off('ws:reconnected', this.onWsReconnected);
     off('ws:session-expired', this.onWsSessionExpired);
+    off('reserve:request-state', this.onReserveRequestState);
 
     window.removeEventListener('keydown', this.onWindowKeydown);
     window.removeEventListener('resize', this.onWindowResize);

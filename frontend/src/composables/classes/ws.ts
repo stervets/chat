@@ -6,12 +6,14 @@ export type WsResult<T = any> =
   | {ok: false; error: any};
 
 type MarxPacket = [string, Record<string, any> | any[], string, string, string?];
+const REQUEST_TIMEOUT_MS = 12000;
 
 type ReserveConfig = {
   wsUrl: string;
   token: string;
   deviceId: string;
   chatId: number;
+  chunkTextLimit: number;
   backendPublicKeyPem: string;
   userAgent: {
     deviceType: string;
@@ -29,15 +31,55 @@ type ReserveConfig = {
 export class WsClient {
   socket: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
-  private readonly requests: Record<string, {resolve: (result: WsResult) => void}> = {};
+  private readonly requests: Record<string, {resolve: (result: WsResult) => void; timerId: number; com: string}> = {};
   private lastUrl = '';
   private connectionSeq = 0;
   private reserveActive = false;
+  private reservePendingCount = 0;
+  private lastReserveRequest: {com: string; args: Record<string, any>} | null = null;
+  private readonly reserveRequestDedup = new Map<string, Promise<WsResult>>();
 
   private readonly reserveTransport = new MaxReserveTransport(
     (packet) => this.handleIncomingPacket(packet),
     () => this.onReserveDisconnected(),
   );
+
+  private shouldDedupeReserveRequest(com: string) {
+    return [
+      'auth:session',
+      'user:list',
+      'contacts:list',
+      'room:list',
+      'room:get',
+      'room:group:get-default',
+      'message:list',
+      'push:native:register',
+    ].includes(String(com || '').trim());
+  }
+
+  private buildReserveRequestKey(com: string, args: Record<string, any>) {
+    return `${String(com || '').trim()}::${JSON.stringify(args || {})}`;
+  }
+
+  private emitReserveRequestState() {
+    emit('reserve:request-state', {
+      active: this.reserveActive && this.reservePendingCount > 0,
+      pendingCount: this.reservePendingCount,
+      com: String(this.lastReserveRequest?.com || '').trim(),
+      retryAvailable: !!this.lastReserveRequest,
+    });
+  }
+
+  private beginReserveRequest(com: string, args: Record<string, any>) {
+    this.reservePendingCount += 1;
+    this.lastReserveRequest = {com, args};
+    this.emitReserveRequestState();
+  }
+
+  private endReserveRequest() {
+    this.reservePendingCount = Math.max(0, this.reservePendingCount - 1);
+    this.emitReserveRequestState();
+  }
 
   private parsePacket(raw: string): MarxPacket | null {
     try {
@@ -80,6 +122,7 @@ export class WsClient {
 
   private resolveAllPendingAsDisconnected() {
     Object.keys(this.requests).forEach((requestId) => {
+      clearTimeout(this.requests[requestId].timerId);
       this.requests[requestId].resolve({ok: false, error: 'disconnected'});
       delete this.requests[requestId];
     });
@@ -91,8 +134,12 @@ export class WsClient {
     if (com === '[res]') {
       if (!requestId || !this.requests[requestId]) return;
       const pending = this.requests[requestId];
+      clearTimeout(pending.timerId);
       pending.resolve(this.normalizeIncomingResult(Array.isArray(args) ? args[0] : undefined));
       delete this.requests[requestId];
+      if (this.reserveActive) {
+        this.endReserveRequest();
+      }
       return;
     }
 
@@ -119,6 +166,10 @@ export class WsClient {
 
     console.info(`[ws-route] reserveActive=${next ? '1' : '0'}`);
     this.reserveActive = next;
+    if (!next) {
+      this.reservePendingCount = 0;
+      this.emitReserveRequestState();
+    }
 
     if (next) {
       this.connectionSeq += 1;
@@ -263,6 +314,23 @@ export class WsClient {
   }
 
   async request(com: string, args: Record<string, any> = {}): Promise<WsResult> {
+    if (this.reserveActive && this.shouldDedupeReserveRequest(com)) {
+      const dedupKey = this.buildReserveRequestKey(com, args);
+      const existing = this.reserveRequestDedup.get(dedupKey);
+      if (existing) {
+        return existing;
+      }
+      const pending = this.requestInternal(com, args).finally(() => {
+        this.reserveRequestDedup.delete(dedupKey);
+      });
+      this.reserveRequestDedup.set(dedupKey, pending);
+      return pending;
+    }
+
+    return this.requestInternal(com, args);
+  }
+
+  async requestInternal(com: string, args: Record<string, any> = {}): Promise<WsResult> {
     if (!this.isConnected()) {
       if (!this.lastUrl && !this.reserveActive) {
         return {ok: false, error: 'not_connected'};
@@ -304,9 +372,31 @@ export class WsClient {
     }
 
     return new Promise((resolve) => {
-      this.requests[requestId] = {resolve};
-      const fail = (error: any) => {
+      if (this.reserveActive) {
+        this.beginReserveRequest(com, args);
+      }
+      const timerId = window.setTimeout(() => {
+        const pending = this.requests[requestId];
+        if (!pending) return;
         delete this.requests[requestId];
+        console.warn(`[ws-route] request timeout com=${pending.com} via=${this.reserveActive ? 'max' : 'ws'} requestId=${requestId}`);
+        if (this.reserveActive) {
+          this.endReserveRequest();
+        }
+        resolve({ok: false, error: 'timeout'});
+      }, REQUEST_TIMEOUT_MS);
+
+      this.requests[requestId] = {
+        resolve,
+        timerId,
+        com,
+      };
+      const fail = (error: any) => {
+        clearTimeout(timerId);
+        delete this.requests[requestId];
+        if (this.reserveActive) {
+          this.endReserveRequest();
+        }
         resolve({
           ok: false,
           error: String(error?.message || error || 'ws_send_error').trim() || 'ws_send_error',
@@ -323,6 +413,14 @@ export class WsClient {
         fail(error);
       }
     });
+  }
+
+  retryLastReserveRequest() {
+    if (!this.lastReserveRequest) {
+      return Promise.resolve<WsResult>({ok: false, error: 'reserve_retry_missing'});
+    }
+    const request = this.lastReserveRequest;
+    return this.request(request.com, request.args);
   }
 
   send(com: string, args: Record<string, any> = {}) {

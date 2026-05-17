@@ -242,9 +242,12 @@ Runtime определяется только полями node:
 - Backend поднимает MAX bridge и прокидывает reserve-пакеты в существующий `ChatGateway` dispatch без отдельного command layer.
 - Inbound в backend: только envelope с `recipientId=0`.
 - Outbound из backend: ответы/events идут как `<recipientId> <aesEncryptedPacket>`, где `recipientId` — `_clientId` до auth или `<userId>` после auth.
+- MAX payload framing: `A:<payload>` (atomic) или `C:<chunkId>:<index>:<total>:<part>` (chunked); legacy `<recipientId> <payload>` принимается как atomic.
 - Login handshake: `0 <rsaEncryptedData(clientId,tmpSessionKey,auth:login packet)>`.
 - Login response шифруется через `tmpSessionKey` и содержит `max.userId + max.maxSessionKey`.
 - После login весь трафик шифруется через единый `maxSessionKey` пользователя; backend отправляет один пакет на `userId` без дублирования по `clientId`.
+- Transport channel не фиксирован на `chatId=0`: backend держит `currentTransportChatId`, ротирует private channel по таймеру и шлёт `max:channel-switch` клиентам.
+- Android native transport переключает `chatId` на лету (`setChatId`) без reconnect; старый channel ещё коротко принимается в overlap и затем чистится (`opcode 54 + 48`).
 
 ## Миграция живой БД
 

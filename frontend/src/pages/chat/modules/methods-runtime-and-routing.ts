@@ -540,7 +540,7 @@ export const chatMethodsRuntimeAndRouting = {
         await this.selectPrivate(targetUser, {
           routeMode: 'none',
           closeMenu: false,
-          refreshDirects: true,
+          refreshDirects: false,
         });
 
         const canonicalPath = this.buildDirectRoutePath(targetUser.nickname);
@@ -695,7 +695,7 @@ export const chatMethodsRuntimeAndRouting = {
       await this.selectPrivate(targetUser, {
         routeMode: 'none',
         closeMenu: false,
-        refreshDirects: true,
+        refreshDirects: false,
       });
     },
 

@@ -40,6 +40,7 @@ export default defineNuxtPlugin(() => {
   const ensureCallEventsSession = async () => {
     const currentPath = String(router.currentRoute.value.path || '');
     if (isCallExcludedRoute(currentPath)) return;
+    if (currentPath === '/chat') return;
 
     const token = stringValue(getSessionToken());
     if (!token) return;

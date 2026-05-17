@@ -188,6 +188,23 @@
         </div>
 
         <button v-if="showScrollDown" class="scroll-down-btn" @click="onScrollDownClick">↓</button>
+        <div v-if="reserveRequestOverlayVisible" class="reserve-request-overlay">
+          <div class="reserve-request-overlay-card">
+            <div class="reserve-request-loader"/>
+            <div class="reserve-request-title">Резервный канал ждёт ответ сервера</div>
+            <div class="reserve-request-subtitle">
+              <span v-if="reserveRequestOverlayCom">{{ reserveRequestOverlayCom }}</span>
+              <span v-if="reserveRequestOverlayPendingCount > 1"> · {{ reserveRequestOverlayPendingCount }} запросов</span>
+            </div>
+            <button
+              class="reserve-request-retry"
+              :disabled="reserveRequestOverlayRetryPending"
+              @click="retryReserveOverlayRequest"
+            >
+              {{ reserveRequestOverlayRetryPending ? 'Повторяем...' : 'Повторить запрос' }}
+            </button>
+          </div>
+        </div>
         <div v-if="timeTooltipVisible" class="time-tooltip" :style="getTimeTooltipStyle()">
           {{ timeTooltipText }}
         </div>

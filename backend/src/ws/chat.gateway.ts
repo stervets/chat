@@ -66,6 +66,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         wsUrl: config.maxReserve.wsUrl,
         token: config.maxReserve.token,
         chatId: config.maxReserve.chatId,
+        chunkTextLimit: config.maxReserve.chunkTextLimit,
+        channelRotationEnabled: config.maxReserve.channelRotationEnabled,
+        channelRotationMinutes: config.maxReserve.channelRotationMinutes,
+        channelSwitchOverlapMs: config.maxReserve.channelSwitchOverlapMs,
         deviceId: config.maxReserve.deviceId,
         privateKeyPem: config.maxReserve.privateKey,
         userAgent: config.maxReserve.userAgent,
@@ -240,6 +244,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       `Transport health wsOpen=${wsStats.open} wsAuthorized=${wsStats.authorized}`
       + ` maxConnected=${reserveStatus.connected ? 1 : 0}`
       + ` maxReconnectAttempt=${reserveStatus.reconnectAttempt}`
+      + ` maxChatId=${reserveStatus.currentTransportChatId}`
+      + ` maxPrevChats=${reserveStatus.previousTransportChatIds.join(',') || '-'}`
       + ` maxLastInMs=${lastInMs}`
       + ` maxLastOutMs=${lastOutMs}`
       + ` reserveUsers=${reserveUserCount}`,

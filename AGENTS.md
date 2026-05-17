@@ -281,8 +281,13 @@ yarn run frontend:dev
 - при e2e-тестах на реальном телефоне пользователь (`lisov`) вводит login/password вручную; агент не пытается автологиниться через adb-ввод credentials в webview;
 - reserve-history в Android MAX fallback ужат до последних `10` сообщений: `message:list` в reserve-режиме теперь `limit=10`, бесконечная догрузка старой истории в reserve отключена;
 - `auth:session` на фронте получил in-flight dedupe, чтобы не стрелять дубликатами при нестабильном reconnect;
+- в `/chat` клик по комнате или директу в левом drawer теперь закрывает drawer сразу, до загрузки истории/роутинга, чтобы навигация не залипала до ответа reserve-канала;
+- в `/chat` для reserve-режима добавлен blocking overlay ожидания ответа: показывается поверх контента, пока есть pending MAX RPC-запросы, и содержит кнопку `Повторить запрос`;
+- reserve-клиент жёстче режет лишние MAX-пакеты: одинаковые in-flight запросы (`auth:session`, `room:list`, `room:get`, `message:list`, `contacts:list`, `user:list`, `room:group:get-default`, `push:native:register`) дедуплируются в `WsClient`, а навигационные fetch'и в чате (`fetchDirectDialogs/fetchPinnedDirectUserIds/fetchRoomsNavigation`) получают cooldown `1500ms` в reserve-режиме;
 - MAX transport получил ротацию transport-channel: backend хранит `currentTransportChatId` + short-list `previousTransportChatIds`, создаёт private channel через `opcode 64` с `CONTROL(event=new, chatType=CHANNEL, access=PRIVATE)` и переключает отправку на новый chat;
 - backend шлёт служебный packet `max:channel-switch`, Android native plugin `MaxNativeTransport` применяет новый `chatId` через `setChatId(...)` без reconnect;
 - старый transport-channel держится в overlap (`channelSwitchOverlapMs`, default `120000`), затем backend пытается cleanup через `opcode 54` + `opcode 48`; ошибки cleanup только логируются;
 - inbound MAX на backend фильтруется по `currentTransportChatId` и активным previous chatId, чтобы не обрабатывать мусор из чужих/устаревших каналов;
 - добавлен smoke-check `yarn check:max-reserve-chunk` для codec/assembler (`short`, `long`, `out-of-order`, `duplicate`, `legacy`).
+- reserve bootstrap в `/chat` дополнительно зажат module-level cache'ем для `user:list`, `room:list`, `contacts:list`, `room:group:get-default`, чтобы второй mount после route-normalize не повторял те же MAX-запросы;
+- нормальный cold-start reserve trace сейчас такой: один `connect via reserve`, один `auth:session`, затем один `user:list`, один `room:list(kind='direct')`, один `contacts:list`, два `room:list(kind='group', scope='joined|public')`; повторный `room:group:get-default` на старте считается регрессией.

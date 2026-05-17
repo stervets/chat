@@ -9,6 +9,7 @@ import {
   wsObject,
   COLOR_HEX_RE,
   HISTORY_BATCH_SIZE,
+  RESERVE_HISTORY_BATCH_SIZE,
 } from './shared';
 import type {
   DiscussionMeta,
@@ -23,6 +24,26 @@ import type {
 import {resolveMediaUrl} from '@/composables/media-url';
 
 const TEMP_HIDDEN_ROOM_TITLE = 'новости marx';
+const RESERVE_NAV_FETCH_COOLDOWN_MS = 15000;
+
+const reserveNavCache = {
+  users: [] as User[],
+  usersFetchedAt: 0,
+  usersPromise: null as Promise<void> | null,
+  directDialogs: [] as any[],
+  directDialogsFetchedAt: 0,
+  directDialogsPromise: null as Promise<void> | null,
+  pinnedDirectUserIds: [] as number[],
+  pinnedDirectsFetchedAt: 0,
+  pinnedDirectsPromise: null as Promise<void> | null,
+  joinedRooms: [] as Dialog[],
+  publicRooms: [] as Dialog[],
+  roomsNavigationFetchedAt: 0,
+  roomsNavigationPromise: null as Promise<void> | null,
+  generalDialog: null as Dialog | null,
+  generalDialogFetchedAt: 0,
+  generalDialogPromise: null as Promise<Dialog | null> | null,
+};
 
 function isTemporarilyHiddenRoomTitle(titleRaw: unknown) {
   return String(titleRaw || '').trim().toLowerCase() === TEMP_HIDDEN_ROOM_TITLE;
@@ -232,82 +253,331 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async fetchUsers(this: any) {
-      const rows = wsData<any[]>(await ws.request('user:list'), []);
-      this.users = rows
-        .map((row: any) => this.normalizeUser(row))
-        .filter(Boolean) as User[];
+      const useCooldown = ws.isReserveActive();
+      const now = Date.now();
+      if (useCooldown && this.usersFetchPromise) {
+        return this.usersFetchPromise;
+      }
+      if (useCooldown && reserveNavCache.usersPromise) {
+        return reserveNavCache.usersPromise;
+      }
+      if (useCooldown && reserveNavCache.users.length && now - Number(reserveNavCache.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+        this.users = reserveNavCache.users.map((user: User) => ({...user}));
+        this.usersFetchedAt = reserveNavCache.usersFetchedAt;
+        return;
+      }
+      if (useCooldown && this.users.length && now - Number(this.usersFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+        return;
+      }
+
+      const task = (async () => {
+        const rows = wsData<any[]>(await ws.request('user:list'), []);
+        const users = rows
+          .map((row: any) => this.normalizeUser(row))
+          .filter(Boolean) as User[];
+        this.users = users;
+        this.usersFetchedAt = Date.now();
+        if (useCooldown) {
+          reserveNavCache.users = users.map((user: User) => ({...user}));
+          reserveNavCache.usersFetchedAt = this.usersFetchedAt;
+        }
+      })();
+
+      if (useCooldown) {
+        reserveNavCache.usersPromise = task.finally(() => {
+          if (reserveNavCache.usersPromise === task) {
+            reserveNavCache.usersPromise = null;
+          }
+        });
+      }
+
+      this.usersFetchPromise = task.finally(() => {
+        if (this.usersFetchPromise === task) {
+          this.usersFetchPromise = null;
+        }
+      });
+      return this.usersFetchPromise;
     },
 
     async fetchDirectDialogs(this: any) {
-      const rows = wsData<any[]>(await ws.request('room:list', {kind: 'direct'}), []);
-      this.directDialogs = rows.map((dialogRaw: any) => ({
-        ...dialogRaw,
-        targetUser: this.normalizeUser(dialogRaw?.targetUser) || dialogRaw?.targetUser,
-        roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
-      }));
+      const useCooldown = ws.isReserveActive();
+      const now = Date.now();
+      if (useCooldown && this.directDialogsFetchPromise) {
+        return this.directDialogsFetchPromise;
+      }
+      if (useCooldown && reserveNavCache.directDialogsPromise) {
+        return reserveNavCache.directDialogsPromise;
+      }
+      if (useCooldown && reserveNavCache.directDialogs.length && now - Number(reserveNavCache.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+        this.directDialogs = reserveNavCache.directDialogs.map((dialog: any) => ({
+          ...dialog,
+          targetUser: dialog?.targetUser ? {...dialog.targetUser} : dialog?.targetUser,
+          roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+        }));
+        this.directDialogsFetchedAt = reserveNavCache.directDialogsFetchedAt;
+        return;
+      }
+      if (useCooldown && this.directDialogs.length && now - Number(this.directDialogsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+        return;
+      }
+
+      const task = (async () => {
+        const rows = wsData<any[]>(await ws.request('room:list', {kind: 'direct'}), []);
+        const directDialogs = rows.map((dialogRaw: any) => ({
+          ...dialogRaw,
+          targetUser: this.normalizeUser(dialogRaw?.targetUser) || dialogRaw?.targetUser,
+          roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
+        }));
+        this.directDialogs = directDialogs;
+        this.directDialogsFetchedAt = Date.now();
+        if (useCooldown) {
+          reserveNavCache.directDialogs = directDialogs.map((dialog: any) => ({
+            ...dialog,
+            targetUser: dialog?.targetUser ? {...dialog.targetUser} : dialog?.targetUser,
+            roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+          }));
+          reserveNavCache.directDialogsFetchedAt = this.directDialogsFetchedAt;
+        }
+      })();
+
+      if (useCooldown) {
+        reserveNavCache.directDialogsPromise = task.finally(() => {
+          if (reserveNavCache.directDialogsPromise === task) {
+            reserveNavCache.directDialogsPromise = null;
+          }
+        });
+      }
+
+      this.directDialogsFetchPromise = task.finally(() => {
+        if (this.directDialogsFetchPromise === task) {
+          this.directDialogsFetchPromise = null;
+        }
+      });
+      return this.directDialogsFetchPromise;
     },
 
     async fetchPinnedDirectUserIds(this: any) {
-      const rows = wsData<any[]>(await ws.request('contacts:list'), []);
-      this.pinnedDirectUserIds = rows
-        .map((row: any) => Number(row?.id || 0))
-        .filter((id: number) => Number.isFinite(id) && id > 0);
+      const useCooldown = ws.isReserveActive();
+      const now = Date.now();
+      if (useCooldown && this.pinnedDirectsFetchPromise) {
+        return this.pinnedDirectsFetchPromise;
+      }
+      if (useCooldown && reserveNavCache.pinnedDirectsPromise) {
+        return reserveNavCache.pinnedDirectsPromise;
+      }
+      if (
+        useCooldown
+        && reserveNavCache.pinnedDirectUserIds.length
+        && now - Number(reserveNavCache.pinnedDirectsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
+      ) {
+        this.pinnedDirectUserIds = [...reserveNavCache.pinnedDirectUserIds];
+        this.pinnedDirectsFetchedAt = reserveNavCache.pinnedDirectsFetchedAt;
+        return;
+      }
+      if (useCooldown && this.pinnedDirectUserIds.length && now - Number(this.pinnedDirectsFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+        return;
+      }
+
+      const task = (async () => {
+        const rows = wsData<any[]>(await ws.request('contacts:list'), []);
+        const pinnedDirectUserIds = rows
+          .map((row: any) => Number(row?.id || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0);
+        this.pinnedDirectUserIds = pinnedDirectUserIds;
+        this.pinnedDirectsFetchedAt = Date.now();
+        if (useCooldown) {
+          reserveNavCache.pinnedDirectUserIds = [...pinnedDirectUserIds];
+          reserveNavCache.pinnedDirectsFetchedAt = this.pinnedDirectsFetchedAt;
+        }
+      })();
+
+      if (useCooldown) {
+        reserveNavCache.pinnedDirectsPromise = task.finally(() => {
+          if (reserveNavCache.pinnedDirectsPromise === task) {
+            reserveNavCache.pinnedDirectsPromise = null;
+          }
+        });
+      }
+
+      this.pinnedDirectsFetchPromise = task.finally(() => {
+        if (this.pinnedDirectsFetchPromise === task) {
+          this.pinnedDirectsFetchPromise = null;
+        }
+      });
+      return this.pinnedDirectsFetchPromise;
     },
 
     async fetchRoomsNavigation(this: any) {
-      const [joinedResult, publicResult] = await Promise.all([
-        ws.request('room:list', {kind: 'group', scope: 'joined'}),
-        ws.request('room:list', {kind: 'group', scope: 'public'}),
-      ]);
+      const useCooldown = ws.isReserveActive();
+      const now = Date.now();
+      if (useCooldown && this.roomsNavigationFetchPromise) {
+        return this.roomsNavigationFetchPromise;
+      }
+      if (useCooldown && reserveNavCache.roomsNavigationPromise) {
+        return reserveNavCache.roomsNavigationPromise;
+      }
+      if (
+        useCooldown
+        && (reserveNavCache.joinedRooms.length || reserveNavCache.publicRooms.length)
+        && now - Number(reserveNavCache.roomsNavigationFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
+      ) {
+        this.joinedRooms = reserveNavCache.joinedRooms.map((dialog: Dialog) => ({
+          ...dialog,
+          roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+        }));
+        this.publicRooms = reserveNavCache.publicRooms.map((dialog: Dialog) => ({
+          ...dialog,
+          roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+        }));
+        this.roomsNavigationFetchedAt = reserveNavCache.roomsNavigationFetchedAt;
+        return;
+      }
+      if (
+        useCooldown
+        && (this.joinedRooms.length || this.publicRooms.length)
+        && now - Number(this.roomsNavigationFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS
+      ) {
+        return;
+      }
 
-      const normalizeRoomDialog = (dialogRaw: any): Dialog => ({
-        id: Number(dialogRaw?.roomId || dialogRaw?.dialogId || 0),
-        kind: 'group',
-        joined: dialogRaw?.joined !== undefined ? !!dialogRaw.joined : true,
-        title: String(dialogRaw?.title || 'Комната'),
-        visibility: dialogRaw?.visibility === 'private' ? 'private' : 'public',
-        commentsEnabled: dialogRaw?.commentsEnabled !== undefined ? !!dialogRaw.commentsEnabled : true,
-        avatarUrl: resolveMediaUrl(dialogRaw?.avatarUrl) || null,
-        postOnlyByAdmin: !!dialogRaw?.postOnlyByAdmin,
-        createdById: Number(dialogRaw?.createdById || 0) || null,
-        pinnedNodeId: Number(dialogRaw?.pinnedNodeId || 0) || null,
-        roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
-        discussion: null,
+      const task = (async () => {
+        const [joinedResult, publicResult] = await Promise.all([
+          ws.request('room:list', {kind: 'group', scope: 'joined'}),
+          ws.request('room:list', {kind: 'group', scope: 'public'}),
+        ]);
+
+        const normalizeRoomDialog = (dialogRaw: any): Dialog => ({
+          id: Number(dialogRaw?.roomId || dialogRaw?.dialogId || 0),
+          kind: 'group',
+          joined: dialogRaw?.joined !== undefined ? !!dialogRaw.joined : true,
+          title: String(dialogRaw?.title || 'Комната'),
+          visibility: dialogRaw?.visibility === 'private' ? 'private' : 'public',
+          commentsEnabled: dialogRaw?.commentsEnabled !== undefined ? !!dialogRaw.commentsEnabled : true,
+          avatarUrl: resolveMediaUrl(dialogRaw?.avatarUrl) || null,
+          postOnlyByAdmin: !!dialogRaw?.postOnlyByAdmin,
+          createdById: Number(dialogRaw?.createdById || 0) || null,
+          pinnedNodeId: Number(dialogRaw?.pinnedNodeId || 0) || null,
+          roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
+          discussion: null,
+        });
+
+        const joinedRooms = wsData<any[]>(joinedResult, [])
+          .map((row: any) => normalizeRoomDialog(row))
+          .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !isTemporarilyHiddenRoomTitle(dialog.title));
+
+        const joinedIds = new Set(joinedRooms.map((dialog: Dialog) => Number(dialog.id || 0)));
+        const publicRooms = wsData<any[]>(publicResult, [])
+          .map((row: any) => normalizeRoomDialog(row))
+          .filter((dialog: Dialog) => (
+            Number(dialog.id || 0) > 0
+            && !joinedIds.has(Number(dialog.id || 0))
+            && !isTemporarilyHiddenRoomTitle(dialog.title)
+          ));
+        this.joinedRooms = joinedRooms;
+        this.publicRooms = publicRooms;
+        this.roomsNavigationFetchedAt = Date.now();
+        if (useCooldown) {
+          reserveNavCache.joinedRooms = joinedRooms.map((dialog: Dialog) => ({
+            ...dialog,
+            roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+          }));
+          reserveNavCache.publicRooms = publicRooms.map((dialog: Dialog) => ({
+            ...dialog,
+            roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+          }));
+          reserveNavCache.roomsNavigationFetchedAt = this.roomsNavigationFetchedAt;
+        }
+      })();
+
+      if (useCooldown) {
+        reserveNavCache.roomsNavigationPromise = task.finally(() => {
+          if (reserveNavCache.roomsNavigationPromise === task) {
+            reserveNavCache.roomsNavigationPromise = null;
+          }
+        });
+      }
+
+      this.roomsNavigationFetchPromise = task.finally(() => {
+        if (this.roomsNavigationFetchPromise === task) {
+          this.roomsNavigationFetchPromise = null;
+        }
       });
-
-      this.joinedRooms = wsData<any[]>(joinedResult, [])
-        .map((row: any) => normalizeRoomDialog(row))
-        .filter((dialog: Dialog) => Number(dialog.id || 0) > 0 && !isTemporarilyHiddenRoomTitle(dialog.title));
-
-      const joinedIds = new Set(this.joinedRooms.map((dialog: Dialog) => Number(dialog.id || 0)));
-      this.publicRooms = wsData<any[]>(publicResult, [])
-        .map((row: any) => normalizeRoomDialog(row))
-        .filter((dialog: Dialog) => (
-          Number(dialog.id || 0) > 0
-          && !joinedIds.has(Number(dialog.id || 0))
-          && !isTemporarilyHiddenRoomTitle(dialog.title)
-        ));
+      return this.roomsNavigationFetchPromise;
     },
 
     async fetchGeneralDialog(this: any, optionsRaw?: {allowHidden?: boolean}) {
-      const result = await ws.request('room:group:get-default');
-      if ((result as any)?.error || (result as any)?.ok === false) return null;
-      const data = wsObject(result);
-      if (isTemporarilyHiddenRoomTitle(data.title) && optionsRaw?.allowHidden !== true) return null;
-      return {
-        id: data.roomId,
-        kind: 'group',
-        joined: data.joined !== undefined ? !!data.joined : true,
-        title: data.title,
-        visibility: data.visibility === 'private' ? 'private' : 'public',
-        commentsEnabled: data.commentsEnabled !== undefined ? !!data.commentsEnabled : true,
-        avatarUrl: resolveMediaUrl(data.avatarUrl) || null,
-        postOnlyByAdmin: !!data.postOnlyByAdmin,
-        createdById: Number(data.createdById || 0) || null,
-        pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
-        roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
-        discussion: null,
-      } as Dialog;
+      const allowHidden = optionsRaw?.allowHidden === true;
+      const useCooldown = ws.isReserveActive();
+      const now = Date.now();
+      if (useCooldown && this.generalDialogFetchPromise) {
+        return this.generalDialogFetchPromise;
+      }
+      if (useCooldown && reserveNavCache.generalDialogPromise) {
+        return reserveNavCache.generalDialogPromise;
+      }
+      if (useCooldown && reserveNavCache.generalDialog && now - Number(reserveNavCache.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+        const generalDialog = reserveNavCache.generalDialog as Dialog;
+        if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title)) {
+          this.generalDialog = {
+            ...generalDialog,
+            roomSurface: generalDialog?.roomSurface ? {...generalDialog.roomSurface, config: {...(generalDialog.roomSurface.config || {})}} : generalDialog?.roomSurface,
+          };
+          this.generalDialogFetchedAt = reserveNavCache.generalDialogFetchedAt;
+          return this.generalDialog;
+        }
+      }
+      if (useCooldown && this.generalDialog && now - Number(this.generalDialogFetchedAt || 0) < RESERVE_NAV_FETCH_COOLDOWN_MS) {
+        const generalDialog = this.generalDialog as Dialog;
+        if (allowHidden || !isTemporarilyHiddenRoomTitle(generalDialog.title)) {
+          return generalDialog;
+        }
+      }
+
+      const task = (async () => {
+        const result = await ws.request('room:group:get-default');
+        if ((result as any)?.error || (result as any)?.ok === false) return null;
+        const data = wsObject(result);
+        if (isTemporarilyHiddenRoomTitle(data.title) && !allowHidden) return null;
+        const dialog = {
+          id: data.roomId,
+          kind: 'group',
+          joined: data.joined !== undefined ? !!data.joined : true,
+          title: data.title,
+          visibility: data.visibility === 'private' ? 'private' : 'public',
+          commentsEnabled: data.commentsEnabled !== undefined ? !!data.commentsEnabled : true,
+          avatarUrl: resolveMediaUrl(data.avatarUrl) || null,
+          postOnlyByAdmin: !!data.postOnlyByAdmin,
+          createdById: Number(data.createdById || 0) || null,
+          pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
+          roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
+          discussion: null,
+        } as Dialog;
+        this.generalDialog = dialog;
+        this.generalDialogFetchedAt = Date.now();
+        if (useCooldown) {
+          reserveNavCache.generalDialog = {
+            ...dialog,
+            roomSurface: dialog?.roomSurface ? {...dialog.roomSurface, config: {...(dialog.roomSurface.config || {})}} : dialog?.roomSurface,
+          };
+          reserveNavCache.generalDialogFetchedAt = this.generalDialogFetchedAt;
+        }
+        return dialog;
+      })();
+
+      if (useCooldown) {
+        reserveNavCache.generalDialogPromise = task.finally(() => {
+          if (reserveNavCache.generalDialogPromise === task) {
+            reserveNavCache.generalDialogPromise = null;
+          }
+        });
+      }
+
+      this.generalDialogFetchPromise = task.finally(() => {
+        if (this.generalDialogFetchPromise === task) {
+          this.generalDialogFetchPromise = null;
+        }
+      });
+      return this.generalDialogFetchPromise;
     },
 
     resolveDefaultGroupDialog(this: any): Dialog | null {
@@ -350,11 +620,11 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (optionsRaw?.haptic) {
         this.hapticTap();
       }
-
-      await this.selectDialog(defaultDialog, {routeMode: optionsRaw?.routeMode || 'push'});
       if (optionsRaw?.closeMenu !== false) {
         this.closeLeftMenu();
       }
+
+      await this.selectDialog(defaultDialog, {routeMode: optionsRaw?.routeMode || 'push'});
       return true;
     },
 
@@ -382,6 +652,9 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async loadHistory(this: any, roomId: number, seq: number, beforeMessageId: number | null = null) {
+      const historyBatchSize = ws.isReserveActive()
+        ? RESERVE_HISTORY_BATCH_SIZE
+        : HISTORY_BATCH_SIZE;
       const isInitialLoad = !beforeMessageId;
       if (seq === this.historyLoadSeq) {
         if (isInitialLoad) {
@@ -397,7 +670,7 @@ export const chatMethodsAuthDialogsAndProfile = {
       try {
         const result = await ws.request('message:list', {
           roomId,
-          limit: HISTORY_BATCH_SIZE,
+          limit: historyBatchSize,
           beforeMessageId,
         });
         if (seq !== this.historyLoadSeq) return;
@@ -406,9 +679,14 @@ export const chatMethodsAuthDialogsAndProfile = {
           this.error = 'Не удалось загрузить историю.';
           return;
         }
+        if (this.error === 'Не удалось загрузить историю.') {
+          this.error = '';
+        }
 
         const nextChunk = rows.map((message: any) => this.normalizeMessage(message));
-        this.historyHasMore = nextChunk.length >= HISTORY_BATCH_SIZE;
+        this.historyHasMore = ws.isReserveActive()
+          ? false
+          : nextChunk.length >= historyBatchSize;
         if (isInitialLoad) {
           this.seedNotificationsFromMessages(nextChunk);
         }
@@ -506,6 +784,9 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
         ? this.normalizeMessage(pinnedMessageRaw)
         : null;
+      if (this.error === 'Не удалось подключиться к диалогу.') {
+        this.error = '';
+      }
       if (!this.activePinnedMessage) {
         const discussionPinnedMessage = await this.resolveDiscussionSourceMessage(this.activeDialog?.discussion || null);
         if (discussionPinnedMessage && Number(this.activeDialog?.id || 0) === roomId) {
@@ -698,12 +979,12 @@ export const chatMethodsAuthDialogsAndProfile = {
       if (optionsRaw?.haptic) {
         this.hapticTap();
       }
-      const dialog = await this.fetchPrivateDialog(user);
-      if (!dialog) return;
-      await this.selectDialog(dialog, {routeMode: optionsRaw?.routeMode || 'push'});
       if (optionsRaw?.closeMenu !== false) {
         this.closeLeftMenu();
       }
+      const dialog = await this.fetchPrivateDialog(user);
+      if (!dialog) return;
+      await this.selectDialog(dialog, {routeMode: optionsRaw?.routeMode || 'push'});
       if (optionsRaw?.refreshDirects !== false) {
         await this.fetchDirectDialogs();
       }
@@ -715,11 +996,12 @@ export const chatMethodsAuthDialogsAndProfile = {
 
     async selectDirectDialog(this: any, dialog: DirectDialog) {
       this.hapticTap();
+      this.closeLeftMenu();
       const roomId = Number(dialog?.roomId || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) {
         await this.selectPrivate(dialog.targetUser, {
           routeMode: 'push',
-          closeMenu: true,
+          closeMenu: false,
           refreshDirects: true,
         });
         return;
@@ -738,7 +1020,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         roomSurface: this.normalizeRoomSurface(dialog?.roomSurface, dialog?.pinnedNodeId),
         discussion: null,
       }, {routeMode: 'push'});
-      this.closeLeftMenu();
     },
 
     onChatRoomUpdated(this: any, payloadRaw: any) {
@@ -845,6 +1126,7 @@ export const chatMethodsAuthDialogsAndProfile = {
     },
 
     async selectRoomDialog(this: any, dialogRaw: Dialog) {
+      this.closeLeftMenu();
       const dialog: Dialog = {
         ...dialogRaw,
         kind: 'group',
@@ -857,7 +1139,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         discussion: null,
       };
       await this.selectDialog(dialog, {routeMode: 'push'});
-      this.closeLeftMenu();
     },
 
     async createRoom(this: any) {

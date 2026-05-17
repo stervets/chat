@@ -50,6 +50,15 @@ MAX text envelope:
 - `_...` — временный clientId до авторизации;
 - `<userId>` — пользователь после авторизации.
 
+Формат `<data>`:
+- atomic: `A:<payload>`;
+- chunk: `C:<chunkId>:<index>:<total>:<part>`;
+- legacy поддержка: если префикса `A:`/`C:` нет, payload считается atomic.
+
+Лимит MAX text:
+- `maxReserve.chunkTextLimit` (default `3000`) — лимит всей строки `<recipientId> <data>`;
+- при превышении payload режется на chunk-фреймы, crypto/MARX-packet слой не меняется.
+
 Шифрование:
 - login handshake: RSA-OAEP(SHA-256), frontend шлёт `clientId + tmpSessionKey + packet` на `recipientId=0`;
 - login response: backend шифрует ответ в `tmpSessionKey`;
@@ -62,6 +71,13 @@ MAX text envelope:
 
 Backend читает только сообщения с `recipientId=0`.
 Клиент обрабатывает только сообщения с `recipientId=_clientId` (до login) или `recipientId=<userId>` (после login).
+
+MAX transport channel:
+- backend отправляет opcode `64` в `currentTransportChatId`;
+- backend может ротировать transport-channel (private MAX channel) и рассылает служебный пакет:
+  `["max:channel-switch", {"chatId": <newChatId>}, "backend", "<userId>", ""]`;
+- Android native plugin переключает `chatId` через `setChatId(...)` без reconnect;
+- старый channel держится в overlap (`maxReserve.channelSwitchOverlapMs`, default `120000`) и затем чистится opcode `54 + 48`.
 
 ## Auth
 

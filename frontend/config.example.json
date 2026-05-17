@@ -12,6 +12,7 @@
     "wsUrl": "wss://ws-api.oneme.ru/websocket",
     "token": "CHANGE_ME",
     "chatId": 0,
+    "chunkTextLimit": 3000,
     "deviceId": "CHANGE_ME",
     "backendPublicKeyPem": "-----BEGIN PUBLIC KEY-----\\nCHANGE_ME\\n-----END PUBLIC KEY-----",
     "userAgent": {

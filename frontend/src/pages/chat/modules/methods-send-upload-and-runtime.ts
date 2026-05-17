@@ -7,6 +7,7 @@ import {
   getSessionToken,
   wsLogout,
   HISTORY_BATCH_SIZE,
+  RESERVE_HISTORY_BATCH_SIZE,
   MAX_PASTE_IMAGE_BYTES,
   MAX_UPLOAD_IMAGE_DIMENSION,
 } from './shared';
@@ -19,6 +20,7 @@ import type {
 const WS_LOST_ERROR_PREFIX = 'Соединение потеряно.';
 const WS_RECONNECT_SEND_ERROR = 'Подключение восстанавливается. Сообщение не отправлено.';
 const WS_OFFLINE_SEND_ERROR = 'Оффлайн. Сообщение не отправлено.';
+const RESERVE_WINDOW_REFRESH_COOLDOWN_MS = 10000;
 
 function isTransientConnectionError(errorRaw: unknown) {
   const error = String(errorRaw || '').trim();
@@ -87,10 +89,13 @@ export const chatMethodsSendUploadAndRuntime = {
       const roomId = Number(roomIdRaw || 0);
       if (!Number.isFinite(roomId) || roomId <= 0) return false;
       if (this.wsConnectionState !== 'connected') return false;
+      const historyBatchSize = ws.isReserveActive()
+        ? RESERVE_HISTORY_BATCH_SIZE
+        : HISTORY_BATCH_SIZE;
 
       const result = await ws.request('message:list', {
         roomId,
-        limit: HISTORY_BATCH_SIZE,
+        limit: historyBatchSize,
       });
       if (!(result as any)?.ok) return false;
       const rows = wsData<any[]>(result, []);
@@ -763,10 +768,7 @@ export const chatMethodsSendUploadAndRuntime = {
         this.clearInactiveTabUnread();
         this.markVisibleMessageNotificationsRead();
       }
-      if (this.wsConnectionState === 'connected') {
-        void this.fetchDirectDialogs();
-        void this.fetchPinnedDirectUserIds();
-      }
+      this.refreshReserveWindowData();
     },
 
     onWindowBlur(this: any) {
@@ -778,10 +780,22 @@ export const chatMethodsSendUploadAndRuntime = {
       if (this.documentVisible && this.windowFocused) {
         this.clearInactiveTabUnread();
         this.markVisibleMessageNotificationsRead();
-        if (this.wsConnectionState === 'connected') {
-          void this.fetchDirectDialogs();
-          void this.fetchPinnedDirectUserIds();
-        }
+        this.refreshReserveWindowData();
       }
+    },
+
+    refreshReserveWindowData(this: any) {
+      if (this.wsConnectionState !== 'connected') return;
+
+      if (ws.isReserveActive()) {
+        const now = Date.now();
+        if (now - Number(this.reserveWindowRefreshAt || 0) < RESERVE_WINDOW_REFRESH_COOLDOWN_MS) {
+          return;
+        }
+        this.reserveWindowRefreshAt = now;
+      }
+
+      void this.fetchDirectDialogs();
+      void this.fetchPinnedDirectUserIds();
     },
 };

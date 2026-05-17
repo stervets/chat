@@ -1,4 +1,9 @@
 import {registerPlugin, type PluginListenerHandle} from '@capacitor/core';
+import {
+  buildMaxReserveTextFrames,
+  MaxChunkAssembler,
+  parseMaxReserveData,
+} from '@/composables/classes/max-reserve-chunk-codec';
 
 type MarxPacket = [string, Record<string, any> | any[], string, string, string?];
 
@@ -19,6 +24,7 @@ type MaxReserveConfig = {
   token: string;
   deviceId: string;
   chatId: number;
+  chunkTextLimit: number;
   backendPublicKeyPem: string;
   userAgent: MaxReserveUserAgentConfig;
 };
@@ -30,11 +36,12 @@ type MaxNativeTransportPlugin = {
     userAgent: string;
     token: string;
     deviceId: string;
-    chatId: number;
+    chatId: string;
     userAgentPayload: MaxReserveUserAgentConfig;
   }): Promise<{ok: true}>;
   connect(): Promise<{ok: true}>;
   disconnect(): Promise<{ok: true}>;
+  setChatId(options: {chatId: string}): Promise<{ok: true}>;
   sendText(options: {text: string}): Promise<{ok: true}>;
   addListener(eventName: 'state', listener: (event: {state?: string}) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'message', listener: (event: {text?: string}) => void): Promise<PluginListenerHandle>;
@@ -53,6 +60,7 @@ const MaxNativeTransport = registerPlugin<MaxNativeTransportPlugin>('MaxNativeTr
 const DEFAULT_CHAT_ID = 0;
 const RESERVED_BACKEND_RECIPIENT = '0';
 const MAX_SESSION_STORAGE_KEY = 'marx_max_reserve_session_v1';
+const MAX_CHUNK_SEND_DELAY_MS = 120;
 
 function toBase64(bytes: Uint8Array) {
   let raw = '';
@@ -213,6 +221,12 @@ function hasWindow() {
   return typeof window !== 'undefined';
 }
 
+function waitMs(msRaw: number) {
+  const ms = Number(msRaw || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return Promise.resolve();
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
 export class MaxReserveTransport {
   private config: MaxReserveConfig | null = null;
   private connected = false;
@@ -226,6 +240,8 @@ export class MaxReserveTransport {
   private tmpSessionKey = new Uint8Array(0);
   private maxSessionKey = new Uint8Array(0);
   private backendPublicKey: CryptoKey | null = null;
+  private readonly chunkAssembler = new MaxChunkAssembler();
+  private activeChatId = 0;
 
   private pluginState = 'idle';
   private listenerHandles: PluginListenerHandle[] = [];
@@ -240,6 +256,9 @@ export class MaxReserveTransport {
 
   setConfig(config: MaxReserveConfig | null) {
     this.config = config;
+    if (config) {
+      this.activeChatId = Number(config.chatId || DEFAULT_CHAT_ID);
+    }
   }
 
   isConfigured() {
@@ -447,11 +466,34 @@ export class MaxReserveTransport {
     };
   }
 
+  private parseChannelSwitchChatId(packet: MarxPacket) {
+    const [com, args] = packet;
+    if (com !== 'max:channel-switch') return 0;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return 0;
+    const chatId = Number((args as any).chatId || 0);
+    if (!Number.isFinite(chatId) || chatId === 0) return 0;
+    return chatId;
+  }
+
   private async onNativeText(textRaw: string) {
     const parsed = this.parseReserveText(textRaw);
     if (!parsed) return;
     console.info(`[max-reserve] recv recipient=${parsed.recipientId}`);
     if (!this.shouldAcceptRecipient(parsed.recipientId)) return;
+
+    const parsedData = parseMaxReserveData(parsed.data);
+    if (!parsedData) return;
+
+    let payload = '';
+    if (parsedData.kind === 'chunk') {
+      console.info(`[max-reserve] chunk recv chunkId=${parsedData.chunkId} index=${parsedData.index} total=${parsedData.total} recipient=${parsed.recipientId}`);
+      const assembled = this.chunkAssembler.push(parsed.recipientId, parsedData);
+      if (!assembled) return;
+      payload = assembled;
+      console.info(`[max-reserve] chunk assembled chunkId=${parsedData.chunkId} total=${parsedData.total} recipient=${parsed.recipientId}`);
+    } else {
+      payload = parsedData.payload;
+    }
 
     const key = parsed.recipientId === this.clientId
       ? this.tmpSessionKey
@@ -461,7 +503,7 @@ export class MaxReserveTransport {
 
     let decrypted = '';
     try {
-      decrypted = await aesDecryptFromCompact(key, parsed.data);
+      decrypted = await aesDecryptFromCompact(key, payload);
     } catch {
       if (parsed.recipientId === this.userId) {
         this.clearStoredSession();
@@ -473,6 +515,18 @@ export class MaxReserveTransport {
 
     const packet = parsePacket(decrypted);
     if (!packet) return;
+
+    const switchedChatId = this.parseChannelSwitchChatId(packet);
+    if (switchedChatId) {
+      this.activeChatId = switchedChatId;
+      try {
+        await MaxNativeTransport.setChatId({chatId: String(switchedChatId)});
+        console.info(`[max-reserve] native setChatId chatId=${switchedChatId}`);
+      } catch (error: any) {
+        console.warn(`[max-reserve] setChatId failed chatId=${switchedChatId} error=${String(error?.message || error || 'unknown')}`);
+      }
+      return;
+    }
 
     const loginMeta = this.parseLoginMaxMeta(packet);
     if (loginMeta) {
@@ -487,6 +541,22 @@ export class MaxReserveTransport {
 
   private async sendMaxText(text: string) {
     await MaxNativeTransport.sendText({text});
+  }
+
+  private async sendPayload(recipientId: string, payload: string) {
+    const limit = Number(this.config?.chunkTextLimit || 3000);
+    const frames = buildMaxReserveTextFrames(recipientId, payload, limit);
+    for (let index = 0; index < frames.length; index += 1) {
+      const frame = frames[index];
+      await this.sendMaxText(frame.text);
+      if (frame.kind === 'chunk') {
+        console.info(`[max-reserve] chunk send chunkId=${frame.chunkId} index=${frame.index} total=${frame.total} recipient=${recipientId}`);
+      }
+      const hasMoreFrames = index < frames.length - 1;
+      if (hasMoreFrames && frames.length > 1) {
+        await waitMs(MAX_CHUNK_SEND_DELAY_MS);
+      }
+    }
   }
 
   async connect() {
@@ -508,7 +578,7 @@ export class MaxReserveTransport {
         userAgent: String(config.userAgent?.headerUserAgent || 'Mozilla/5.0').trim(),
         token: String(config.token || '').trim(),
         deviceId: String(config.deviceId || '').trim(),
-        chatId: Number(config.chatId || DEFAULT_CHAT_ID),
+        chatId: String(this.activeChatId || Number(config.chatId || DEFAULT_CHAT_ID)),
         userAgentPayload: config.userAgent,
       });
 
@@ -541,8 +611,9 @@ export class MaxReserveTransport {
 
     const encryptedKey = await rsaEncryptToBase64Url(publicKey, keyEnvelope);
     const encryptedPacket = await aesEncryptToCompact(this.tmpSessionKey, JSON.stringify(packet));
+    const payload = `${encryptedKey}:${encryptedPacket}`;
     console.info(`[max-reserve] send login handshake clientId=${this.clientId}`);
-    await this.sendMaxText(`${RESERVED_BACKEND_RECIPIENT} ${encryptedKey}:${encryptedPacket}`);
+    await this.sendPayload(RESERVED_BACKEND_RECIPIENT, payload);
   }
 
   private async sendEncryptedPacket(packet: MarxPacket) {
@@ -552,7 +623,7 @@ export class MaxReserveTransport {
 
     const encrypted = await aesEncryptToCompact(this.maxSessionKey, JSON.stringify(packet));
     console.info(`[max-reserve] send encrypted com=${packet[0]} userId=${this.userId}`);
-    await this.sendMaxText(`${RESERVED_BACKEND_RECIPIENT} ${encrypted}`);
+    await this.sendPayload(RESERVED_BACKEND_RECIPIENT, encrypted);
   }
 
   async sendPacket(packet: MarxPacket) {

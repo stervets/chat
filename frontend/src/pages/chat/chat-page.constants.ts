@@ -88,6 +88,7 @@ export const REACTION_EMOJIS = ['🙂', '👍', '😂', '🔥', '❤️', '🤔'
 export const MAX_PASTE_IMAGE_BYTES = 50 * 1024 * 1024;
 export const MAX_UPLOAD_IMAGE_DIMENSION = 1024;
 export const HISTORY_BATCH_SIZE = 100;
+export const RESERVE_HISTORY_BATCH_SIZE = 10;
 export const VIRTUAL_MAX_ITEMS = 300;
 export const VIRTUAL_OVERSCAN = 40;
 export const VIRTUAL_ESTIMATED_ITEM_HEIGHT = 132;
