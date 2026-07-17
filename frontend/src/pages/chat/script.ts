@@ -23,7 +23,6 @@ import {chatMethodsNotifications} from './modules/methods-notifications';
 import {chatMethodsMessageBodyAndReactions} from './modules/methods-message-body-and-reactions';
 import {chatMethodsAuthDialogsAndProfile} from './modules/methods-auth-dialogs-and-profile';
 import {chatMethodsSendUploadAndRuntime} from './modules/methods-send-upload-and-runtime';
-import {chatMethodsScriptableRuntime} from './modules/methods-scriptable-runtime';
 import {chatMethodsCalls} from './modules/methods-calls';
 
 const CHAT_EVENT_BINDINGS = [
@@ -374,35 +373,6 @@ export default {
       const seconds = Math.floor(elapsed % 60).toString().padStart(2, '0');
       return minutes + ':' + seconds;
     },
-    activeRoomSurface(this: any) {
-      const fallbackSurfaceId = Number(this.activePinnedMessage?.id || this.activeDialog?.pinnedNodeId || 0) || null;
-      return this.normalizeRoomSurface(this.activeDialog?.roomSurface, fallbackSurfaceId);
-    },
-
-    isRoomSurfaceEnabled(this: any) {
-      return !!this.activeDialog && this.activeDialog.kind !== 'direct' && !!this.activeRoomSurface?.enabled;
-    },
-
-    activeRoomSurfaceTypeLabel(this: any) {
-      const appType = String(this.activeRoomSurface?.type || '').trim().toLowerCase();
-      if (appType === 'llm') return 'LLM room';
-      if (appType === 'poll') return 'Poll room';
-      if (appType === 'dashboard') return 'Dashboard room';
-      if (appType === 'bot_control') return 'Bot control';
-      if (appType === 'custom') return 'Custom surface';
-      return 'Surface room';
-    },
-
-    isPinnedRoomSurface(this: any) {
-      if (!this.isRoomSurfaceEnabled) return false;
-      return this.activePinnedMessage?.kind === 'scriptable';
-    },
-
-    shouldShowRoomSurfacePlaceholder(this: any) {
-      if (!this.isRoomSurfaceEnabled) return false;
-      return !this.activePinnedMessage;
-    },
-
     shouldShowPinnedPanel(this: any) {
       if (!this.activeDialog || !this.activePinnedMessage) return false;
       return true;
@@ -508,19 +478,68 @@ export default {
       await this.selectDialog(nextDialog, {routeMode: 'none'});
     },
 
+    async initializeChatPage(this: any) {
+      if (this.chatInitializationPromise) return this.chatInitializationPromise;
+
+      const task = (async () => {
+        await this.fetchUsers();
+        await this.fetchDirectDialogs();
+        await this.fetchPinnedDirectUserIds();
+        await this.fetchRoomsNavigation();
+        if (!this.generalDialog) {
+          this.generalDialog = this.resolveDefaultGroupDialog();
+        }
+
+        await this.syncDialogFromRoute({replaceInvalid: true});
+        const activeRoomId = Number(this.activeDialog?.id || 0);
+        const activeKind = String(this.activeDialog?.kind || '');
+        const activeInNavigation = activeKind === 'direct'
+          ? !!this.findDirectDialogByRoomId(activeRoomId)
+          : (
+            Number(this.generalDialog?.id || 0) === activeRoomId
+            || (this.joinedRooms || []).some((dialog: any) => Number(dialog?.id || 0) === activeRoomId)
+            || (this.publicRooms || []).some((dialog: any) => Number(dialog?.id || 0) === activeRoomId)
+          );
+        if (!this.activeDialog || !activeInNavigation) {
+          await Promise.all([
+            this.fetchDirectDialogs({force: true}),
+            this.fetchPinnedDirectUserIds({force: true}),
+            this.fetchRoomsNavigation({force: true}),
+            this.fetchGeneralDialog({allowHidden: true, force: true}).catch(() => null),
+          ]);
+          await this.selectDefaultGroupDialog({routeMode: 'replace', closeMenu: false});
+        }
+
+        this.routeSyncReady = true;
+        await this.handleCallRouteIntent();
+        this.scheduleVirtualSync();
+        return true;
+      })();
+
+      this.chatInitializationPromise = task;
+      try {
+        return await task;
+      } catch (error) {
+        console.error('[chat] initialization failed', error);
+        this.error = 'Не удалось загрузить чат. Переподключаюсь...';
+        return false;
+      } finally {
+        if (this.chatInitializationPromise === task) {
+          this.chatInitializationPromise = null;
+        }
+      }
+    },
+
     ...chatMethodsRuntimeAndRouting,
     ...chatMethodsComposerAndVirtual,
     ...chatMethodsNotifications,
     ...chatMethodsMessageBodyAndReactions,
     ...chatMethodsAuthDialogsAndProfile,
     ...chatMethodsSendUploadAndRuntime,
-    ...chatMethodsScriptableRuntime,
     ...chatMethodsCalls,
   },
 
   async mounted(this: any) {
-    const ok = await this.ensureAuth();
-    if (!ok) return;
     setWsReconnectDialogResolver(() => {
       const roomId = Number(this.activeDialog?.id || 0);
       return Number.isFinite(roomId) && roomId > 0 ? roomId : null;
@@ -542,41 +561,9 @@ export default {
       this.badgeNowTs = Date.now();
     }, 60 * 1000);
     this.stopFaviconBlink();
-    await this.fetchUsers();
-    await this.fetchDirectDialogs();
-    await this.fetchPinnedDirectUserIds();
-    await this.fetchRoomsNavigation();
-    if (!this.directDialogs.length && !this.joinedRooms.length && !this.publicRooms.length) {
-      await this.fetchDirectDialogs({force: true});
-      await this.fetchPinnedDirectUserIds({force: true});
-      await this.fetchRoomsNavigation({force: true});
-    }
-    if (!this.generalDialog) {
-      this.generalDialog = this.resolveDefaultGroupDialog();
-    }
-
-    await this.syncDialogFromRoute({replaceInvalid: true});
-    const activeRoomId = Number(this.activeDialog?.id || 0);
-    const activeKind = String(this.activeDialog?.kind || '');
-    const activeInNavigation = activeKind === 'direct'
-      ? !!this.findDirectDialogByRoomId(activeRoomId)
-      : (
-        Number(this.generalDialog?.id || 0) === activeRoomId
-        || (this.joinedRooms || []).some((dialog: any) => Number(dialog?.id || 0) === activeRoomId)
-        || (this.publicRooms || []).some((dialog: any) => Number(dialog?.id || 0) === activeRoomId)
-      );
-    if (!this.activeDialog || !activeInNavigation) {
-      await Promise.all([
-        this.fetchDirectDialogs({force: true}),
-        this.fetchPinnedDirectUserIds({force: true}),
-        this.fetchRoomsNavigation({force: true}),
-        this.fetchGeneralDialog({allowHidden: true, force: true}).catch(() => null),
-      ]);
-      await this.selectDefaultGroupDialog({routeMode: 'replace', closeMenu: false});
-    }
-    this.routeSyncReady = true;
-    await this.handleCallRouteIntent();
-    this.scheduleVirtualSync();
+    const ok = await this.ensureAuth();
+    if (!ok) return;
+    await this.initializeChatPage();
   },
 
   beforeUnmount(this: any) {
@@ -613,7 +600,6 @@ export default {
     setWsReconnectDialogResolver(null);
     this.persistHandledMessageNotificationIds();
     this.stopPinnedSplitterDrag();
-    this.disposeScriptRuntimeManager();
     this.disposeCallRuntime(false);
   },
 };

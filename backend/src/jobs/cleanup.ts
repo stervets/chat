@@ -1,6 +1,6 @@
 import {Prisma} from '@prisma/client';
 import {db} from '../db.js';
-import {pruneExpiredUploads} from '../common/uploads.js';
+import {pruneExpiredUploads, sanitizeUploadName} from '../common/uploads.js';
 
 const MAX_MESSAGES_PER_ROOM = 5000;
 const UPLOADS_TTL_DAYS = 30;
@@ -10,6 +10,32 @@ type CleanupLogger = {
   info: (obj: Record<string, unknown>, msg: string) => void;
   error: (obj: Record<string, unknown>, msg: string) => void;
 };
+
+function uploadNameFromPath(pathRaw: unknown) {
+  const path = String(pathRaw || '').trim();
+  if (!path.startsWith('/uploads/')) return null;
+  return sanitizeUploadName(path.slice('/uploads/'.length));
+}
+
+async function collectPersistentUploadNames() {
+  const [users, rooms] = await Promise.all([
+    db.user.findMany({
+      where: {avatarPath: {startsWith: '/uploads/'}},
+      select: {avatarPath: true},
+    }),
+    db.room.findMany({
+      where: {avatarPath: {startsWith: '/uploads/'}},
+      select: {avatarPath: true},
+    }),
+  ]);
+
+  const names = new Set<string>();
+  for (const row of [...users, ...rooms]) {
+    const name = uploadNameFromPath(row.avatarPath);
+    if (name) names.add(name);
+  }
+  return names;
+}
 
 export async function runMessagesCleanup(logger: CleanupLogger = console as CleanupLogger) {
   try {
@@ -31,12 +57,14 @@ export async function runMessagesCleanup(logger: CleanupLogger = console as Clea
       `
     );
     const uploadsCutoffMs = Date.now() - UPLOADS_TTL_DAYS * 24 * 60 * 60 * 1000;
-    const uploadsDeleted = pruneExpiredUploads(uploadsCutoffMs);
+    const persistentUploadNames = await collectPersistentUploadNames();
+    const uploadsDeleted = pruneExpiredUploads(uploadsCutoffMs, persistentUploadNames);
     const deletedByLimit = Number(limitResult || 0);
     logger.info({
       deletedByLimit,
       deleted: deletedByLimit,
       uploadsDeleted,
+      persistentUploads: persistentUploadNames.size,
       uploadsTtlDays: UPLOADS_TTL_DAYS,
       maxMessagesPerRoom: MAX_MESSAGES_PER_ROOM,
     }, 'Messages cleanup completed');

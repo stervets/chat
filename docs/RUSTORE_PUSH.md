@@ -1,6 +1,6 @@
 # RUSTORE_PUSH
 
-Коротко: Android APK в MARX использует только RuStore Push. Browser web-push остаётся только для обычного web/PWA runtime.
+Android APK в MARX использует RuStore Push. Service worker и browser web-push в проекте больше не поддерживаются; в открытой web-вкладке остаются обычные browser notifications от WS-событий.
 
 ## Что нужно настроить
 

@@ -361,7 +361,6 @@ export const chatMethodsMessageBodyAndReactions = {
         this.activeDialog = {
           ...this.activeDialog,
           pinnedNodeId: null,
-          roomSurface: this.normalizeRoomSurface(this.activeDialog?.roomSurface, null),
         };
         return;
       }
@@ -372,11 +371,6 @@ export const chatMethodsMessageBodyAndReactions = {
         this.activeDialog = {
           ...this.activeDialog,
           pinnedNodeId: Number(this.activePinnedMessage?.id || 0) || pinnedNodeId,
-          roomSurface: this.normalizeRoomSurface({
-            ...(this.activeDialog?.roomSurface || {}),
-            pinnedNodeId: Number(this.activePinnedMessage?.id || 0) || pinnedNodeId,
-            pinnedKind: this.activePinnedMessage?.kind || null,
-          }, this.activePinnedMessage?.id || pinnedNodeId),
         };
         this.pinnedCollapsed = this.loadPinnedCollapsedState(roomId);
         return;
@@ -385,11 +379,6 @@ export const chatMethodsMessageBodyAndReactions = {
       this.activeDialog = {
         ...this.activeDialog,
         pinnedNodeId: null,
-        roomSurface: this.normalizeRoomSurface({
-          ...(this.activeDialog?.roomSurface || {}),
-          pinnedNodeId: null,
-          pinnedKind: null,
-        }, null),
       };
     },
 

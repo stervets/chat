@@ -180,6 +180,10 @@ export class ChatAuthService {
       return {ok: false, error: 'invalid_input'};
     }
 
+    const replacedAvatarNames = hasAvatarPath
+      ? this.ctx.uploads.extractUploadNamesFromRawText(state.user?.avatarUrl)
+      : [];
+
     const updated = await db.user.update({
       where: {id: state.user!.id},
       data: updateData,
@@ -196,6 +200,7 @@ export class ChatAuthService {
     });
 
     state.user = this.ctx.users.toPublicUser(updated);
+    await this.ctx.uploads.cleanupUnusedUploads(replacedAvatarNames);
     return {ok: true, user: state.user};
   }
 

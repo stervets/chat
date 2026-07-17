@@ -22,6 +22,19 @@ const config = {
 };
 
 export default defineNuxtConfig({
+  hooks: {
+    'pages:extend'(pages) {
+      const internalPageDirectories = ['/components/', '/message-item/', '/message-scriptable/'];
+      const actualPages = pages.filter((page) => {
+        const file = page.file?.replaceAll('\\', '/') || '';
+        return file.endsWith('/index.vue')
+          && !internalPageDirectories.some((directory) => file.includes(directory));
+      });
+
+      pages.splice(0, pages.length, ...actualPages);
+    }
+  },
+
   modules: [
     '@nuxtjs/tailwindcss',
   ],

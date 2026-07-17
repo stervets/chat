@@ -151,7 +151,6 @@ export const chatMethodsComposerAndVirtual = {
     notifyMessagesChanged(this: any) {
       this.pruneVirtualHeightMap();
       this.scheduleVirtualSync();
-      this.syncScriptableRuntimes();
     },
 
     onVirtualItemHeight(this: any, messageIdRaw: unknown, heightRaw: unknown) {
@@ -854,11 +853,6 @@ export const chatMethodsComposerAndVirtual = {
         return !(message.roomId === roomId && message.id === messageId);
       });
       this.deleteRoomHistoryCacheMessage(roomId, messageId);
-      if (this.scriptMessageViewModels?.[messageId]) {
-        const nextViews = {...(this.scriptMessageViewModels || {})};
-        delete nextViews[messageId];
-        this.scriptMessageViewModels = nextViews;
-      }
       this.resetMessagePreviewCache();
       this.notifyMessagesChanged();
       this.updateScrollDownVisibility();

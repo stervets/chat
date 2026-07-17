@@ -41,9 +41,10 @@ export default defineConfig({
       name: 'chromium',
       use: {
         browserName: 'chromium',
-        ...(executablePath ? {executablePath} : {channel}),
+        ...(!executablePath ? {channel} : {}),
         headless: true,
         launchOptions: {
+          ...(executablePath ? {executablePath} : {}),
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',

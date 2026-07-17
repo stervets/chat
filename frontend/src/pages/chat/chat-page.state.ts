@@ -2,7 +2,6 @@ import {ref} from 'vue';
 import type {Dialog, Message, User} from '@/composables/types';
 import {wsConnectionState} from '@/composables/ws-rpc';
 import type {DirectDialog, DirectCallDirection, DirectCallPayload, DirectCallPhase, NotificationItem, ToastItem} from './chat-page.constants';
-import type {ScriptRuntimeManager} from '@/scriptable/runtime/manager';
 import type {SoundPlayer} from '@/composables/classes/sound-player';
 
 export function createChatPageState() {
@@ -24,10 +23,6 @@ export function createChatPageState() {
       startRatio: number;
       containerHeight: number;
     } | null>(null),
-    scriptRuntimeManager: ref<ScriptRuntimeManager | null>(null),
-    scriptMessageViewModels: ref<Record<number, Record<string, any>>>({}),
-    activeRoomScript: ref<any | null>(null),
-    activeRoomScriptViewModel: ref<Record<string, any> | null>(null),
     messageText: ref(''),
     composerToolsOpen: ref(false),
     composerColorPicker: ref('#61afef'),
@@ -117,6 +112,7 @@ export function createChatPageState() {
     badgeTickTimer: ref<number | null>(null),
     handledMessageNotificationIds: ref<Record<number, true>>({}),
     handledMessageNotificationSaveTimer: ref<number | null>(null),
+    visibleNotificationsSyncScheduled: ref(false),
     notificationMenuEl: ref<HTMLElement | null>(null),
     notificationButtonEl: ref<HTMLElement | null>(null),
     toasts: ref<ToastItem[]>([]),
@@ -157,6 +153,7 @@ export function createChatPageState() {
     handledCallRouteIntent: ref(''),
     pushDisableAllMentions: ref(false),
     routeSyncReady: ref(false),
+    chatInitializationPromise: null as Promise<boolean> | null,
     wsConnectionState,
     usersFetchPromise: null as Promise<void> | null,
     usersFetchedAt: 0,

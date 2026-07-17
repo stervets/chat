@@ -1,4 +1,7 @@
 const {test, expect} = require('@playwright/test');
+const {execFileSync} = require('node:child_process');
+const {readFileSync, utimesSync} = require('node:fs');
+const {basename, resolve} = require('node:path');
 const {
   CONFIG,
   WsRpcClient,
@@ -41,6 +44,27 @@ async function waitForHttpStatus(url, expectedStatus, timeoutMs = 10_000) {
   throw new Error(`unexpected_status: ${url} expected=${expectedStatus} actual=${lastStatus}`);
 }
 
+const backendRoot = resolve(__dirname, '..', 'backend');
+const backendConfig = JSON.parse(readFileSync(resolve(backendRoot, 'config.json'), 'utf-8'));
+
+function expireUpload(uploadUrl) {
+  const uploadPath = new URL(uploadUrl, CONFIG.backendHttpBase).pathname;
+  const uploadFile = resolve(backendRoot, backendConfig.uploads.path, basename(uploadPath));
+  const expiredAt = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+  utimesSync(uploadFile, expiredAt, expiredAt);
+  return uploadPath;
+}
+
+function runMessagesCleanup() {
+  execFileSync(resolve(backendRoot, 'node_modules/.bin/tsx'), [
+    '-e',
+    "import('./src/jobs/cleanup.ts').then(async ({runMessagesCleanup}) => { await runMessagesCleanup(); const {closeDb} = await import('./src/db.ts'); await closeDb(); })",
+  ], {
+    cwd: backendRoot,
+    stdio: 'pipe',
+  });
+}
+
 test('black-box: login + restore session', async () => {
   await withClient(async (client) => {
     const logged = await loginByPassword(client, CONFIG.adminNickname, CONFIG.adminPassword);
@@ -61,6 +85,32 @@ test('black-box: login + restore session', async () => {
     expect(restored.sessionResult.user.id).toBe(meBefore.id);
     expect(restored.meAfter.id).toBe(meBefore.id);
     expect(restored.sessionResult.token).toBe(token);
+  });
+});
+
+test('black-box: scriptable protocol stays disabled', async () => {
+  await withClient(async (client) => {
+    await loginByPassword(client, CONFIG.adminNickname, CONFIG.adminPassword);
+    const room = assertNoApiError(
+      await client.request('room:group:get-default', {}),
+      'room:group:get-default',
+    );
+
+    await expect(client.request('message:create', {
+      roomId: room.roomId,
+      kind: 'scriptable',
+    })).resolves.toMatchObject({ok: false, error: 'scriptable_disabled'});
+    await expect(client.request('runtime:action', {
+      roomId: room.roomId,
+      action: 'noop',
+    })).resolves.toMatchObject({ok: false, error: 'scriptable_disabled'});
+    await expect(client.request('room:surface:set', {
+      roomId: room.roomId,
+    })).resolves.toMatchObject({ok: false, error: 'scriptable_disabled'});
+    const runtime = assertNoApiError(await client.request('room:runtime:get', {
+      roomId: room.roomId,
+    }), 'room:runtime:get');
+    expect(runtime).toEqual({roomRuntime: null});
   });
 });
 
@@ -261,6 +311,55 @@ test('black-box: upload image + delete source + verify cleanup', async () => {
 
     await waitForHttpStatus(uploadRoomRoot.url, 404);
     await waitForHttpStatus(uploadRoomChild.url, 404);
+  });
+});
+
+test('black-box: expired room avatar survives TTL cleanup and is deleted with room', async () => {
+  await withClient(async (client) => {
+    const login = await loginByPassword(client, CONFIG.adminNickname, CONFIG.adminPassword);
+    const upload = await uploadTinyPng(CONFIG.backendHttpBase, login.token, `avatar-ttl-${Date.now()}`);
+    const uploadPath = new URL(upload.url, CONFIG.backendHttpBase).pathname;
+    const room = assertNoApiError(await client.request('room:create', {
+      title: `bb-avatar-ttl-${Date.now()}`,
+      avatarPath: uploadPath,
+    }), 'room:create with avatar');
+    const roomId = Number(room.roomId || 0);
+    expect(roomId).toBeGreaterThan(0);
+
+    try {
+      expireUpload(upload.url);
+      runMessagesCleanup();
+      await waitForHttpStatus(upload.url, 200);
+    } finally {
+      await client.request('room:delete', {roomId, confirm: true}).catch(() => null);
+    }
+
+    await waitForHttpStatus(upload.url, 404);
+  });
+});
+
+test('black-box: expired user avatar survives TTL cleanup and old avatar is removed on replace', async () => {
+  await withClient(async (client) => {
+    const login = await loginByPassword(client, CONFIG.adminNickname, CONFIG.adminPassword);
+    const previousProfile = assertNoApiError(await client.request('auth:me', {}), 'auth:me before avatar');
+    const upload = await uploadTinyPng(CONFIG.backendHttpBase, login.token, `user-avatar-ttl-${Date.now()}`);
+    const uploadPath = new URL(upload.url, CONFIG.backendHttpBase).pathname;
+
+    assertNoApiError(await client.request('auth:updateProfile', {
+      avatarPath: uploadPath,
+    }), 'auth:updateProfile avatar');
+
+    try {
+      expireUpload(upload.url);
+      runMessagesCleanup();
+      await waitForHttpStatus(upload.url, 200);
+    } finally {
+      await client.request('auth:updateProfile', {
+        avatarPath: previousProfile.avatarUrl || null,
+      }).catch(() => null);
+    }
+
+    await waitForHttpStatus(upload.url, 404);
   });
 });
 

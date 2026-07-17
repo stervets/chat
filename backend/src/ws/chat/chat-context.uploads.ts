@@ -40,16 +40,27 @@ export class ChatContextUploads {
   }
 
   async isUploadUsed(fileName: string) {
-    const row = await db.message.findFirst({
-      where: {
-        rawText: {
-          contains: `/uploads/${fileName}`,
+    const uploadPath = `/uploads/${fileName}`;
+    const [message, user, room] = await Promise.all([
+      db.message.findFirst({
+        where: {
+          rawText: {
+            contains: uploadPath,
+          },
         },
-      },
-      select: {id: true},
-    });
+        select: {id: true},
+      }),
+      db.user.findFirst({
+        where: {avatarPath: uploadPath},
+        select: {id: true},
+      }),
+      db.room.findFirst({
+        where: {avatarPath: uploadPath},
+        select: {id: true},
+      }),
+    ]);
 
-    return !!row?.id;
+    return !!message?.id || !!user?.id || !!room?.id;
   }
 
   async cleanupUnusedUploads(uploadNamesRaw: string[]) {
@@ -79,6 +90,10 @@ export class ChatContextUploads {
       select m.raw_text as "rawText"
       from messages m
       join subtree s on s.id = m.id
+      union all
+      select r.avatar_path as "rawText"
+      from rooms r
+      join subtree s on s.id = r.id
     `);
 
     const uploadNames = rows.flatMap((row) => this.extractUploadNamesFromRawText(row.rawText || ''));

@@ -121,6 +121,7 @@ export const chatMethodsNotifications = {
 
     showBrowserNotification(this: any, notification: NotificationItem) {
       if (typeof window === 'undefined') return;
+      if (!this.isWindowInactive()) return;
       if (!this.isBrowserNotificationsSupported?.()) return;
       if (!this.browserNotificationsEnabled || this.browserNotificationPermission !== 'granted') return;
 
@@ -266,6 +267,35 @@ export const chatMethodsNotifications = {
       this.updateFaviconBlinkByUnread();
     },
 
+    isTargetMessageVisible(this: any, roomIdRaw: unknown, messageIdRaw: unknown) {
+      const roomId = Number(roomIdRaw || 0);
+      const messageId = Number(messageIdRaw || 0);
+      if (!this.messagesEl || Number(this.activeDialog?.id || 0) !== roomId) return false;
+      if (!Number.isFinite(messageId) || messageId <= 0) return false;
+
+      const viewportRect = this.messagesEl.getBoundingClientRect();
+      if (viewportRect.height <= 0) return false;
+      const messageEl = this.messagesEl.querySelector(
+        `[data-message-id="${messageId}"]`
+      ) as HTMLElement | null;
+      if (!messageEl) return false;
+
+      const messageRect = messageEl.getBoundingClientRect();
+      const visibleHeight = Math.min(viewportRect.bottom, messageRect.bottom)
+        - Math.max(viewportRect.top, messageRect.top);
+      const minVisible = Math.min(30, Math.max(10, messageRect.height * 0.35));
+      return visibleHeight >= minVisible;
+    },
+
+    removeToastsForNotificationIds(this: any, notificationIdsRaw: number[]) {
+      const notificationIds = new Set(notificationIdsRaw.map((value) => Number(value || 0)).filter(Boolean));
+      if (!notificationIds.size) return;
+      const toastIds = this.toasts
+        .filter((toast: ToastItem) => notificationIds.has(Number(toast.notificationId || 0)))
+        .map((toast: ToastItem) => toast.id);
+      toastIds.forEach((toastId: number) => this.removeToast(toastId));
+    },
+
     addNotificationFromMessage(this: any, messageRaw: Message, optionsRaw?: {showToast?: boolean}) {
       const message = this.normalizeMessage(messageRaw);
       if (!this.isMessageAddressedToMe(message)) return;
@@ -314,6 +344,9 @@ export const chatMethodsNotifications = {
       const roomId = Number(payload?.roomId);
       if (!Number.isFinite(roomId)) return;
 
+      const targetMessageId = Number(payload?.messageId) || 0;
+      if (!this.isWindowInactive() && this.isTargetMessageVisible(roomId, targetMessageId)) return;
+
       const notificationId = this.notificationsSeq;
       this.notificationsSeq += 1;
 
@@ -350,7 +383,7 @@ export const chatMethodsNotifications = {
         createdAt: String(payload?.createdAt || new Date().toISOString()),
         unread: true,
         targetUser,
-        targetMessageId: Number(payload?.messageId) || undefined,
+        targetMessageId: targetMessageId || undefined,
         reactionEmoji: emoji || undefined,
       };
 
@@ -408,47 +441,41 @@ export const chatMethodsNotifications = {
       });
       const changed = this.notifications.length !== before;
       if (!changed) return;
+      this.removeToastsForNotificationIds([notificationId]);
       this.updateFaviconBlinkByUnread();
     },
 
     markVisibleMessageNotificationsRead(this: any) {
       if (!this.messagesEl || !this.activeDialog) return;
 
-      const viewportRect = this.messagesEl.getBoundingClientRect();
-      if (viewportRect.height <= 0) return;
-
+      const removedNotificationIds: number[] = [];
       const before = this.notifications.length;
       this.notifications = this.notifications.filter((notification: NotificationItem) => {
-        if (notification.notificationType !== 'message') return true;
         if (notification.roomId !== this.activeDialog.id) return true;
 
         const targetMessageId = Number(notification.targetMessageId || 0);
         if (!Number.isFinite(targetMessageId) || targetMessageId <= 0) return true;
+        if (!this.isTargetMessageVisible(notification.roomId, targetMessageId)) return true;
 
-        const messageEl = this.messagesEl.querySelector(
-          `[data-message-id="${targetMessageId}"]`
-        ) as HTMLElement | null;
-        if (!messageEl) return true;
-
-        const messageRect = messageEl.getBoundingClientRect();
-        const overlapTop = Math.max(viewportRect.top, messageRect.top);
-        const overlapBottom = Math.min(viewportRect.bottom, messageRect.bottom);
-        const visibleHeight = overlapBottom - overlapTop;
-        const minVisible = Math.min(30, Math.max(10, messageRect.height * 0.35));
-        if (visibleHeight < minVisible) return true;
-
-        this.markMessageNotificationHandled(targetMessageId);
+        if (notification.notificationType === 'message') {
+          this.markMessageNotificationHandled(targetMessageId);
+        }
+        removedNotificationIds.push(notification.id);
         return false;
       });
       const changed = this.notifications.length !== before;
       if (!changed) return;
+      this.removeToastsForNotificationIds(removedNotificationIds);
       this.updateFaviconBlinkByUnread();
     },
 
-    seedNotificationsFromMessages(this: any, messagesRaw: Message[]) {
-      for (const message of messagesRaw) {
-        this.addNotificationFromMessage(message, {showToast: false});
-      }
+    scheduleVisibleMessageNotificationsRead(this: any) {
+      if (this.visibleNotificationsSyncScheduled || typeof window === 'undefined') return;
+      this.visibleNotificationsSyncScheduled = true;
+      window.requestAnimationFrame(() => {
+        this.visibleNotificationsSyncScheduled = false;
+        this.markVisibleMessageNotificationsRead();
+      });
     },
 
     toggleNotificationsMenu(this: any) {
@@ -462,12 +489,14 @@ export const chatMethodsNotifications = {
 
     clearNotifications(this: any) {
       this.hapticTap();
+      const notificationIds = this.notifications.map((notification: NotificationItem) => notification.id);
       this.notifications.forEach((notification: NotificationItem) => {
         if (notification.notificationType === 'message' && notification.targetMessageId) {
           this.markMessageNotificationHandled(notification.targetMessageId);
         }
       });
       this.notifications = [];
+      this.removeToastsForNotificationIds(notificationIds);
       this.inactiveTabUnread = false;
       this.updateFaviconBlinkByUnread();
     },
@@ -538,31 +567,24 @@ export const chatMethodsNotifications = {
     async openNotification(this: any, notification: NotificationItem) {
       this.hapticTap();
       const targetMessageId = Number(notification.targetMessageId || 0) || null;
-      if (notification.notificationType === 'reaction' || !targetMessageId) {
+      if (!targetMessageId) {
         this.markNotificationRead(notification.id);
       }
 
-      let targetDialog = null;
-      if (notification.roomKind === 'group' && this.generalDialog) {
-        targetDialog = this.generalDialog;
-      } else {
-        const fromRoom = this.buildDialogFromRoomRoute(notification.roomId);
-        if (fromRoom) {
-          targetDialog = fromRoom;
-        } else {
-          const direct = this.directDialogs.find((dialog: DirectDialog) => dialog.roomId === notification.roomId);
-          if (direct) {
-            targetDialog = {
-              id: direct.roomId,
-              kind: 'direct',
-              joined: true,
-              targetUser: direct.targetUser,
-              title: direct.targetUser.name,
-            };
-          } else if (notification.targetUser && notification.roomKind === 'direct') {
-            await this.selectPrivate(notification.targetUser);
-            targetDialog = this.activeDialog;
-          }
+      let targetDialog = this.buildDialogFromRoomRoute(notification.roomId);
+      if (!targetDialog) {
+        const direct = this.directDialogs.find((dialog: DirectDialog) => dialog.roomId === notification.roomId);
+        if (direct) {
+          targetDialog = {
+            id: direct.roomId,
+            kind: 'direct',
+            joined: true,
+            targetUser: direct.targetUser,
+            title: direct.targetUser.name,
+          };
+        } else if (notification.targetUser && notification.roomKind === 'direct') {
+          await this.selectPrivate(notification.targetUser);
+          targetDialog = this.activeDialog;
         }
       }
 

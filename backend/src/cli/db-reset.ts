@@ -10,7 +10,6 @@ async function run() {
       rooms_users,
       rooms,
       nodes,
-      push_subscriptions,
       native_push_tokens,
       sessions,
       invites,

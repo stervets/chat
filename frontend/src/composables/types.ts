@@ -14,17 +14,6 @@ export type User = {
 
 
 export type DialogKind = 'group' | 'direct' | 'game' | 'comment';
-export type RoomSurfaceType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
-
-export type RoomSurface = {
-  enabled: boolean;
-  type: RoomSurfaceType | null;
-  config: Record<string, any>;
-  pinnedNodeId: Id | null;
-  pinnedKind: 'text' | 'system' | 'scriptable' | null;
-  hasRoomRuntime: boolean;
-  requiresRoomRuntime: boolean;
-};
 
 export type DiscussionMeta = {
   sourceMessageId: Id | null;
@@ -48,7 +37,6 @@ export type Dialog = {
   targetUser?: User;
   createdById?: Id | null;
   pinnedNodeId?: Id | null;
-  roomSurface?: RoomSurface | null;
   discussion?: DiscussionMeta | null;
 };
 
@@ -103,5 +91,4 @@ export type MessageReaction = {
   emoji: string;
   users: MessageReactionUser[];
 };
-
 

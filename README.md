@@ -1,6 +1,6 @@
 # MARX
 
-Закрытый чат для аварийной связи, mobile/PWA-first.
+Закрытый mobile-first чат. Основной клиент — Android-приложение на Capacitor; web SPA остаётся для браузера.
 
 ## Что умеет сейчас
 
@@ -11,14 +11,15 @@
 - автосоздание direct с системным пользователем `marx`;
 - серверный рендер форматирования сообщений (`rawText` + `renderedHtml`);
 - upload изображений (`/upload/image`, `/uploads/*`);
-- web push (`/push/*` + service worker);
+- Android push через RuStore Push;
+- резервный MAX-транспорт в Android APK при недоступности основного WS;
 - VPN страница (`/vpn`) с WireGuard provisioning через `wg-admin`;
 - Telegram news pipeline в `scripts/telegram-news`;
 - smoke/e2e/stress скрипты.
 
 ## Стек
 
-- `frontend/` — Nuxt 3 SPA (`ssr: false`), Element Plus, Tailwind, Less.
+- `frontend/` — Nuxt 3 SPA (`ssr: false`), Capacitor Android, Tailwind, Less.
 - `backend/` — NestJS + WS + HTTP, Prisma, PostgreSQL.
 - Конфиг через JSON (`frontend/config.json`, `backend/config.json`, `scripts/config.json`).
 
@@ -91,7 +92,9 @@ yarn run telegram:digest
 
 ## Deploy
 
-Актуальный деплой: [docs/DEPLOY.md](docs/DEPLOY.md) + [Caddyfile](Caddyfile).
+Актуальный деплой: [docs/DEPLOY.md](docs/DEPLOY.md) + [Caddy routes](ops/caddy/marx-normal.routes.caddy).
+
+Android-сборка: [docs/ANDROID_APK.md](docs/ANDROID_APK.md). Настройка push: [docs/RUSTORE_PUSH.md](docs/RUSTORE_PUSH.md).
 
 ## Документация
 

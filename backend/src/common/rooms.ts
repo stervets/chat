@@ -2,12 +2,10 @@ import {db} from '../db.js';
 import {
   cloneJson,
   createRoomNode,
-  type RoomSurfaceType,
   type RoomKind,
-  readRoomSurface,
 } from './nodes.js';
 
-export type {RoomSurfaceType, RoomKind} from './nodes.js';
+export type {RoomKind} from './nodes.js';
 
 export type RoomRow = {
   id: number;
@@ -19,9 +17,6 @@ export type RoomRow = {
   post_only_by_admin: boolean;
   created_by: number | null;
   pinned_node_id: number | null;
-  surface_enabled: boolean;
-  surface_type: RoomSurfaceType | null;
-  surface_config_json: Record<string, any>;
   component: string | null;
   client_script: string | null;
   server_script: string | null;
@@ -94,10 +89,6 @@ function buildDirectRoomLockKey(firstUserId: number, secondUserId: number) {
 }
 
 function mapRoom(row: RoomWithUsers): RoomRow {
-  const roomSurface = readRoomSurface({
-    data: row.node?.data || {},
-  });
-
   return {
     id: row.id,
     kind: row.kind === 'direct' || row.kind === 'game' || row.kind === 'comment' ? row.kind : 'group',
@@ -108,9 +99,6 @@ function mapRoom(row: RoomWithUsers): RoomRow {
     post_only_by_admin: !!row.postOnlyByAdmin,
     created_by: Number(row.node?.createdById || 0) || null,
     pinned_node_id: Number(row.pinnedNodeId || 0) || null,
-    surface_enabled: !!roomSurface.enabled,
-    surface_type: roomSurface.type,
-    surface_config_json: cloneJson(roomSurface.config || {}),
     component: row.node?.component || null,
     client_script: row.node?.clientScript || null,
     server_script: row.node?.serverScript || null,

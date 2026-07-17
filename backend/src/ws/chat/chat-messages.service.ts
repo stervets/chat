@@ -609,10 +609,6 @@ export class ChatMessagesService {
     if (Number(message.node?.parentId || 0) !== roomId) {
       return {ok: false, error: 'message_not_in_room'};
     }
-    if (room.surface_enabled && message.kind !== 'scriptable') {
-      return {ok: false, error: 'room_surface_must_be_scriptable'};
-    }
-
     const changed = Number(room.pinned_node_id || 0) !== messageId;
     if (changed) {
       await db.room.update({

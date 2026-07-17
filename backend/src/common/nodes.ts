@@ -3,7 +3,6 @@ import {db} from '../db.js';
 
 export type NodeType = 'room' | 'message';
 export type RoomKind = 'group' | 'direct' | 'game' | 'comment';
-export type RoomSurfaceType = 'llm' | 'poll' | 'dashboard' | 'bot_control' | 'custom';
 export type NodeRuntimeSnapshot = {
   clientScript: string | null;
   serverScript: string | null;
@@ -32,60 +31,12 @@ export function normalizeRoomKind(raw: unknown): RoomKind {
   return 'group';
 }
 
-export function normalizeRoomSurfaceType(raw: unknown): RoomSurfaceType | null {
-  const value = String(raw || '').trim().toLowerCase();
-  if (value === 'llm' || value === 'poll' || value === 'dashboard' || value === 'bot_control' || value === 'custom') {
-    return value;
-  }
-  return null;
-}
-
 export function readNodeRuntime(nodeRaw: {clientScript?: unknown; serverScript?: unknown; data?: unknown}): NodeRuntimeSnapshot {
   return {
     clientScript: nodeRaw?.clientScript ? String(nodeRaw.clientScript) : null,
     serverScript: nodeRaw?.serverScript ? String(nodeRaw.serverScript) : null,
     data: asRecord(nodeRaw?.data),
   };
-}
-
-
-export function readRoomSurface(nodeRaw: {data?: unknown}) {
-  const roomSurface = asRecord(asRecord(nodeRaw.data).roomSurface);
-  return {
-    enabled: !!roomSurface.enabled,
-    type: normalizeRoomSurfaceType(roomSurface.type),
-    config: asRecord(roomSurface.config),
-  };
-}
-
-export function mergeNodeData(input: {
-  current?: unknown;
-  patch?: unknown;
-  roomSurface?: {
-    enabled: boolean;
-    type: RoomSurfaceType | null;
-    config: Record<string, any>;
-  } | null;
-}) {
-  const next = asRecord(input.current);
-
-  if (input.patch !== undefined) {
-    Object.assign(next, asRecord(input.patch));
-  }
-
-  if (input.roomSurface !== undefined) {
-    if (input.roomSurface) {
-      next.roomSurface = {
-        enabled: !!input.roomSurface.enabled,
-        type: normalizeRoomSurfaceType(input.roomSurface.type),
-        config: asRecord(input.roomSurface.config),
-      };
-    } else {
-      delete next.roomSurface;
-    }
-  }
-
-  return next;
 }
 
 export async function createNode(client: DbClient, data: {

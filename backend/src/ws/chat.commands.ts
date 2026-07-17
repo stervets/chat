@@ -257,7 +257,6 @@ function roomUpdatedPayload(result: Record<string, unknown>) {
     postOnlyByAdmin: !!result.postOnlyByAdmin,
     createdById: result.createdById || null,
     pinnedNodeId: result.pinnedNodeId || null,
-    roomSurface: result.roomSurface || null,
     discussion: result.discussion || null,
   };
 }

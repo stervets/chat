@@ -1,7 +1,7 @@
 # API
 
 Основной транспорт: WebSocket (`ws://<backend-host>:8816/ws`).
-HTTP остаётся только для upload и web-push.
+HTTP остаётся только для upload и раздачи загруженных файлов.
 
 ## Формат WS пакета
 
@@ -293,17 +293,11 @@ Legacy `scriptable` сообщения backend всё ещё может верн
 - тот же endpoint используется для аватаров room/user (только image на клиенте) и обычных media-сообщений.
 - для avatar в `/console` перед upload есть crop UI (круглая маска + drag/zoom), результат отправляется как квадрат `1024x1024`.
 
-### Push
+### Android push
 
-- `GET /push/public-key`
-- `POST /push/subscribe`
-- `POST /push/unsubscribe`
-- `POST /push/test`
+Native push регистрируется WS-командами `push:native:register` и `push:native:unregister`. Backend отправляет сообщения и входящие звонки через RuStore Push. Deep-link нормализован в `/chat?room=<roomId>&focusMessage=<messageId>`; отправитель исключается из получателей.
 
-Семантика chat web-push:
-- для direct уведомления `url` нормализуется как `/chat?room=<directRoomId>&focusMessage=<messageId>`;
-- service worker при клике по push дополнительно канонизирует переход по `roomId/messageId` в тот же формат;
-- отправитель не получает push на своё сообщение: backend всегда исключает `senderId` и `message.authorId` из получателей.
+Service worker, browser web-push и HTTP endpoints `/push/*` не поддерживаются.
 
 ## Direct voice calls (1-1 WebRTC)
 
@@ -313,7 +307,7 @@ WS commands:
 
 - `call:ice-config({})` -> `{iceServers, callRingTimeoutMs}`.
 - `call:start({roomId})` -> создаёт звонок в direct-комнате и отправляет собеседнику `call:incoming`.
-- `call:get({callId})` -> возвращает текущее состояние звонка, используется PWA deep-link после push.
+- `call:get({callId})` -> возвращает текущее состояние звонка, используется Android deep-link после push.
 - `call:accept({callId})` -> принимает входящий звонок и отправляет обоим участникам `call:accepted`.
 - `call:reject({callId})` -> отклоняет входящий звонок и отправляет `call:ended`.
 - `call:hangup({callId, reason?})` -> завершает активный звонок и отправляет `call:ended`.
@@ -345,8 +339,7 @@ WS events:
 }
 ```
 
-PWA/Web Push:
+Android push:
 
-- если callee не имеет активного WS-подключения, `call:start` отправляет high-priority Web Push `type: 'incoming_call'`;
-- service worker показывает уведомление с deep-link `/chat?room=<roomId>&callId=<callId>` и actions `answer/reject` там, где браузер их поддерживает;
-- фактический `getUserMedia` и WebRTC стартуют только после открытия PWA/вкладки.
+- `call:start` отправляет RuStore Push `type: 'call'` с deep-link `/chat?room=<roomId>&callId=<callId>`;
+- фактический `getUserMedia` и WebRTC стартуют только после открытия приложения.

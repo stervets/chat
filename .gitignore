@@ -49,6 +49,8 @@ backend/logs/
 # --- Local config ---
 frontend/config.json
 backend/config.json
+backend/config.json.bak.*
+backend/secrets/
 scripts/config.json
 scripts/telegram-news/config.json
 !frontend/config.example.json

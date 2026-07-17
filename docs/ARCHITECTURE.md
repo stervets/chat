@@ -4,7 +4,6 @@
 
 - `frontend/` — Nuxt 3 SPA (`ssr:false`), mobile-first UI чата.
 - `backend/` — NestJS HTTP + WebSocket API.
-- `backend/src/scriptable/*` и `backend/src/script-runner/*` — scriptable runtime и runner.
 - `scripts/` — smoke/e2e/stress.
 
 Текущий UI layout:
@@ -116,27 +115,23 @@ Redeem добавляет пользователя в комнаты из invite
 ## Console / навигация
 
 - `/console` держит user/rooms/vpn/invites в одном месте.
-- user tab: просмотр/редактирование профиля, локальные настройки уведомлений, web-push, пароль.
+- user tab: просмотр/редактирование профиля, локальные настройки уведомлений, пароль.
 - rooms tab: список room, где профиль-владелец является admin; там же room edit/create и список участников с online-dot.
 - pin active direct/room в `/chat`:
   - direct pin = `contacts:add` (закреплённые директы);
   - room pin = `room:join` (закреплённые комнаты в навигации).
 - unpin вынесен в `/console`: для direct это `contacts:remove`, для room — `room:leave`.
-- direct web-push-клик всегда ведёт в канонический маршрут `/chat?room=<directRoomId>&focusMessage=<messageId>` (без промежуточных redirect через `/direct/*`).
+- клик по Android push ведёт в канонический маршрут `/chat?room=<directRoomId>&focusMessage=<messageId>`.
 - admin комнаты может исключить участника через `room:members:remove`; исключённый участник получает event `room:deleted`.
-- vpn tab: только PWA install + VPN provisioning.
+- vpn tab: VPN provisioning.
 - invites tab: создание invite с выбором доступных room.
 - клиент хранит последний chat/direct маршрут в localStorage и использует его как точку возврата для кнопок `Назад` и после relogin.
 
-## Runtime / Scriptable
+## Legacy Scriptable
 
-Runtime определяется только полями node:
+Scriptable runtime удалён из frontend и backend. Поля `component`, `client_script`, `server_script` и `data` остаются в `nodes` только как legacy-данные.
 
-- `client_script` -> клиентский runtime;
-- `server_script` -> серверный runtime;
-- `nodes.data` -> runtime данные (например `config`, `state`, `roomSurface`).
-
-Но прямо сейчас runtime в основном chat flow временно выключен:
+Протокольные заглушки сохранены:
 - новые scriptable messages не создаются;
 - `runtime:action` не исполняется;
 - `room:surface:set` не включает room app;
@@ -151,21 +146,6 @@ Runtime определяется только полями node:
 - image на клиенте пережимаются до `max 1024x1024` (с сохранением пропорций).
 - avatar upload в `/console` идёт через crop-оверлей (круглая маска), сервер получает уже обрезанный `1024x1024`.
 - Rutube ссылки компилируются в iframe embed preview.
-
-Наружный runtime snapshot:
-
-```ts
-{
-  nodeType: 'message' | 'room',
-  nodeId: number,
-  roomId: number,
-  clientScript: string | null,
-  serverScript: string | null,
-  data: Record<string, any>
-}
-```
-
-`roomSurface` — derived модель UI-поверхности комнаты, не отдельный structural layer.
 
 ## WebSocket
 
@@ -270,10 +250,10 @@ Runtime определяется только полями node:
 - При disconnect последнего WS-сокета пользователя его активные звонки завершаются с reason `disconnect`.
 - Ringing-звонки автоматически истекают по `config.webrtc.callRingTimeoutMs`.
 
-PWA поведение:
+Поведение Android-приложения:
 
 - открытая вкладка получает `call:incoming` по WS и показывает in-app overlay;
-- закрытая/спящая PWA получает Web Push `incoming_call`, service worker открывает `/chat?room=<roomId>&callId=<callId>`;
-- ответ/отклонение из notification action обрабатываются через route query `callAction=answer|reject` после открытия приложения.
+- закрытое/спящее приложение получает RuStore Push, tap открывает `/chat?room=<roomId>&callId=<callId>`;
+- после открытия приложение запрашивает актуальное состояние звонка через `call:get`.
 
 При горизонтальном масштабировании backend call-state нужно вынести из in-memory `Map` в Redis/Postgres + pub/sub, иначе два участника одного звонка могут попасть на разные instances.

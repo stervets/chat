@@ -6,9 +6,9 @@ MARX Android APK собирается как Capacitor-приложение по
 - Android wrapper на Capacitor в `frontend/android`
 - native Android push через RuStore Push SDK
 - foreground-уведомления через `@capacitor/local-notifications`
-- browser web-push внутри Android runtime выключен
+- service worker и browser web-push удалены; push для APK идёт через RuStore
 - reconnect WebSocket усилен под `resume / network / VPN toggle`
-- launcher icons обновлены из `frontend/src/public/pwa-192.png`
+- launcher icons собраны из `frontend/src/public/pwa-192.png` (legacy-имя исходного файла)
 - permissions для `INTERNET`, `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `POST_NOTIFICATIONS`
 
 ## Подготовка frontend
@@ -126,7 +126,7 @@ frontend/android/app/build/outputs/apk/debug/app-debug.apk
 
 ## Как frontend получает RuStore push token
 На Android runtime приложение:
-1. не запускает browser web-push;
+1. не использует service worker или browser web-push;
 2. инициализирует RuStore Push SDK через локальный Capacitor plugin `RuStorePush`;
 3. получает RuStore push token;
 4. пишет token в `localStorage`;
@@ -262,6 +262,6 @@ yarn build
 - нет foreground service
 - нет VoIP CallStyle notification
 - не переписан WebSocket protocol
-- не выпилен browser web-push для web/PWA версии
+- browser web-push удалён; web-клиент получает уведомления только пока вкладка открыта
 - не переписаны auth/session/message flows
 - не переписан UI

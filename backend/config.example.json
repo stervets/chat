@@ -38,13 +38,6 @@
   "db": {
     "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"
   },
-  "scriptRunner": {
-    "enabled": true,
-    "url": "ws://127.0.0.1:8921/script-runner",
-    "host": "127.0.0.1",
-    "port": 8921,
-    "path": "/script-runner"
-  },
   "maxReserve": {
     "enabled": false,
     "wsUrl": "wss://ws-api.oneme.ru/websocket",
@@ -55,7 +48,7 @@
     "channelRotationMinutes": 30,
     "channelSwitchOverlapMs": 120000,
     "deviceId": "CHANGE_ME",
-    "privateKeyPath": "./secrets/max-reserve-private.pem",
+    "privateKeyPath": "/run/secrets/marx-max-reserve-private.pem",
     "publicKeyId": "reserve-key-v1",
     "userAgent": {
       "deviceType": "WEB",

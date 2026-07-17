@@ -24,10 +24,12 @@
     "donationPhone": "+7-999-999-9999",
     "donationBank": "Райффайзенбанк"
   },
-  "push": {
-    "vapidPublicKey": "",
-    "vapidPrivateKey": "",
-    "vapidSubject": ""
+  "nativePush": {
+    "enabled": false,
+    "provider": "rustore",
+    "rustoreProjectId": "",
+    "rustoreServiceToken": "",
+    "androidPackageName": "ru.core5.marx"
   },
   "db": {
     "url": "postgresql://postgres:postgres@127.0.0.1:5432/marx?schema=public"
@@ -42,7 +44,7 @@
 - `corsOrigins` — CORS.
 - `uploads.path`, `uploads.maxBytes` — upload storage/лимит.
 - `vpn.*` — реквизиты для `/vpn`.
-- `push.*` — VAPID для web-push.
+- `nativePush.*` — серверная отправка RuStore Push для Android.
 - `db.url` — runtime подключение backend к PostgreSQL.
 
 ## Frontend

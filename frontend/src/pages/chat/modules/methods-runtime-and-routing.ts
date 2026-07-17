@@ -428,7 +428,6 @@ export const chatMethodsRuntimeAndRouting = {
       if (fromJoined) {
         return {
           ...fromJoined,
-          roomSurface: this.normalizeRoomSurface(fromJoined?.roomSurface, fromJoined?.pinnedNodeId),
         } as Dialog;
       }
 
@@ -438,7 +437,6 @@ export const chatMethodsRuntimeAndRouting = {
       if (fromPublic) {
         return {
           ...fromPublic,
-          roomSurface: this.normalizeRoomSurface(fromPublic?.roomSurface, fromPublic?.pinnedNodeId),
         } as Dialog;
       }
 
@@ -452,7 +450,6 @@ export const chatMethodsRuntimeAndRouting = {
           title: direct.targetUser.name,
           createdById: null,
           pinnedNodeId: Number(direct.pinnedNodeId || 0) || null,
-          roomSurface: this.normalizeRoomSurface(direct.roomSurface, direct.pinnedNodeId),
           discussion: null,
         } as Dialog;
       }
@@ -464,7 +461,6 @@ export const chatMethodsRuntimeAndRouting = {
         title: `Комната #${roomId}`,
         createdById: null,
         pinnedNodeId: null,
-        roomSurface: this.normalizeRoomSurface(null, null),
         discussion: null,
       } as Dialog;
     },
@@ -518,7 +514,6 @@ export const chatMethodsRuntimeAndRouting = {
             commentsEnabled: false,
             createdById: null,
             pinnedNodeId: Number(existingDirect.pinnedNodeId || 0) || null,
-            roomSurface: this.normalizeRoomSurface(existingDirect.roomSurface, existingDirect.pinnedNodeId),
             discussion: null,
           }, {routeMode: 'none'});
         } else {
@@ -693,7 +688,6 @@ export const chatMethodsRuntimeAndRouting = {
           commentsEnabled: false,
           createdById: null,
           pinnedNodeId: Number(existingDirect.pinnedNodeId || 0) || null,
-          roomSurface: this.normalizeRoomSurface(existingDirect.roomSurface, existingDirect.pinnedNodeId),
           discussion: null,
         }, {routeMode: 'none'});
         return;

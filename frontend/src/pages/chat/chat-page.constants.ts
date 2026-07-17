@@ -1,4 +1,4 @@
-import type {RoomSurface, User} from '@/composables/types';
+import type {User} from '@/composables/types';
 
 export type DirectDialog = {
   roomId: number;
@@ -6,7 +6,6 @@ export type DirectDialog = {
   lastMessageAt: string;
   createdById?: number | null;
   pinnedNodeId?: number | null;
-  roomSurface?: RoomSurface | null;
 };
 
 

@@ -37,6 +37,5 @@ export type {
   Dialog,
   Message,
   MessageReaction,
-  RoomSurface,
   User,
 } from '@/composables/types';

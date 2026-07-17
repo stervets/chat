@@ -15,7 +15,6 @@ import type {
   DiscussionMeta,
   Dialog,
   Message,
-  RoomSurface,
   User,
   DirectDialog,
   NotificationItem,
@@ -49,24 +48,14 @@ function isTemporarilyHiddenRoomTitle(titleRaw: unknown, nicknameRaw?: unknown) 
   return String(titleRaw || '').trim().toLowerCase() === TEMP_HIDDEN_ROOM_TITLE;
 }
 
-function cloneRoomSurface(surface: RoomSurface | null | undefined) {
-  return surface
-    ? {...surface, config: {...(surface.config || {})}}
-    : surface;
-}
-
 function cloneDialog<T extends Dialog>(dialog: T): T {
-  return {
-    ...dialog,
-    roomSurface: cloneRoomSurface(dialog.roomSurface),
-  } as T;
+  return {...dialog};
 }
 
 function cloneDirectDialog<T extends DirectDialog>(dialog: T): T {
   return {
     ...dialog,
     targetUser: dialog.targetUser ? {...dialog.targetUser} : dialog.targetUser,
-    roomSurface: cloneRoomSurface(dialog.roomSurface),
   } as T;
 }
 
@@ -125,32 +114,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         donationBadgeUntil: raw?.donationBadgeUntil ? String(raw.donationBadgeUntil) : null,
         isOnline: !!raw?.isOnline,
         pushDisableAllMentions: !!raw?.pushDisableAllMentions,
-      };
-    },
-
-    normalizeRoomSurface(this: any, raw: any, fallbackPinnedNodeIdRaw?: unknown): RoomSurface {
-      const typeRaw = String(raw?.type || '').trim().toLowerCase();
-      const type = typeRaw === 'llm' || typeRaw === 'poll' || typeRaw === 'dashboard' || typeRaw === 'bot_control' || typeRaw === 'custom'
-        ? typeRaw
-        : null;
-      const fallbackPinnedNodeId = Number(fallbackPinnedNodeIdRaw || 0);
-      const pinnedNodeId = Number(raw?.pinnedNodeId || fallbackPinnedNodeId || 0);
-      const pinnedKindRaw = String(raw?.pinnedKind || '').trim().toLowerCase();
-      const pinnedKind = pinnedKindRaw === 'text' || pinnedKindRaw === 'system' || pinnedKindRaw === 'scriptable'
-        ? pinnedKindRaw
-        : null;
-      const config = raw?.config && typeof raw.config === 'object' && !Array.isArray(raw.config)
-        ? {...raw.config}
-        : {};
-
-      return {
-        enabled: !!raw?.enabled,
-        type,
-        config,
-        pinnedNodeId: Number.isFinite(pinnedNodeId) && pinnedNodeId > 0 ? pinnedNodeId : null,
-        pinnedKind,
-        hasRoomRuntime: !!raw?.hasRoomRuntime,
-        requiresRoomRuntime: !!raw?.requiresRoomRuntime,
       };
     },
 
@@ -321,7 +284,6 @@ export const chatMethodsAuthDialogsAndProfile = {
           ...next[existingIndex],
           ...dialog,
           targetUser: dialog.targetUser || next[existingIndex].targetUser,
-          roomSurface: dialog.roomSurface || next[existingIndex].roomSurface,
         };
       } else {
         next.push(dialog);
@@ -380,7 +342,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         targetUser: fallbackUser,
         lastMessageAt: String(message.createdAt || existing?.lastMessageAt || ''),
         pinnedNodeId: Number(activeDirect?.pinnedNodeId || existing?.pinnedNodeId || 0) || null,
-        roomSurface: this.normalizeRoomSurface(activeDirect?.roomSurface || existing?.roomSurface, activeDirect?.pinnedNodeId || existing?.pinnedNodeId),
       });
     },
 
@@ -575,7 +536,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         const directDialogs = rows.map((dialogRaw: any) => ({
           ...dialogRaw,
           targetUser: this.normalizeUser(dialogRaw?.targetUser) || dialogRaw?.targetUser,
-          roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
         }));
         this.setDirectDialogsState(directDialogs);
       })();
@@ -667,7 +627,6 @@ export const chatMethodsAuthDialogsAndProfile = {
           postOnlyByAdmin: !!dialogRaw?.postOnlyByAdmin,
           createdById: Number(dialogRaw?.createdById || 0) || null,
           pinnedNodeId: Number(dialogRaw?.pinnedNodeId || 0) || null,
-          roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
           discussion: null,
         });
 
@@ -732,7 +691,6 @@ export const chatMethodsAuthDialogsAndProfile = {
           postOnlyByAdmin: !!data.postOnlyByAdmin,
           createdById: Number(data.createdById || 0) || null,
           pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
-          roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
           discussion: null,
         } as Dialog;
         this.setGeneralDialogState(dialog);
@@ -774,7 +732,6 @@ export const chatMethodsAuthDialogsAndProfile = {
 
       if (!defaultDialog) {
         this.activeDialog = null;
-        this.setActiveRoomScript(null);
         this.messages = [];
         this.activePinnedMessage = null;
         this.notifyMessagesChanged();
@@ -813,7 +770,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         commentsEnabled: false,
         createdById: null,
         pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
-        roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
         discussion: null,
       } as Dialog;
       this.upsertDirectDialogState({
@@ -821,7 +777,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         targetUser: normalizedTargetUser,
         lastMessageAt: '',
         pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
-        roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
       });
       return dialog;
     },
@@ -860,10 +815,6 @@ export const chatMethodsAuthDialogsAndProfile = {
 
         const nextChunk = rows.map((message: any) => this.normalizeMessage(message));
         this.historyHasMore = nextChunk.length >= historyBatchSize;
-        if (isInitialLoad) {
-          this.seedNotificationsFromMessages(nextChunk);
-        }
-
         if (isInitialLoad) {
           this.messages = nextChunk;
           this.setRoomHistoryCache(roomId, nextChunk, this.historyHasMore);
@@ -915,7 +866,6 @@ export const chatMethodsAuthDialogsAndProfile = {
       const result = await ws.request('room:get', {roomId});
       if (!(result as any)?.ok) {
         this.error = 'Не удалось подключиться к диалогу.';
-        this.setActiveRoomScript(null);
         this.activePinnedMessage = null;
         return;
       }
@@ -948,13 +898,11 @@ export const chatMethodsAuthDialogsAndProfile = {
             : !!this.activeDialog?.postOnlyByAdmin,
           createdById: Number(data.createdById || 0) || null,
           pinnedNodeId: nextPinnedNodeId,
-          roomSurface: this.normalizeRoomSurface(data.roomSurface, nextPinnedNodeId),
           discussion: this.normalizeDiscussionMeta(data.discussion),
           targetUser: nextKind === 'direct' ? directTargetUser : this.activeDialog?.targetUser,
         };
       }
 
-      this.setActiveRoomScript(data.roomRuntime || null);
       const pinnedMessageRaw = data.pinnedMessage;
       this.activePinnedMessage = pinnedMessageRaw && typeof pinnedMessageRaw === 'object'
         ? this.normalizeMessage(pinnedMessageRaw)
@@ -978,11 +926,9 @@ export const chatMethodsAuthDialogsAndProfile = {
       this.historyLoading = true;
       this.clearFreshMessageMarks();
       this.activeDialog = dialog;
-      this.setActiveRoomScript(null);
       this.messages = [];
       this.activePinnedMessage = null;
       this.pinnedCollapsed = this.loadPinnedCollapsedState(dialog.id);
-      this.scriptMessageViewModels = {};
       this.discussionOpenPendingMessageId = null;
       this.roomInviteOpen = false;
       this.roomInviteLoading = false;
@@ -1015,9 +961,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
         await this.joinDialog(dialog.id);
-        if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
-
-        await this.loadActiveRoomScript(dialog.id);
         if (seq !== this.historyLoadSeq || this.activeDialog?.id !== dialog.id) return;
 
         await this.syncRouteForDialog(dialog, optionsRaw?.routeMode || 'push');
@@ -1163,7 +1106,6 @@ export const chatMethodsAuthDialogsAndProfile = {
           postOnlyByAdmin: !!this.activeDialog?.postOnlyByAdmin,
           createdById: Number(this.activeDialog?.createdById || 0) || null,
           pinnedNodeId: Number(this.activeDialog?.pinnedNodeId || 0) || null,
-          roomSurface: this.normalizeRoomSurface(this.activeDialog?.roomSurface, this.activeDialog?.pinnedNodeId),
           discussion: null,
         } as Dialog);
         this.pushToast('Комната', 'Добавлена в навигацию');
@@ -1211,7 +1153,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         commentsEnabled: false,
         createdById: null,
         pinnedNodeId: Number(dialog.pinnedNodeId || 0) || null,
-        roomSurface: this.normalizeRoomSurface(dialog?.roomSurface, dialog?.pinnedNodeId),
         discussion: null,
       }, {routeMode: 'push'});
     },
@@ -1252,7 +1193,6 @@ export const chatMethodsAuthDialogsAndProfile = {
           : !!this.activeDialog?.postOnlyByAdmin,
         createdById: Number(payloadRaw?.createdById || 0) || null,
         pinnedNodeId,
-        roomSurface: this.normalizeRoomSurface(payloadRaw?.roomSurface, pinnedNodeId),
         discussion,
         targetUser: roomKind === 'direct' ? directTargetUser : this.activeDialog?.targetUser,
       };
@@ -1265,7 +1205,6 @@ export const chatMethodsAuthDialogsAndProfile = {
             || ''
           ),
           pinnedNodeId,
-          roomSurface: this.normalizeRoomSurface(payloadRaw?.roomSurface, pinnedNodeId),
         });
       } else {
         this.upsertRoomNavigationDialog({
@@ -1279,12 +1218,8 @@ export const chatMethodsAuthDialogsAndProfile = {
           postOnlyByAdmin: !!this.activeDialog?.postOnlyByAdmin,
           createdById: Number(this.activeDialog?.createdById || 0) || null,
           pinnedNodeId,
-          roomSurface: this.normalizeRoomSurface(payloadRaw?.roomSurface, pinnedNodeId),
           discussion: null,
         } as Dialog);
-      }
-      if (Object.prototype.hasOwnProperty.call(payloadRaw || {}, 'roomRuntime')) {
-        this.setActiveRoomScript(payloadRaw?.roomRuntime || null);
       }
     },
 
@@ -1354,7 +1289,6 @@ export const chatMethodsAuthDialogsAndProfile = {
         commentsEnabled: dialogRaw?.commentsEnabled !== undefined ? !!dialogRaw.commentsEnabled : true,
         avatarUrl: resolveMediaUrl(dialogRaw?.avatarUrl) || null,
         postOnlyByAdmin: !!dialogRaw?.postOnlyByAdmin,
-        roomSurface: this.normalizeRoomSurface(dialogRaw?.roomSurface, dialogRaw?.pinnedNodeId),
         discussion: null,
       };
       await this.selectDialog(dialog, {routeMode: 'push'});
@@ -1388,7 +1322,6 @@ export const chatMethodsAuthDialogsAndProfile = {
           postOnlyByAdmin: !!data.postOnlyByAdmin,
           createdById: Number(data.createdById || 0) || null,
           pinnedNodeId: Number(data.pinnedNodeId || 0) || null,
-          roomSurface: this.normalizeRoomSurface(data.roomSurface, data.pinnedNodeId),
           discussion: null,
         };
         this.roomCreateTitle = '';

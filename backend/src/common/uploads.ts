@@ -104,13 +104,14 @@ export function deleteUploadFile(fileNameRaw: unknown) {
   }
 }
 
-export function pruneExpiredUploads(cutoffMs: number) {
+export function pruneExpiredUploads(cutoffMs: number, protectedNames: ReadonlySet<string> = new Set()) {
   ensureUploadsDir();
   let deleted = 0;
 
   for (const name of readdirSync(uploadsDir)) {
     const safeName = sanitizeUploadName(name);
     if (!safeName) continue;
+    if (protectedNames.has(safeName)) continue;
 
     const fullPath = resolve(uploadsDir, safeName);
     try {

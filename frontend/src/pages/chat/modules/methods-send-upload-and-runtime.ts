@@ -436,7 +436,7 @@ export const chatMethodsSendUploadAndRuntime = {
     onMessagesScroll(this: any) {
       this.syncVirtualWindowFromScroll();
       this.updateScrollDownVisibility();
-      this.markVisibleMessageNotificationsRead();
+      this.scheduleVisibleMessageNotificationsRead();
       if (!this.messagesEl) return;
       if (this.messagesEl.scrollTop > 80) return;
       void this.loadOlderHistory();
@@ -472,13 +472,6 @@ export const chatMethodsSendUploadAndRuntime = {
 
     async onChatMessage(this: any, message: Message) {
       const normalized = this.normalizeMessage(message);
-      this.emitScriptHostRoomEvent('chat_message', {
-        id: normalized.id,
-        roomId: normalized.roomId,
-        kind: normalized.kind,
-        authorId: normalized.authorId,
-        authorNickname: normalized.authorNickname,
-      }, 'room', normalized.roomId);
 
       if (this.messages.some((item: Message) => Number(item.id) === Number(normalized.id))) {
         this.applyMessageUpdate(normalized);
@@ -536,10 +529,6 @@ export const chatMethodsSendUploadAndRuntime = {
 
     onChatMessageUpdated(this: any, messageRaw: any) {
       const message = this.normalizeMessage(messageRaw);
-      this.emitScriptHostRoomEvent('chat_message_updated', {
-        id: message.id,
-        roomId: message.roomId,
-      }, 'room', message.roomId);
       if (Number(this.activePinnedMessage?.id || 0) === Number(message.id || 0)) {
         this.activePinnedMessage = message;
       }
@@ -553,6 +542,16 @@ export const chatMethodsSendUploadAndRuntime = {
       const messageId = Number(payload?.messageId);
       if (!Number.isFinite(roomId) || !Number.isFinite(messageId)) return;
 
+      const removedNotificationIds = this.notifications
+        .filter((notification: NotificationItem) => Number(notification.targetMessageId || 0) === messageId)
+        .map((notification: NotificationItem) => notification.id);
+      if (removedNotificationIds.length) {
+        const removedIds = new Set(removedNotificationIds);
+        this.notifications = this.notifications.filter((notification: NotificationItem) => !removedIds.has(notification.id));
+        this.removeToastsForNotificationIds(removedNotificationIds);
+        this.updateFaviconBlinkByUnread();
+      }
+
       const nextFreshIds = {...(this.freshMessageIds || {})};
       delete nextFreshIds[messageId];
       this.freshMessageIds = nextFreshIds;
@@ -561,10 +560,6 @@ export const chatMethodsSendUploadAndRuntime = {
         this.applyMessageDelete(roomId, messageId);
       }
       this.deleteRoomHistoryCacheMessage(roomId, messageId);
-      this.emitScriptHostRoomEvent('chat_message_deleted', {
-        roomId,
-        messageId,
-      }, 'room', roomId);
       if (this.activeDialog?.kind === 'direct' && Number(this.activeDialog?.id || 0) === roomId) {
         const lastMessage = (this.messages || []).at(-1) || null;
         if (lastMessage) {
@@ -582,7 +577,11 @@ export const chatMethodsSendUploadAndRuntime = {
       const kind = String(payload?.kind || '').trim().toLowerCase();
       if (kind && kind !== 'direct') return;
 
+      const removedNotificationIds = this.notifications
+        .filter((notification: NotificationItem) => notification.roomId === roomId)
+        .map((notification: NotificationItem) => notification.id);
       this.notifications = this.notifications.filter((notification: NotificationItem) => notification.roomId !== roomId);
+      this.removeToastsForNotificationIds(removedNotificationIds);
       this.notificationsMenuOpen = false;
       this.updateFaviconBlinkByUnread();
 
@@ -612,7 +611,11 @@ export const chatMethodsSendUploadAndRuntime = {
 
       this.removeDirectDialogState(roomId);
       this.removeRoomNavigationDialog(roomId);
+      const removedNotificationIds = this.notifications
+        .filter((notification: NotificationItem) => notification.roomId === roomId)
+        .map((notification: NotificationItem) => notification.id);
       this.notifications = this.notifications.filter((notification: NotificationItem) => notification.roomId !== roomId);
+      this.removeToastsForNotificationIds(removedNotificationIds);
       this.notificationsMenuOpen = false;
       this.updateFaviconBlinkByUnread();
 
@@ -634,7 +637,6 @@ export const chatMethodsSendUploadAndRuntime = {
       const selected = await this.selectDefaultGroupDialog({routeMode: 'replace', closeMenu: false});
       if (!selected) {
         this.activeDialog = null;
-        this.setActiveRoomScript(null);
       }
     },
 
@@ -695,12 +697,21 @@ export const chatMethodsSendUploadAndRuntime = {
       if (!this.error || isTransientConnectionError(this.error)) {
         this.error = 'Соединение потеряно. Переподключаюсь...';
       }
-      this.emitScriptHostRoomEvent('system:ws_disconnected', {}, 'system');
     },
 
     async onWsReconnected(this: any) {
       if (isTransientConnectionError(this.error)) {
         this.error = '';
+      }
+
+      if (!this.me?.id) {
+        const authenticated = await this.ensureAuth();
+        if (!authenticated) return;
+        this.error = '';
+      }
+      if (!this.routeSyncReady) {
+        await this.initializeChatPage();
+        return;
       }
 
       let activeDialogId = Number(this.activeDialog?.id || 0);
@@ -720,12 +731,10 @@ export const chatMethodsSendUploadAndRuntime = {
         await this.catchUpRoomMessages(activeDialogId);
       }
       this.markVisibleMessageNotificationsRead();
-      this.emitScriptHostRoomEvent('system:ws_reconnected', {}, 'system');
     },
 
     async onWsSessionExpired(this: any) {
       this.error = 'Сессия истекла. Войди заново.';
-      this.emitScriptHostRoomEvent('system:session_expired', {}, 'system');
       await this.router.push('/login');
     },
 

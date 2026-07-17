@@ -8,7 +8,7 @@ import {
   setStoredRuStorePushToken,
   type RuStorePushPayload,
 } from '@/composables/rustore-push';
-import {getSessionToken, wsRegisterNativePushToken} from '@/composables/ws-rpc';
+import {getSessionToken, wsConnectionState, wsRegisterNativePushToken} from '@/composables/ws-rpc';
 
 function stringValue(value: unknown) {
   return String(value || '').trim();
@@ -82,6 +82,7 @@ export default defineNuxtPlugin(() => {
 
   const handleForegroundPush = async (notification: RuStorePushPayload) => {
     if (!appIsVisible) return;
+    if (router.currentRoute.value.path === '/chat' && wsConnectionState.value === 'connected') return;
     if (stringValue(notification.type) === 'call' && stringValue(notification.callId) && stringValue(notification.roomId)) {
       emit('call:incoming', {
         callId: stringValue(notification.callId),
@@ -105,7 +106,7 @@ export default defineNuxtPlugin(() => {
   void RuStorePush.addListener('token', ({token}) => {
     const value = stringValue(token);
     if (!value) return;
-    console.info('[rustore-push] token', value);
+    console.info('[rustore-push] token received');
     setStoredRuStorePushToken(value);
     lastBackendRegisteredToken = '';
     lastBackendSessionToken = '';
@@ -144,7 +145,7 @@ export default defineNuxtPlugin(() => {
     });
     const token = stringValue(result?.token);
     if (token) {
-      console.info('[rustore-push] token', token);
+      console.info('[rustore-push] token received');
       setStoredRuStorePushToken(token);
       void syncBackendToken(token);
     }

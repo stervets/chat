@@ -131,24 +131,6 @@
     z-index: 6;
   }
 
-  .room-script-title {
-    font-size: 11px;
-    color: #9cb2cc;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-
-  .room-script-subtitle {
-    font-size: 13px;
-    color: #e4edf9;
-    font-weight: 600;
-  }
-
-  .room-script-extra {
-    font-size: 11px;
-    color: #afc1d7;
-  }
-
   .pinned-panel {
     margin: 8px 12px 0;
     border-radius: 10px;
@@ -162,16 +144,6 @@
     z-index: 7;
     min-height: 56px;
     max-height: 50%;
-  }
-
-  .pinned-panel-scriptable {
-    border-color: #205a88;
-    background: linear-gradient(180deg, #1a2c3a 0%, #0b1b29 100%);
-  }
-
-  .pinned-panel-app-surface {
-    border-color: #2f749a;
-    box-shadow: inset 0 0 0 1px rgba(74, 149, 191, 0.22);
   }
 
   .pinned-panel-collapsed {
@@ -199,18 +171,6 @@
     white-space: nowrap;
   }
 
-  .pinned-app-label {
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    border-radius: 999px;
-    border: 1px solid rgba(85, 158, 207, 0.5);
-    color: #b6dff9;
-    padding: 2px 8px;
-    background: rgba(19, 48, 70, 0.56);
-    flex-shrink: 0;
-  }
-
   .pinned-actions {
     display: inline-flex;
     align-items: center;
@@ -226,17 +186,6 @@
     line-height: 1.35;
     color: #d5dde8;
     word-break: break-word;
-  }
-
-  .pinned-body :deep(.scriptable-card),
-  .pinned-body :deep(.scriptable-fallback) {
-    margin: 0;
-    border-color: rgba(84, 123, 160, 0.56);
-    background: rgba(16, 27, 39, 0.8);
-  }
-
-  .pinned-body :deep(.message-scriptable-host) {
-    margin-top: 0;
   }
 
   .pinned-body :deep(a) {
@@ -300,12 +249,6 @@
     gap: 8px;
     z-index: 32;
     pointer-events: none;
-  }
-
-  .composer-scriptable-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
   }
 
   .toast-item {

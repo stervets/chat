@@ -115,10 +115,6 @@ export default {
       type: Array as PropType<string[]>,
       default: () => [],
     },
-    scriptViewModel: {
-      type: Object as PropType<Record<string, any> | null>,
-      default: null,
-    },
   },
 
   emits: [
@@ -143,9 +139,6 @@ export default {
     'reaction-mousemove',
     'reaction-mouseleave',
     'height-change',
-    'script-action',
-    'script-view-mounted',
-    'script-view-unmounted',
     'toggle-pinned-message',
     'open-discussion',
     'image-preview-click',
@@ -317,22 +310,6 @@ export default {
 
     onBodyMouseLeave(this: any) {
       this.$emit('message-body-mouseleave');
-    },
-
-    onScriptAction(this: any, message: Message, actionType: string, payload?: any) {
-      this.$emit('script-action', message, actionType, payload);
-    },
-
-    onScriptViewMounted(this: any, messageIdRaw: unknown, viewSourceRaw: unknown, viewInstanceIdRaw: unknown) {
-      const messageId = Number(messageIdRaw || 0);
-      if (!Number.isFinite(messageId) || messageId <= 0) return;
-      this.$emit('script-view-mounted', messageId, viewSourceRaw, viewInstanceIdRaw);
-    },
-
-    onScriptViewUnmounted(this: any, messageIdRaw: unknown, viewSourceRaw: unknown, viewInstanceIdRaw: unknown) {
-      const messageId = Number(messageIdRaw || 0);
-      if (!Number.isFinite(messageId) || messageId <= 0) return;
-      this.$emit('script-view-unmounted', messageId, viewSourceRaw, viewInstanceIdRaw);
     },
 
     onToggleReactionPicker(this: any) {

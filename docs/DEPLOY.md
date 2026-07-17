@@ -18,8 +18,8 @@
 
 `Caddyfile` проксирует на backend:
 - `/ws` и `/ws/*`
-- `/push` и `/push/*`
 - `/upload/image`
+- `/upload/media`
 - `/uploads` и `/uploads/*`
 
 Остальное раздаётся из `frontend/.output/public`.
