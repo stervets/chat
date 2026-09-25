@@ -139,8 +139,6 @@
           :download-href-linux="downloadHrefLinux"
           :download-href-mac-os="downloadHrefMacOs"
           :download-href-windows="downloadHrefWindows"
-          :mt-proxy-deep-link="mtProxyDeepLink"
-          :mt-proxy-web-link="mtProxyWebLink"
           :vpn-provision-error="vpnProvisionError"
           :vpn-provision-link="vpnProvisionLink"
           :vpn-provision-qr-data-url="vpnProvisionQrDataUrl"

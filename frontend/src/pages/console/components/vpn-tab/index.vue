@@ -1,14 +1,6 @@
 <template>
         <div class="console-card">
           <section class="block">
-            <h2>Proxy для Telegram</h2>
-            <div class="links">
-              <a class="vpn-link" :href="mtProxyDeepLink" target="_blank" rel="noopener noreferrer">{{ mtProxyDeepLink }}</a>
-              <a class="vpn-link" :href="mtProxyWebLink" target="_blank" rel="noopener noreferrer">{{ mtProxyWebLink }}</a>
-            </div>
-          </section>
-
-          <section class="block">
             <h2>AmneziaVPN</h2>
             <div class="downloads">
               <a class="download-btn" :class="{disabled: !downloadHrefAndroid}" :href="downloadHrefAndroid || '#'" :download="amneziaFileAndroid || undefined" @click.prevent="onDownloadClick(downloadHrefAndroid)">Android</a>

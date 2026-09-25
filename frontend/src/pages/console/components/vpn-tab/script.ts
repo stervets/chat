@@ -16,8 +16,6 @@ export default {
     downloadHrefLinux: {type: String, default: ''},
     downloadHrefMacOs: {type: String, default: ''},
     downloadHrefWindows: {type: String, default: ''},
-    mtProxyDeepLink: {type: String, default: ''},
-    mtProxyWebLink: {type: String, default: ''},
     vpnProvisionError: {type: String, default: ''},
     vpnProvisionLink: {type: String, default: ''},
     vpnProvisionQrDataUrl: {type: String, default: ''},

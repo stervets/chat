@@ -38,8 +38,6 @@ import {
 } from '@/pages/chat/helpers/storage';
 
 const COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/;
-const DEFAULT_MTPROXY_DEEP_LINK = 'tg://proxy?server=151.245.137.79&port=8443&secret=c6fab0c23452644261db3661aa963f50';
-const DEFAULT_MTPROXY_WEB_LINK = 'https://t.me/proxy?server=151.245.137.79&port=8443&secret=c6fab0c23452644261db3661aa963f50';
 const DONATION_UNDO_WINDOW_MS = 5 * 60 * 1000;
 const MAX_UPLOAD_IMAGE_BYTES = 50 * 1024 * 1024;
 const AVATAR_CROP_STAGE_SIZE = 280;
@@ -142,8 +140,6 @@ export default {
       roomMemberActionBusyIds: ref<number[]>([]),
 
       isAuthed: ref(false),
-      mtProxyDeepLink: String(vpnConfig.mtProxyDeepLink || DEFAULT_MTPROXY_DEEP_LINK).trim(),
-      mtProxyWebLink: String(vpnConfig.mtProxyWebLink || DEFAULT_MTPROXY_WEB_LINK).trim(),
       amneziaFileWindows: ref(String(amneziaFiles.windows || '').trim()),
       amneziaFileLinux: ref(String(amneziaFiles.linux || '').trim()),
       amneziaFileAndroid: ref(String(amneziaFiles.android || '').trim()),
